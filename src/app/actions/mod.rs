@@ -294,6 +294,19 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             state.flags.ui.dirty = true;
             ActionResult::Save
         }
+        Action::ConfigThinkThresholdUp => {
+            let ts = state.ext_mut::<crate::modules::questions::ThinkState>();
+            // Cap at -1 (threshold must stay negative)
+            ts.reminder_threshold = ts.reminder_threshold.saturating_add(1).min(-1);
+            state.flags.ui.dirty = true;
+            ActionResult::Save
+        }
+        Action::ConfigThinkThresholdDown => {
+            let ts = state.ext_mut::<crate::modules::questions::ThinkState>();
+            ts.reminder_threshold = ts.reminder_threshold.saturating_sub(1);
+            state.flags.ui.dirty = true;
+            ActionResult::Save
+        }
         Action::ConfigSelectSecondaryProvider(provider) => {
             state.secondary_provider = provider;
             state.flags.ui.dirty = true;

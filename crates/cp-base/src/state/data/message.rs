@@ -48,6 +48,12 @@ pub struct ToolResultRecord {
     /// [`content`](Self::content) when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
+    /// Compact summary written by the tool. When the message gets folded
+    /// into a frozen `ConversationHistory` panel, the TL;DR replaces
+    /// [`content`](Self::content) so long thoughts shrink to their essence.
+    /// `None` means the tool did not provide one — falls back to `content`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tldr: Option<String>,
     /// `true` if the tool execution failed.
     #[serde(default)]
     pub is_error: bool,
@@ -204,6 +210,7 @@ pub mod test_helpers {
                 tool_use_id: tool_use_id.to_string(),
                 content: content.to_string(),
                 display: None,
+                tldr: None,
                 is_error: false,
                 tool_name: String::new(),
             });
@@ -252,7 +259,11 @@ pub fn format_messages_to_chunk(messages: &[Message]) -> String {
             }
             MsgKind::ToolResult => {
                 for tr in &msg.tool_results {
-                    let _r = writeln!(output, "{}", tr.content);
+                    // When detaching into history, prefer the tldr so verbose
+                    // Think bodies shrink to their essence. Falls through to
+                    // the full content when no tldr was provided.
+                    let body = tr.tldr.as_deref().unwrap_or(&tr.content);
+                    let _r = writeln!(output, "{body}");
                 }
             }
             MsgKind::TextMessage => {

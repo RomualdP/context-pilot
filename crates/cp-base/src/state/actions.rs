@@ -105,6 +105,10 @@ pub enum Action {
     ConfigPrevTheme,
     /// Toggle spine auto-continuation on/off.
     ConfigToggleAutoContinue,
+    /// Make think reminder threshold less negative (more frequent reminders).
+    ConfigThinkThresholdUp,
+    /// Make think reminder threshold more negative (less frequent reminders).
+    ConfigThinkThresholdDown,
 
     // === Config overlay — secondary model ===
     /// Select secondary (reverie) LLM provider.

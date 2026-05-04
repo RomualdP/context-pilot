@@ -3,7 +3,6 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 
-use crate::infra::config::{THEME_ORDER, get_theme};
 use crate::infra::constants::{chars, theme};
 use crate::state::State;
 
@@ -14,7 +13,7 @@ use budget_bars::format_tokens_compact;
 pub(crate) fn render_config_overlay(frame: &mut Frame<'_>, state: &State, area: Rect) {
     // Center the overlay, clamped to available area
     let overlay_width = 56u16.min(area.width);
-    let overlay_height = 38u16.min(area.height); // Reduced from 50
+    let overlay_height = 34u16.min(area.height);
     let half_width = area.width.saturating_sub(overlay_width).saturating_div(2);
     let x = area.x.saturating_add(half_width);
     let half_height = area.height.saturating_sub(overlay_height).saturating_div(2);
@@ -44,11 +43,7 @@ pub(crate) fn render_config_overlay(frame: &mut Frame<'_>, state: &State, area: 
     }
 
     add_separator(&mut lines);
-    render_api_check(&mut lines, state);
-    add_separator(&mut lines);
     budget_bars::render_budget_section(&mut lines, state);
-    add_separator(&mut lines);
-    render_theme_section(&mut lines, state);
     add_separator(&mut lines);
     render_toggles_section(&mut lines, state);
 
@@ -59,12 +54,12 @@ pub(crate) fn render_config_overlay(frame: &mut Frame<'_>, state: &State, area: 
         Span::styled(" provider  ", Style::default().fg(theme::text_muted())),
         Span::styled("a-d", Style::default().fg(theme::warning())),
         Span::styled(" model  ", Style::default().fg(theme::text_muted())),
-        Span::styled("t", Style::default().fg(theme::warning())),
-        Span::styled(" theme  ", Style::default().fg(theme::text_muted())),
         Span::styled("r", Style::default().fg(theme::warning())),
         Span::styled(" reverie  ", Style::default().fg(theme::text_muted())),
         Span::styled("s", Style::default().fg(theme::warning())),
-        Span::styled(" auto", Style::default().fg(theme::text_muted())),
+        Span::styled(" auto  ", Style::default().fg(theme::text_muted())),
+        Span::styled("[]", Style::default().fg(theme::warning())),
+        Span::styled(" think", Style::default().fg(theme::text_muted())),
     ]));
 
     let block = Block::default()
@@ -81,12 +76,10 @@ pub(crate) fn render_config_overlay(frame: &mut Frame<'_>, state: &State, area: 
 
 /// Append a horizontal separator line to the output.
 fn add_separator(lines: &mut Vec<Line<'_>>) {
-    lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
         format!("  {}", chars::HORIZONTAL.repeat(50)),
         Style::default().fg(theme::border()),
     )]));
-    lines.push(Line::from(""));
 }
 
 /// Render the provider section (always visible regardless of Tab mode)
@@ -94,7 +87,6 @@ fn render_provider_section(lines: &mut Vec<Line<'_>>, state: &State) {
     use crate::llms::LlmProvider;
 
     lines.push(Line::from(vec![Span::styled("  LLM Provider", Style::default().fg(theme::text_secondary()).bold())]));
-    lines.push(Line::from(""));
 
     // Show selection indicator for main or secondary provider depending on Tab mode
     let active_provider =
@@ -131,7 +123,6 @@ fn render_model_section(lines: &mut Vec<Line<'_>>, state: &State) {
     use crate::llms::{AnthropicModel, DeepSeekModel, GrokModel, GroqModel, LlmProvider, MiniMaxModel};
 
     lines.push(Line::from(vec![Span::styled("  Model", Style::default().fg(theme::text_secondary()).bold())]));
-    lines.push(Line::from(""));
 
     match state.llm_provider {
         LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
@@ -176,66 +167,6 @@ fn render_model_section(lines: &mut Vec<Line<'_>>, state: &State) {
     }
 }
 
-/// Render the API check status line (spinner while checking, result when done).
-fn render_api_check(lines: &mut Vec<Line<'_>>, state: &State) {
-    if state.flags.lifecycle.api_check_in_progress {
-        let spin = crate::ui::helpers::spinner(state.spinner_frame);
-        lines.push(Line::from(vec![
-            Span::styled(format!("  {spin} "), Style::default().fg(theme::accent())),
-            Span::styled("Checking API...", Style::default().fg(theme::text_muted())),
-        ]));
-    } else if let Some(result) = &state.api_check_result {
-        use crate::infra::config::normalize_icon;
-        let result: &cp_base::config::llm_types::ApiCheckResult = result;
-        let (icon, color, msg) = if result.all_ok() {
-            (normalize_icon("✓"), theme::success(), "API OK")
-        } else if let Some(err) = &result.error {
-            (normalize_icon("✗"), theme::error(), err.as_str())
-        } else {
-            (normalize_icon("!"), theme::warning(), "Issues detected")
-        };
-        lines.push(Line::from(vec![
-            Span::styled(format!("  {icon}"), Style::default().fg(color)),
-            Span::styled(msg.to_string(), Style::default().fg(color)),
-        ]));
-    }
-}
-
-/// Render the theme section with current theme info and navigation.
-fn render_theme_section(lines: &mut Vec<Line<'_>>, state: &State) {
-    lines.push(Line::from(vec![Span::styled("  Theme", Style::default().fg(theme::text_secondary()).bold())]));
-    lines.push(Line::from(""));
-
-    let Some(current_theme) = get_theme(&state.active_theme) else { return };
-    let fallback_icon = "📄".to_string();
-
-    lines.push(Line::from(vec![
-        Span::styled("   ◀ ", Style::default().fg(theme::accent())),
-        Span::styled(format!("{:<12}", current_theme.name), Style::default().fg(theme::accent()).bold()),
-        Span::styled(" ▶  ", Style::default().fg(theme::accent())),
-        Span::styled(
-            format!(
-                "{} {} {} {}",
-                current_theme.messages.user,
-                current_theme.messages.assistant,
-                current_theme.context.get("tree").unwrap_or(&fallback_icon),
-                current_theme.context.get("file").unwrap_or(&fallback_icon),
-            ),
-            Style::default().fg(theme::text()),
-        ),
-    ]));
-    lines.push(Line::from(vec![Span::styled(
-        format!("     {}", current_theme.description),
-        Style::default().fg(theme::text_muted()),
-    )]));
-
-    let current_idx = THEME_ORDER.iter().position(|&t| t == state.active_theme).unwrap_or(0);
-    lines.push(Line::from(vec![Span::styled(
-        format!("     ({}/{})", current_idx.saturating_add(1), THEME_ORDER.len()),
-        Style::default().fg(theme::text_muted()),
-    )]));
-}
-
 /// Render the toggle section (auto-continue, reverie).
 fn render_toggles_section(lines: &mut Vec<Line<'_>>, state: &State) {
     // Auto-continuation toggle
@@ -264,6 +195,18 @@ fn render_toggles_section(lines: &mut Vec<Line<'_>>, state: &State) {
         Span::styled("r", Style::default().fg(theme::warning())),
         Span::styled(" to toggle)", Style::default().fg(theme::text_muted())),
     ]));
+
+    // Think reminder threshold
+    let threshold = state.get_ext::<crate::modules::questions::ThinkState>().map_or(-5, |ts| ts.reminder_threshold);
+    lines.push(Line::from(vec![
+        Span::styled("  Think nudge:   ", Style::default().fg(theme::text_secondary()).bold()),
+        Span::styled(format!("{threshold:>3}  "), Style::default().fg(theme::accent()).bold()),
+        Span::styled("(press ", Style::default().fg(theme::text_muted())),
+        Span::styled("[", Style::default().fg(theme::warning())),
+        Span::styled("/", Style::default().fg(theme::text_muted())),
+        Span::styled("]", Style::default().fg(theme::warning())),
+        Span::styled(" to adjust)", Style::default().fg(theme::text_muted())),
+    ]));
 }
 
 /// Render the secondary model section (Reverie model selection).
@@ -274,7 +217,6 @@ fn render_secondary_model_section(lines: &mut Vec<Line<'_>>, state: &State) {
         "  Secondary Model (Reverie)",
         Style::default().fg(theme::text_secondary()).bold(),
     )]));
-    lines.push(Line::from(""));
 
     match state.secondary_provider {
         LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {

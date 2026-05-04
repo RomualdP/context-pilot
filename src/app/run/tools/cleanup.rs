@@ -251,6 +251,7 @@ pub(crate) fn check_watchers(app: &mut App, tx: &Sender<StreamEvent>) {
             tool_use_id: r.tool_use_id.clone(),
             content: r.content.clone(),
             display: r.display.clone(),
+            tldr: r.tldr.clone(),
             is_error: r.is_error,
             tool_name: r.tool_name.clone(),
         })
@@ -389,6 +390,7 @@ pub(crate) fn flush_pending_tool_results_as_interrupted(app: &mut App) {
                 tool_use_id: r.tool_use_id.clone(),
                 content,
                 display: None,
+                tldr: None,
                 is_error: true,
                 tool_name: r.tool_name.clone(),
             }

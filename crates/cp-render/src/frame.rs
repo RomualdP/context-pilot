@@ -172,6 +172,8 @@ pub struct StatusBar {
     pub reveries: Vec<ReverieCard>,
     /// Queue status.
     pub queue: Option<QueueCard>,
+    /// Think tool balance.
+    pub think: Option<ThinkCard>,
     /// Stop reason from last completion.
     pub stop_reason: Option<StopReason>,
     /// API retry count (0 = no retry in progress).
@@ -254,6 +256,14 @@ pub struct QueueCard {
     pub count: u32,
     /// Whether the queue is actively intercepting.
     pub active: bool,
+}
+
+/// Think tool balance indicator.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ThinkCard {
+    /// Current consecutive think counter (positive = thinking streak,
+    /// negative = tool streak without thinking).
+    pub balance: i32,
 }
 
 // ── Panel content ────────────────────────────────────────────────────

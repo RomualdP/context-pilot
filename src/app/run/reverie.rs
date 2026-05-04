@@ -248,6 +248,7 @@ pub(super) fn handle_reverie_tools(app: &mut App) {
                         tool_name: result.tool_name.clone(),
                         content: result.content.clone(),
                         display: result.display.clone(),
+                        tldr: result.tldr.clone(),
                         is_error: result.is_error,
                     }],
                 });

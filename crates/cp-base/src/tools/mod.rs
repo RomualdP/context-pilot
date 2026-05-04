@@ -63,6 +63,12 @@ pub struct ToolResult {
     /// sending a compact summary to the LLM.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
+    /// Compact summary that survives detachment into frozen
+    /// `ConversationHistory` panels. `None` means no summary —
+    /// the full content stays in history. Used by the Think tool so
+    /// long deliberations collapse to a one-line takeaway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tldr: Option<String>,
     /// `true` if the tool execution failed.
     #[serde(default)]
     pub is_error: bool,
@@ -79,13 +85,21 @@ impl ToolResult {
     /// Create a `ToolResult`. The `tool_name` is left empty — populated by dispatch.
     #[must_use]
     pub const fn new(tool_use_id: String, content: String, is_error: bool) -> Self {
-        Self { tool_use_id, content, display: None, is_error, preserves_tempo: false, tool_name: String::new() }
+        Self {
+            tool_use_id,
+            content,
+            display: None,
+            tldr: None,
+            is_error,
+            preserves_tempo: false,
+            tool_name: String::new(),
+        }
     }
 
     /// Create a `ToolResult` with an explicit tool name.
     #[must_use]
     pub const fn with_name(tool_use_id: String, content: String, is_error: bool, tool_name: String) -> Self {
-        Self { tool_use_id, content, display: None, is_error, preserves_tempo: false, tool_name }
+        Self { tool_use_id, content, display: None, tldr: None, is_error, preserves_tempo: false, tool_name }
     }
 }
 

@@ -101,6 +101,7 @@ pub(crate) fn check_question_form(app: &mut App, tx: &Sender<StreamEvent>) {
             tool_use_id: r.tool_use_id.clone(),
             content: r.content.clone(),
             display: r.display.clone(),
+            tldr: r.tldr.clone(),
             is_error: r.is_error,
             tool_name: r.tool_name.clone(),
         })

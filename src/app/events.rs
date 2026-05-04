@@ -226,6 +226,9 @@ const fn handle_config_event(key: &KeyEvent, state: &State) -> Action {
         KeyCode::Char('s') => Action::ConfigToggleAutoContinue,
         // Toggle reverie (context optimizer)
         KeyCode::Char('r') => Action::ConfigToggleReverie,
+        // Think reminder threshold adjustment
+        KeyCode::Char(']') => Action::ConfigThinkThresholdUp,
+        KeyCode::Char('[') => Action::ConfigThinkThresholdDown,
         // Tab toggles between main/secondary model selection
         KeyCode::Tab => Action::ConfigToggleSecondaryMode,
         KeyCode::Down => Action::ConfigSelectNextBar,

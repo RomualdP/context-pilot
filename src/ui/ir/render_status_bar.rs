@@ -131,6 +131,15 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
         spans.push(Span::styled(" ", base_style));
     }
 
+    // === Think balance card ===
+    if let Some(ref think) = status.think {
+        spans.push(Span::styled(
+            format!(" 🧠 Think ({}) ", think.balance),
+            Style::default().fg(Color::White).bg(Color::Rgb(180, 60, 60)).bold(),
+        ));
+        spans.push(Span::styled(" ", base_style));
+    }
+
     // === Right-aligned char count ===
     let right_info =
         if status.input_char_count > 0 { format!("{} chars ", status.input_char_count) } else { String::new() };

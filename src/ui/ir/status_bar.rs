@@ -5,7 +5,7 @@
 
 use cp_render::Semantic;
 use cp_render::frame::{
-    AgentCard, AutoContinue, Badge, GitChanges, QueueCard, ReverieCard, SkillCard, StatusBar, StopReason,
+    AgentCard, AutoContinue, Badge, GitChanges, QueueCard, ReverieCard, SkillCard, StatusBar, StopReason, ThinkCard,
 };
 
 use crate::state::State;
@@ -22,6 +22,7 @@ pub(crate) fn build_status_bar(state: &State) -> StatusBar {
         auto_continue: Some(build_auto_continue(state)),
         reveries: build_reveries(state),
         queue: build_queue(state),
+        think: build_think(state),
         stop_reason: build_stop_reason(state),
         retry_count: state.api_retry_count.to_u8(),
         max_retries: crate::infra::constants::MAX_API_RETRIES.to_u8(),
@@ -163,4 +164,15 @@ fn build_stop_reason(state: &State) -> Option<StopReason> {
     let reason = state.last_stop_reason.as_ref()?;
     let semantic = if reason == "max_tokens" { Semantic::Error } else { Semantic::Muted };
     Some(StopReason { reason: reason.clone(), semantic })
+}
+
+// ── Think ────────────────────────────────────────────────────────────
+
+/// Build think tool balance card (only shown when balance is negative).
+fn build_think(state: &State) -> Option<ThinkCard> {
+    let ts = state.get_ext::<crate::modules::questions::ThinkState>()?;
+    if ts.consecutive_count >= 0 {
+        return None;
+    }
+    Some(ThinkCard { balance: ts.consecutive_count })
 }

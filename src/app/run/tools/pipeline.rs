@@ -123,7 +123,8 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                     }
                 }
 
-                if QueueState::get(&app.state).active && !QueueState::is_queue_tool(&tool.name) {
+                if QueueState::get(&app.state).active && !QueueState::is_queue_tool(&tool.name) && tool.name != "Think"
+                {
                     // Queue intercept: enqueue instead of executing
                     let qs = QueueState::get_mut(&mut app.state);
                     let idx = qs.enqueue(cp_mod_queue::types::QueuedToolCall {
@@ -306,6 +307,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
             tool_use_id: r.tool_use_id.clone(),
             content: r.content.clone(),
             display: r.display.clone(),
+            tldr: r.tldr.clone(),
             is_error: r.is_error,
             tool_name: t.name.clone(),
         })

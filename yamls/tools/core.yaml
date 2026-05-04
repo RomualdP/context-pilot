@@ -32,3 +32,24 @@ tools:
       changes: "Array of module changes"
       module: "Module ID (e.g., 'git', 'memory', 'tmux')"
       action: "Action to perform"
+
+  Think:
+    description: |
+      Records a reasoning step or deliberation as a structured tool call. Use this when you need to think through a tricky problem before acting — weighing trade-offs, planning a multi-step approach, or working through a chain of logic that benefits from being made explicit.
+
+      The full thought stays in your active context for the current turn. Once the conversation gets compacted into history (long-running sessions detach old turns into frozen panels), the thought body drops away. This lets you reason at length without permanently bloating the conversation log.
+
+      WHEN TO USE:
+      - Before committing to a non-trivial implementation plan, sketch the design out loud.
+      - When facing ambiguity in user intent, lay out the interpretations and pick one.
+      - When debugging, walk through your hypothesis chain explicitly.
+      - When code paths fork on subtle conditions, reason through which branch fits.
+
+      WHEN NOT TO USE:
+      - Trivial decisions or single-step actions — just do them.
+      - Reasoning that's already captured implicitly by the next tool call (e.g., opening a file you obviously need to read).
+      - As filler. Every think call should earn its place.
+
+      The thought body should be your real reasoning — uncensored, rigorous, structured.
+    parameters:
+      thought_body: "The full reasoning. Be thorough — this is your scratch space to think clearly. Markdown is supported. Stays in active context until the turn is detached into history."
