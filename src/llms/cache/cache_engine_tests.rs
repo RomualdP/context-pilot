@@ -1,8 +1,9 @@
+use super::super::super::ContentBlock;
 use super::*;
 
 /// Helper: create a simple text content block.
-fn make_text_block(text: &str) -> super::super::ContentBlock {
-    super::super::ContentBlock::Text { text: text.to_string() }
+fn make_text_block(text: &str) -> ContentBlock {
+    ContentBlock::Text { text: text.to_string() }
 }
 
 /// Helper: create N alternating user/assistant messages, one text block each.
@@ -43,7 +44,7 @@ fn test_same_content_produces_same_hash() {
 fn test_tool_use_different_inputs_produce_different_hashes() {
     let msg_a = vec![ApiMessage {
         role: "assistant".to_string(),
-        content: vec![super::super::ContentBlock::ToolUse {
+        content: vec![ContentBlock::ToolUse {
             id: "call_1".to_string(),
             name: "Edit".to_string(),
             input: serde_json::json!({"file_path": "/foo.rs", "old_string": "aaa", "new_string": "bbb"}),
@@ -51,7 +52,7 @@ fn test_tool_use_different_inputs_produce_different_hashes() {
     }];
     let msg_b = vec![ApiMessage {
         role: "assistant".to_string(),
-        content: vec![super::super::ContentBlock::ToolUse {
+        content: vec![ContentBlock::ToolUse {
             id: "call_1".to_string(),
             name: "Edit".to_string(),
             input: serde_json::json!({"file_path": "/bar.rs", "old_string": "xxx", "new_string": "yyy"}),
@@ -74,7 +75,7 @@ fn test_tool_use_different_ids_produce_different_hashes() {
     let input = serde_json::json!({"query": "hello"});
     let msg_a = vec![ApiMessage {
         role: "assistant".to_string(),
-        content: vec![super::super::ContentBlock::ToolUse {
+        content: vec![ContentBlock::ToolUse {
             id: "call_aaa".to_string(),
             name: "brave_search".to_string(),
             input: input.clone(),
@@ -82,11 +83,7 @@ fn test_tool_use_different_ids_produce_different_hashes() {
     }];
     let msg_b = vec![ApiMessage {
         role: "assistant".to_string(),
-        content: vec![super::super::ContentBlock::ToolUse {
-            id: "call_bbb".to_string(),
-            name: "brave_search".to_string(),
-            input,
-        }],
+        content: vec![ContentBlock::ToolUse { id: "call_bbb".to_string(), name: "brave_search".to_string(), input }],
     }];
 
     let infos_a = compute_accumulated_hashes(&msg_a);

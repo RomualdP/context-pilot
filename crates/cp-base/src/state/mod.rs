@@ -8,6 +8,8 @@ pub mod context;
 pub mod data;
 /// Stream-phase state machine, boolean flag structs, and streaming-tool advisory state.
 pub mod flags;
+/// Model selection, pricing, and cleaning-threshold helpers for `State`.
+mod model_helpers;
 /// Runtime state: the in-memory `State` struct with all live fields.
 pub mod runtime;
 /// Watcher trait and registry for async condition monitoring.

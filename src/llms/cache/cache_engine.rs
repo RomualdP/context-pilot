@@ -16,7 +16,7 @@
 use cp_base::cast::Safe as _;
 use serde::{Deserialize, Serialize};
 
-use super::ApiMessage;
+use super::super::ApiMessage;
 
 /// Anthropic's prompt cache lookback window: the API checks up to this many blocks
 /// before the tagged position when searching for a cache match.
@@ -225,11 +225,11 @@ fn compute_accumulated_hashes(api_messages: &[ApiMessage]) -> Vec<BlockInfo> {
     for (msg_idx, msg) in api_messages.iter().enumerate() {
         for (blk_idx, block) in msg.content.iter().enumerate() {
             let hash_repr = match block {
-                super::ContentBlock::Text { text } => text.clone(),
-                super::ContentBlock::ToolUse { id, name, input } => {
+                super::super::ContentBlock::Text { text } => text.clone(),
+                super::super::ContentBlock::ToolUse { id, name, input } => {
                     format!("tool_use:{id}:{name}:{}", serde_json::to_string(input).unwrap_or_default())
                 }
-                super::ContentBlock::ToolResult { tool_use_id, content } => {
+                super::super::ContentBlock::ToolResult { tool_use_id, content } => {
                     format!("tool_result:{tool_use_id}:{content}")
                 }
             };

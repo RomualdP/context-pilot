@@ -202,6 +202,11 @@ pub(crate) fn check_watchers(app: &mut App, tx: &Sender<StreamEvent>) {
                 } else {
                     tr.content = format!("{original_content}\nCallbacks:\n{merged_descriptions}");
                 }
+                // Mirror callback results into the display field so the TUI shows them too
+                if let Some(ref mut disp) = tr.display {
+                    disp.push_str("\nCallbacks:\n");
+                    disp.push_str(&merged_descriptions);
+                }
             }
         }
     }

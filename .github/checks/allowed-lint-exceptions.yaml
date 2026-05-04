@@ -85,6 +85,17 @@ exceptions:
       Could merge all impl blocks into a single file, but that would
       create a 2500+ line file. The split is intentional for navigation.
 
+  - path: "crates/cp-base/src/state/model_helpers.rs"
+    match: "State methods split into model_helpers.rs for 500-line structure limit"
+    reason: >
+      State model/pricing/cleaning methods extracted from runtime.rs
+      (530 lines) into model_helpers.rs to stay under the 500-line
+      structure check limit. The second impl State block triggers
+      the lint.
+    strategy: >
+      Could merge back if runtime.rs shrinks enough from other
+      refactors. The split is intentional for structure compliance.
+
   - path: "src/llms/mod.rs"
     match: "type_id/cause/provide are unstable or deprecated"
     reason: >

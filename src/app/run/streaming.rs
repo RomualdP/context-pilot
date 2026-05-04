@@ -231,8 +231,8 @@ pub(super) fn finalize_stream(app: &mut App) {
         if !bp_hashes.is_empty() {
             let now_ms = cp_base::panels::now_ms();
             let mut engine = app.state.cache_engine_json.as_deref().map_or_else(
-                crate::llms::cache_engine::CacheEngine::default,
-                crate::llms::cache_engine::CacheEngine::from_json,
+                crate::llms::cache::cache_engine::CacheEngine::default,
+                crate::llms::cache::cache_engine::CacheEngine::from_json,
             );
             engine.prune(now_ms);
             engine.record_breakpoints(bp_hashes, now_ms);

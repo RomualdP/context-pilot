@@ -18,7 +18,7 @@ use std::fmt::Debug;
 
 use cp_base::cast::Safe as _;
 
-use super::ApiMessage;
+use super::super::ApiMessage;
 
 // ─── Trait ──────────────────────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ impl ConversationTailDensity {
     /// Check if a user message is a panel injection (contains `ToolResult` with `panel_*` id).
     fn is_panel_message(msg: &ApiMessage) -> bool {
         msg.content.iter().any(|block| {
-            matches!(block, super::ContentBlock::ToolResult { tool_use_id, .. }
+            matches!(block, super::super::ContentBlock::ToolResult { tool_use_id, .. }
                 if tool_use_id.starts_with("panel_"))
         })
     }

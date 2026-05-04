@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{panel_footer_text, panel_header_text, panel_timestamp_text, prepare_panel_messages};
+use super::super::{panel_footer_text, panel_header_text, panel_timestamp_text, prepare_panel_messages};
 use crate::app::panels::now_ms;
 use crate::infra::constants::{library, prompts};
 use crate::infra::tools::ToolDefinition;
@@ -142,7 +142,7 @@ pub(crate) fn build_messages(
     messages: &[Message],
     context_items: &[crate::app::panels::ContextItem],
     opts: &BuildOptions,
-    api_messages: &[super::ApiMessage],
+    api_messages: &[super::super::ApiMessage],
 ) -> Vec<OaiMessage> {
     // If we have pre-assembled API messages, convert them directly
     if !api_messages.is_empty() {
@@ -154,7 +154,7 @@ pub(crate) fn build_messages(
 }
 
 /// Convert pre-assembled `Vec<ApiMessage>` to OpenAI-compatible format.
-fn build_from_api_messages(api_messages: &[super::ApiMessage], opts: &BuildOptions) -> Vec<OaiMessage> {
+fn build_from_api_messages(api_messages: &[super::super::ApiMessage], opts: &BuildOptions) -> Vec<OaiMessage> {
     let mut out: Vec<OaiMessage> = Vec::new();
 
     // System message
@@ -173,13 +173,13 @@ fn build_from_api_messages(api_messages: &[super::ApiMessage], opts: &BuildOptio
     // Convert each ApiMessage
     for msg in api_messages {
         // Check if it contains tool_use blocks → convert to tool_calls
-        let has_tool_use = msg.content.iter().any(|b| matches!(b, super::ContentBlock::ToolUse { .. }));
-        let has_tool_result = msg.content.iter().any(|b| matches!(b, super::ContentBlock::ToolResult { .. }));
+        let has_tool_use = msg.content.iter().any(|b| matches!(b, super::super::ContentBlock::ToolUse { .. }));
+        let has_tool_result = msg.content.iter().any(|b| matches!(b, super::super::ContentBlock::ToolResult { .. }));
 
         if has_tool_result {
             // Tool results → individual tool messages
             for block in &msg.content {
-                if let super::ContentBlock::ToolResult { tool_use_id, content } = block {
+                if let super::super::ContentBlock::ToolResult { tool_use_id, content } = block {
                     out.push(OaiMessage {
                         role: "tool".to_string(),
                         content: Some(content.clone()),
@@ -193,7 +193,9 @@ fn build_from_api_messages(api_messages: &[super::ApiMessage], opts: &BuildOptio
             let text_parts: Vec<&str> = msg
                 .content
                 .iter()
-                .filter_map(|b| if let super::ContentBlock::Text { text } = b { Some(text.as_str()) } else { None })
+                .filter_map(
+                    |b| if let super::super::ContentBlock::Text { text } = b { Some(text.as_str()) } else { None },
+                )
                 .collect();
             let text = if text_parts.is_empty() { None } else { Some(text_parts.join("\n")) };
 
@@ -201,7 +203,7 @@ fn build_from_api_messages(api_messages: &[super::ApiMessage], opts: &BuildOptio
                 .content
                 .iter()
                 .filter_map(|b| {
-                    if let super::ContentBlock::ToolUse { id, name, input } = b {
+                    if let super::super::ContentBlock::ToolUse { id, name, input } = b {
                         Some(OaiToolCall {
                             id: id.clone(),
                             call_type: "function".to_string(),
@@ -227,7 +229,9 @@ fn build_from_api_messages(api_messages: &[super::ApiMessage], opts: &BuildOptio
             let text: String = msg
                 .content
                 .iter()
-                .filter_map(|b| if let super::ContentBlock::Text { text } = b { Some(text.as_str()) } else { None })
+                .filter_map(
+                    |b| if let super::super::ContentBlock::Text { text } = b { Some(text.as_str()) } else { None },
+                )
                 .collect::<Vec<_>>()
                 .join("\n");
 

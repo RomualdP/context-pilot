@@ -12,9 +12,9 @@ use secrecy::{ExposeSecret as _, SecretBox};
 use serde::Serialize;
 
 use super::super::error::LlmError;
-use super::super::openai_compat::{self, BuildOptions, OaiMessage};
-use super::super::openai_streaming::ToolCallAccumulator;
 use super::super::{LlmClient, LlmRequest, StreamEvent};
+use super::openai_compat::{self, BuildOptions, OaiMessage};
+use super::openai_streaming::ToolCallAccumulator;
 
 /// xAI Grok chat completions API endpoint.
 const GROK_API_ENDPOINT: &str = "https://api.x.ai/v1/chat/completions";
@@ -110,7 +110,7 @@ impl LlmClient for GrokClient {
             stream: true,
         };
 
-        super::super::openai_streaming::dump_request(&request.worker_id, "grok", &api_request);
+        super::openai_streaming::dump_request(&request.worker_id, "grok", &api_request);
 
         let response = client
             .post(GROK_API_ENDPOINT)
@@ -135,7 +135,7 @@ impl LlmClient for GrokClient {
         for line in reader.lines() {
             let line = line.map_err(|e| LlmError::StreamRead(e.to_string()))?;
 
-            if let Some(resp) = super::super::openai_streaming::parse_sse_line(&line) {
+            if let Some(resp) = super::openai_streaming::parse_sse_line(&line) {
                 if let Some(usage) = resp.usage {
                     if let Some(inp) = usage.prompt {
                         input_tokens = inp;
@@ -161,7 +161,7 @@ impl LlmClient for GrokClient {
                         }
                     }
                     if let Some(ref reason) = choice.finish_reason {
-                        stop_reason = Some(super::super::openai_streaming::normalize_stop_reason(reason));
+                        stop_reason = Some(super::openai_streaming::normalize_stop_reason(reason));
                         for tool_use in tool_acc.drain() {
                             let _r = tx.send(StreamEvent::ToolUse(tool_use));
                         }
