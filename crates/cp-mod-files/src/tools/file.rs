@@ -86,5 +86,24 @@ fn open_single_file(path: &str, state: &mut State) -> String {
     elem.set_meta("file_path", &canonical);
     state.context.push(elem);
 
+    // Auto-expand parent folders in the tree so the opened file is visible
+    if state.active_modules.contains("tree")
+        && let Ok(cwd) = std::env::current_dir().and_then(|d| d.canonicalize())
+        && let Ok(rel) = Path::new(&canonical).strip_prefix(&cwd)
+    {
+        let ts = cp_mod_tree::types::TreeState::get_mut(state);
+        let mut accumulator = String::new();
+        for component in rel.parent().into_iter().flat_map(Path::components) {
+            if !accumulator.is_empty() {
+                accumulator.push('/');
+            }
+            accumulator.push_str(&component.as_os_str().to_string_lossy());
+            if !ts.open_folders.contains(&accumulator) {
+                ts.open_folders.push(accumulator.clone());
+            }
+        }
+        cp_base::panels::mark_panels_dirty(state, Kind::TREE);
+    }
+
     format!("Opened '{path}' as {context_id}")
 }

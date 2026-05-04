@@ -1,5 +1,5 @@
-use std::sync::mpsc::{Receiver, Sender};
 use cp_base::state::data::model_helpers::ModelPricing as _;
+use std::sync::mpsc::{Receiver, Sender};
 
 use crate::app::actions::{Action, ActionResult, apply_action};
 use crate::infra::api::{StreamEvent, start_streaming};

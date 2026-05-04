@@ -1,7 +1,7 @@
+use cp_base::state::data::model_helpers::ModelPricing as _;
 use std::io;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
-use cp_base::state::data::model_helpers::ModelPricing as _;
 
 use crossterm::event;
 use ratatui::prelude::{CrosstermBackend, Terminal};

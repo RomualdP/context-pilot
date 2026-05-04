@@ -5,8 +5,8 @@
 //! 2. **Manual**: main AI calls `optimize_context` tool → fires reverie with directive
 
 use crate::state::State;
-use cp_base::state::reverie::{Kind, Session};
 use cp_base::state::data::model_helpers::ModelPricing as _;
+use cp_base::state::reverie::{Kind, Session};
 
 /// Check whether the context has breached the cleaning threshold and a reverie
 /// should be auto-triggered.

@@ -3,10 +3,10 @@
 //! Extracts the data logic from `ui::sidebar::full` and `ui::sidebar::collapsed`
 //! into pure functions returning IR types. No ratatui, no Frame.
 
-use cp_render::frame::{HelpHint, PrCard, Sidebar, SidebarEntry, SidebarMode, TokenBar, TokenRow, TokenStats};
-use cp_render::{ProgressSegment, Semantic};
 use cp_base::state::data::model_helpers::ModelPricing as _;
 use cp_base::state::data::model_helpers::token_cost;
+use cp_render::frame::{HelpHint, PrCard, Sidebar, SidebarEntry, SidebarMode, TokenBar, TokenRow, TokenStats};
+use cp_render::{ProgressSegment, Semantic};
 
 use crate::state::{Kind, State};
 use crate::ui::helpers::{format_number, spinner};
