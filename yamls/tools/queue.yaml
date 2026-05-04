@@ -10,9 +10,6 @@ tools:
   Queue_undo:
     description: |
       Removes specific queued action(s) by their index number. Check the Queue panel to see indices.
+      If all remaining actions are removed, the queue automatically deactivates.
     parameters:
       indices: "Indices of queued actions to remove (e.g., [1, 3])"
-
-  Queue_empty:
-    description: |
-      Discards all queued actions without executing them. The queue is cleared and deactivated.

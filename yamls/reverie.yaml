@@ -43,6 +43,6 @@ report_nudge: |
 # Error messages returned as tool results
 errors:
   tool_not_available: "Tool '{tool_name}' is not available to the reverie."
-  queue_not_empty: "Cannot report with {count} unflushed queued action(s). Call Queue_execute to flush or Queue_empty to discard first."
+  queue_not_empty: "Cannot report with {count} unflushed queued action(s). Call Queue_execute to flush or Queue_undo to discard first."
   reverie_disabled: "Reverie is disabled. Enable it in config (Ctrl+H → r) first."
   already_running: "A reverie with agent '{agent_id}' is already running. Wait for it to complete before invoking again."

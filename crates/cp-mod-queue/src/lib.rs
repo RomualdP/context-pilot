@@ -1,9 +1,10 @@
 //! Queue module — batch tool calls and execute them atomically.
 //!
-//! Four tools: `Queue_pause`, `Queue_execute` (flush),
-//! `Queue_undo` (remove by index), `Queue_empty` (discard all). The queue
-//! intercepts tool calls in the pipeline, stores them, and replays on flush.
-//! Reverie sub-agents get their own activation flag sharing the same queue storage.
+//! Three tools: `Queue_pause`, `Queue_execute` (flush),
+//! `Queue_undo` (remove by index; auto-deactivates when all items removed).
+//! The queue intercepts tool calls in the pipeline, stores them, and replays
+//! on flush. Reverie sub-agents get their own activation flag sharing the same
+//! queue storage.
 
 /// Queue sidebar panel rendering.
 mod panel;
@@ -109,11 +110,6 @@ impl Module for QueueModule {
                 .reverie_allowed(true)
                 .param_array("indices", ParamType::Integer, true)
                 .build(),
-            ToolDefinition::from_yaml("Queue_empty", t)
-                .short_desc("Discard all queued actions")
-                .category("Queue")
-                .reverie_allowed(true)
-                .build(),
         ]
     }
     fn pre_flight(&self, tool: &ToolUse, state: &State) -> Option<Verdict> {
@@ -154,7 +150,6 @@ impl Module for QueueModule {
         match tool.name.as_str() {
             "Queue_pause" => Some(tools::execute_pause(tool, state)),
             "Queue_undo" => Some(tools::execute_undo(tool, state)),
-            "Queue_empty" => Some(tools::execute_empty(tool, state)),
             // Queue_execute is handled in tool_pipeline.rs (needs module dispatch access)
             _ => None,
         }

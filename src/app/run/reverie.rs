@@ -149,12 +149,6 @@ pub(super) fn handle_reverie_tools(app: &mut App) {
                     rev.queue_active = false;
                 }
                 crate::infra::tools::ToolResult::new(tool.id.clone(), "Queue paused (reverie)".into(), false)
-            } else if tool.name == "Queue_empty" {
-                if let Some(rev) = app.state.reveries.get_mut(&agent_id) {
-                    rev.queue_active = false;
-                }
-                QueueState::get_mut(&mut app.state).clear();
-                crate::infra::tools::ToolResult::new(tool.id.clone(), "Queue emptied (reverie)".into(), false)
             } else if let Some(result) = tools::dispatch_reverie_tool(tool, &app.state) {
                 // Check for Report sentinel
                 if result.content.starts_with("REVERIE_REPORT:") {

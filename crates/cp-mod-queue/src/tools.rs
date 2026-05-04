@@ -69,7 +69,15 @@ pub(crate) fn execute_undo(tool: &ToolUse, state: &mut State) -> ToolResult {
         }
         let _r = write!(msg, "Not found: #{}", not_found.join(", #"));
     }
-    let _r = write!(msg, ". {} action(s) remaining.", qs.queued_calls.len());
+
+    // Auto-deactivate when the queue is drained completely
+    if qs.queued_calls.is_empty() && qs.active {
+        qs.active = false;
+        qs.next_index = 1;
+        let _r = write!(msg, ". Queue empty — deactivated.");
+    } else {
+        let _r = write!(msg, ". {} action(s) remaining.", qs.queued_calls.len());
+    }
 
     ToolResult {
         tool_use_id: tool.id.clone(),
@@ -77,23 +85,6 @@ pub(crate) fn execute_undo(tool: &ToolUse, state: &mut State) -> ToolResult {
         display: None,
         tldr: None,
         is_error: !not_found.is_empty() && removed.is_empty(),
-        preserves_tempo: false,
-        tool_name: tool.name.clone(),
-    }
-}
-
-/// Execute `Queue_empty`: discard all queued actions without executing.
-pub(crate) fn execute_empty(tool: &ToolUse, state: &mut State) -> ToolResult {
-    let qs = QueueState::get_mut(state);
-    let n = qs.queued_calls.len();
-    qs.clear();
-    qs.active = false;
-    ToolResult {
-        tool_use_id: tool.id.clone(),
-        content: format!("Queue emptied. Discarded {n} action(s)."),
-        display: None,
-        tldr: None,
-        is_error: false,
         preserves_tempo: false,
         tool_name: tool.name.clone(),
     }
