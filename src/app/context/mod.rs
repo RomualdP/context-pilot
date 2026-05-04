@@ -1,4 +1,5 @@
 use cp_base::cast::Safe as _;
+use cp_base::state::data::model_helpers::ModelPricing as _;
 
 use crate::app::panels::{ContextItem, collect_all_context, refresh_all_panels};
 use crate::infra::tools::ToolDefinition;

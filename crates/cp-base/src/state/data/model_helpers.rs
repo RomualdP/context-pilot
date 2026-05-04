@@ -1,19 +1,41 @@
-//! Model selection and pricing helpers for [`State`].
+//! Model selection, pricing, and cleaning-threshold helpers for [`State`].
 //!
 //! Extracted from `runtime.rs` to keep it under the 500-line structure limit.
+//! Uses a trait (`ModelPricing`) so the `impl` lives here without triggering
+//! `clippy::multiple_inherent_impl`.
 
 use super::super::runtime::State;
 use crate::cast::Safe as _;
 use crate::config::llm_types::{LlmProvider, ModelInfo as _};
 
-#[expect(
-    clippy::multiple_inherent_impl,
-    reason = "State methods split into model_helpers.rs for 500-line structure limit"
-)]
-impl State {
-    /// Get the API model string for the current provider/model selection
-    #[must_use]
-    pub fn current_model(&self) -> String {
+/// Model-selection, pricing, and context-budget helpers for [`State`].
+pub trait ModelPricing {
+    /// API model string for the active provider/model selection.
+    fn current_model(&self) -> String;
+    /// Max output tokens for the active provider/model.
+    fn current_max_output_tokens(&self) -> u32;
+    /// Max output tokens for the secondary provider/model.
+    fn secondary_max_output_tokens(&self) -> u32;
+    /// Context window size (tokens) for the active model.
+    fn model_context_window(&self) -> usize;
+    /// Effective context budget: custom override or full context window.
+    fn effective_context_budget(&self) -> usize;
+    /// Cache-hit input price per million tokens.
+    fn cache_hit_price_per_mtok(&self) -> f32;
+    /// Cache-miss input price per million tokens.
+    fn cache_miss_price_per_mtok(&self) -> f32;
+    /// Output price per million tokens.
+    fn output_price_per_mtok(&self) -> f32;
+    /// Cleaning target as absolute proportion (threshold × target ratio).
+    fn cleaning_target(&self) -> f32;
+    /// Cleaning threshold in tokens.
+    fn cleaning_threshold_tokens(&self) -> usize;
+    /// Cleaning target in tokens.
+    fn cleaning_target_tokens(&self) -> usize;
+}
+
+impl ModelPricing for State {
+    fn current_model(&self) -> String {
         match self.llm_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.anthropic_model.api_name().to_string()
@@ -25,9 +47,7 @@ impl State {
         }
     }
 
-    /// Get the max output tokens for the current provider/model selection
-    #[must_use]
-    pub fn current_max_output_tokens(&self) -> u32 {
+    fn current_max_output_tokens(&self) -> u32 {
         match self.llm_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.anthropic_model.max_output_tokens()
@@ -39,9 +59,7 @@ impl State {
         }
     }
 
-    /// Get the max output tokens for the secondary provider/model selection
-    #[must_use]
-    pub fn secondary_max_output_tokens(&self) -> u32 {
+    fn secondary_max_output_tokens(&self) -> u32 {
         match self.secondary_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.secondary_anthropic_model.max_output_tokens()
@@ -53,9 +71,7 @@ impl State {
         }
     }
 
-    /// Get the current model's context window
-    #[must_use]
-    pub fn model_context_window(&self) -> usize {
+    fn model_context_window(&self) -> usize {
         match self.llm_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.anthropic_model.context_window()
@@ -67,15 +83,11 @@ impl State {
         }
     }
 
-    /// Get effective context budget (custom or model's full context)
-    #[must_use]
-    pub fn effective_context_budget(&self) -> usize {
+    fn effective_context_budget(&self) -> usize {
         self.context_budget.unwrap_or_else(|| self.model_context_window())
     }
 
-    /// Cache hit price per million tokens for the current model.
-    #[must_use]
-    pub fn cache_hit_price_per_mtok(&self) -> f32 {
+    fn cache_hit_price_per_mtok(&self) -> f32 {
         match self.llm_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.anthropic_model.cache_hit_price_per_mtok()
@@ -87,9 +99,7 @@ impl State {
         }
     }
 
-    /// Cache miss price per million tokens for the current model.
-    #[must_use]
-    pub fn cache_miss_price_per_mtok(&self) -> f32 {
+    fn cache_miss_price_per_mtok(&self) -> f32 {
         match self.llm_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.anthropic_model.cache_miss_price_per_mtok()
@@ -101,9 +111,7 @@ impl State {
         }
     }
 
-    /// Output price per million tokens for the current model.
-    #[must_use]
-    pub fn output_price_per_mtok(&self) -> f32 {
+    fn output_price_per_mtok(&self) -> f32 {
         match self.llm_provider {
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 self.anthropic_model.output_price_per_mtok()
@@ -115,29 +123,21 @@ impl State {
         }
     }
 
-    /// Calculate cost in USD for a given token count and price per `MTok`.
-    #[must_use]
-    pub fn token_cost(tokens: usize, price_per_mtok: f32) -> f64 {
-        tokens.to_f64() * price_per_mtok.to_f64() / 1_000_000.0
-    }
-
-    // === Cleaning thresholds ===
-
-    /// Get the cleaning target as absolute proportion (threshold × `target_proportion`)
-    #[must_use]
-    pub fn cleaning_target(&self) -> f32 {
+    fn cleaning_target(&self) -> f32 {
         self.cleaning_threshold * self.cleaning_target_proportion
     }
 
-    /// Get cleaning threshold in tokens
-    #[must_use]
-    pub fn cleaning_threshold_tokens(&self) -> usize {
+    fn cleaning_threshold_tokens(&self) -> usize {
         (self.effective_context_budget().to_f32() * self.cleaning_threshold).to_usize()
     }
 
-    /// Get cleaning target in tokens
-    #[must_use]
-    pub fn cleaning_target_tokens(&self) -> usize {
+    fn cleaning_target_tokens(&self) -> usize {
         (self.effective_context_budget().to_f32() * self.cleaning_target()).to_usize()
     }
+}
+
+/// Cost in USD for a given token count and price per million tokens.
+#[must_use]
+pub fn token_cost(tokens: usize, price_per_mtok: f32) -> f64 {
+    tokens.to_f64() * price_per_mtok.to_f64() / 1_000_000.0
 }

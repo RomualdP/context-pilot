@@ -1,4 +1,5 @@
 use cp_base::cast::Safe as _;
+use cp_base::state::data::model_helpers::ModelPricing as _;
 
 use crate::modules::all_modules;
 use crate::state::{State, estimate_tokens, get_context_type_meta};

@@ -3,6 +3,7 @@
 //! Extracted to keep `config_overlay.rs` under the 500-line structure limit.
 
 use ratatui::prelude::{Color, Line, Span, Style};
+use cp_base::state::data::model_helpers::ModelPricing as _;
 
 use crate::infra::constants::chars;
 use crate::state::State;

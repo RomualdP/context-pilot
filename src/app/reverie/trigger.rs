@@ -6,6 +6,7 @@
 
 use crate::state::State;
 use cp_base::state::reverie::{Kind, Session};
+use cp_base::state::data::model_helpers::ModelPricing as _;
 
 /// Check whether the context has breached the cleaning threshold and a reverie
 /// should be auto-triggered.

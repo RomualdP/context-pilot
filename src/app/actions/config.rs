@@ -1,4 +1,5 @@
 use cp_base::panels::time_arith;
+use cp_base::state::data::model_helpers::ModelPricing as _;
 
 use crate::state::State;
 

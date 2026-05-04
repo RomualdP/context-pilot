@@ -1,5 +1,7 @@
 use cp_base::panels::now_ms;
 use cp_base::state::runtime::State;
+use cp_base::state::data::model_helpers::ModelPricing as _;
+use cp_base::state::data::model_helpers::token_cost;
 
 use crate::types::SpineState;
 
@@ -93,9 +95,9 @@ impl GuardRailStopLogic for MaxCostGuard {
 impl MaxCostGuard {
     /// Calculate the total estimated session cost in USD.
     fn calculate_cost(state: &State) -> f64 {
-        let hit_cost = State::token_cost(state.cache_hit_tokens, state.cache_hit_price_per_mtok());
-        let miss_cost = State::token_cost(state.cache_miss_tokens, state.cache_miss_price_per_mtok());
-        let output_cost = State::token_cost(state.total_output_tokens, state.output_price_per_mtok());
+        let hit_cost = token_cost(state.cache_hit_tokens, state.cache_hit_price_per_mtok());
+        let miss_cost = token_cost(state.cache_miss_tokens, state.cache_miss_price_per_mtok());
+        let output_cost = token_cost(state.total_output_tokens, state.output_price_per_mtok());
         hit_cost + miss_cost + output_cost
     }
 }
@@ -132,9 +134,9 @@ impl GuardRailStopLogic for MaxStreamCostGuard {
 impl MaxStreamCostGuard {
     /// Calculate the cost of the current stream in USD.
     fn calculate_stream_cost(state: &State) -> f64 {
-        let hit_cost = State::token_cost(state.stream_cache_hit_tokens, state.cache_hit_price_per_mtok());
-        let miss_cost = State::token_cost(state.stream_cache_miss_tokens, state.cache_miss_price_per_mtok());
-        let output_cost = State::token_cost(state.stream_output_tokens, state.output_price_per_mtok());
+        let hit_cost = token_cost(state.stream_cache_hit_tokens, state.cache_hit_price_per_mtok());
+        let miss_cost = token_cost(state.stream_cache_miss_tokens, state.cache_miss_price_per_mtok());
+        let output_cost = token_cost(state.stream_output_tokens, state.output_price_per_mtok());
         hit_cost + miss_cost + output_cost
     }
 }

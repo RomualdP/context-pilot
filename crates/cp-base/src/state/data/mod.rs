@@ -5,4 +5,4 @@ pub mod config;
 /// Message struct and conversation formatting.
 pub mod message;
 /// Model selection, pricing, and cleaning-threshold helpers for [`super::runtime::State`].
-pub(crate) mod model_helpers;
+pub mod model_helpers;

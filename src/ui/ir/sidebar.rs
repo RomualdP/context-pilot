@@ -5,6 +5,8 @@
 
 use cp_render::frame::{HelpHint, PrCard, Sidebar, SidebarEntry, SidebarMode, TokenBar, TokenRow, TokenStats};
 use cp_render::{ProgressSegment, Semantic};
+use cp_base::state::data::model_helpers::ModelPricing as _;
+use cp_base::state::data::model_helpers::token_cost;
 
 use crate::state::{Kind, State};
 use crate::ui::helpers::{format_number, spinner};
@@ -224,7 +226,7 @@ fn build_token_bar(state: &State) -> TokenBar {
 fn build_token_stats(state: &State) -> Option<TokenStats> {
     /// Returns `Some(cost)` when ≥ $0.001, else `None`.
     fn token_cost_opt(tokens: usize, price: f32) -> Option<f64> {
-        let c = State::token_cost(tokens, price);
+        let c = token_cost(tokens, price);
         (c >= 0.001).then_some(c)
     }
 
@@ -276,9 +278,9 @@ fn build_token_stats(state: &State) -> Option<TokenStats> {
     }
 
     // Total cost
-    let total_cost = State::token_cost(state.cache_hit_tokens, hit_price)
-        + State::token_cost(state.cache_miss_tokens, miss_price)
-        + State::token_cost(state.total_output_tokens, out_price);
+    let total_cost = token_cost(state.cache_hit_tokens, hit_price)
+        + token_cost(state.cache_miss_tokens, miss_price)
+        + token_cost(state.total_output_tokens, out_price);
     let total_cost_opt = (total_cost >= 0.001).then_some(total_cost);
 
     Some(TokenStats {

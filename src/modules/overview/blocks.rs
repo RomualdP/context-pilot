@@ -4,6 +4,7 @@
 //! `cp_render` types instead of ratatui. Called from `OverviewPanel::blocks()`.
 
 use cp_render::{Align, Block, Cell, Column, ProgressSegment, Semantic, Span};
+use cp_base::state::data::model_helpers::ModelPricing as _;
 
 use crate::modules::all_modules;
 use crate::state::{State, get_context_type_meta};
