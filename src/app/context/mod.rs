@@ -110,8 +110,16 @@ pub(super) fn prepare_stream_context(
     // the notification would still be "unprocessed" when the stream ends).
     cp_mod_spine::types::SpineState::mark_user_message_notifications_processed(state);
 
-    // Detach old conversation chunks before anything else
-    detach::detach_conversation_chunks(state);
+    // Compute freeze conditions early — needed to guard detachment below
+    // and reused later for the unified freeze pass.
+    let cond = freeze_conditions(state);
+
+    // Detach old conversation chunks — but NOT when the freeze engine is
+    // preserving the prompt prefix. Detaching creates new panels and drains
+    // messages, which would break the exact cache prefix that freezing protects.
+    if !cond.freeze_order() {
+        detach::detach_conversation_chunks(state);
+    }
 
     // Refresh conversation token counts (not panel-based yet)
     refresh_conversation_context(state);
@@ -125,7 +133,8 @@ pub(super) fn prepare_stream_context(
     // === Panel ordering ===
     // When frozen, panels keep their previous sorted positions — no reordering
     // from `last_refresh_ms` changes. When unfrozen, sort by freshness and save.
-    let cond = freeze_conditions(state);
+    // (`cond` was computed early — before detach guard — and is still valid here:
+    // neither queue_active nor tempo changed between there and here.)
 
     // === Tempo lifecycle ===
     // Read the current tempo flag for this tick's freeze decisions, then reset.
