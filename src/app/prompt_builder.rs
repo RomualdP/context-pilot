@@ -62,10 +62,23 @@ pub(crate) fn assemble_prompt(
 
         if msg.msg_type == MsgKind::ToolResult {
             for result in &msg.tool_results {
-                content_blocks.push(ContentBlock::ToolResult {
-                    tool_use_id: result.tool_use_id.clone(),
-                    content: result.content.clone(),
+                // Guard: only include tool results whose matching tool_use
+                // exists in the same message slice. After conversation
+                // detachment, orphaned results (call detached, result remains)
+                // would cause API errors if sent without their pair.
+                let has_matching_call = messages.get(..idx).is_some_and(|preceding| {
+                    preceding
+                        .iter()
+                        .filter(|m| m.msg_type == MsgKind::ToolCall)
+                        .filter(|m| m.status != MsgStatus::Deleted && m.status != MsgStatus::Detached)
+                        .any(|m| m.tool_uses.iter().any(|t| t.id == result.tool_use_id))
                 });
+                if has_matching_call {
+                    content_blocks.push(ContentBlock::ToolResult {
+                        tool_use_id: result.tool_use_id.clone(),
+                        content: result.content.clone(),
+                    });
+                }
             }
             if !content_blocks.is_empty() {
                 api_messages.push(ApiMessage { role: "user".to_string(), content: content_blocks });

@@ -12,38 +12,32 @@ use crate::state::{Entry, Kind, Message, MsgKind, MsgStatus, compute_total_pages
 use cp_base::panels::time_arith;
 
 /// Check if `idx` is a turn boundary — a safe place to split the conversation.
-/// A turn boundary is after a complete assistant turn:
-/// - After an assistant text message (not a tool call)
-/// - After a tool result, IF the next message is a user text message (end of tool loop)
-/// - After a tool result that is the last message (shouldn't happen but handle gracefully)
+///
+/// A boundary is valid ONLY when the next active message is a user
+/// `TextMessage` (a fresh user turn). This guarantees the remaining
+/// conversation never starts with an orphaned `ToolResult` whose
+/// matching `ToolCall` was detached into a history panel.
 fn is_turn_boundary(messages: &[Message], idx: usize) -> bool {
     let Some(msg) = messages.get(idx) else {
         return false;
     };
 
-    // Skip Deleted/Detached messages — not meaningful boundaries
+    // Deleted/Detached messages are not meaningful boundaries
     if msg.status == MsgStatus::Deleted || msg.status == MsgStatus::Detached {
         return false;
     }
 
-    // After an assistant text message (not a tool call)
-    if msg.role == "assistant" && msg.msg_type == MsgKind::TextMessage {
-        return true;
-    }
-
-    // After a tool result, if next non-skipped message is a user text message
-    if msg.msg_type == MsgKind::ToolResult {
-        let rest = messages.get(idx.saturating_add(1)..).unwrap_or_default();
-        for next in rest {
-            if next.status == MsgStatus::Deleted || next.status == MsgStatus::Detached {
-                continue;
-            }
-            return next.role == "user" && next.msg_type == MsgKind::TextMessage;
+    // Walk forward to the next active message — split is safe only if
+    // it's a user TextMessage (new human turn, clean slate).
+    let rest = messages.get(idx.saturating_add(1)..).unwrap_or_default();
+    for next in rest {
+        if next.status == MsgStatus::Deleted || next.status == MsgStatus::Detached {
+            continue;
         }
-        return true; // Last message in conversation
+        return next.role == "user" && next.msg_type == MsgKind::TextMessage;
     }
-
-    false
+    // Last active message in conversation — safe to detach everything
+    true
 }
 
 /// Format a range of messages into a text chunk (delegates to shared function).
