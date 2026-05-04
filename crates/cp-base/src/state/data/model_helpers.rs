@@ -2,7 +2,7 @@
 //!
 //! Extracted from `runtime.rs` to keep it under the 500-line structure limit.
 
-use super::runtime::State;
+use super::super::runtime::State;
 use crate::cast::Safe as _;
 use crate::config::llm_types::{LlmProvider, ModelInfo as _};
 

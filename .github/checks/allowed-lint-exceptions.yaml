@@ -85,7 +85,7 @@ exceptions:
       Could merge all impl blocks into a single file, but that would
       create a 2500+ line file. The split is intentional for navigation.
 
-  - path: "crates/cp-base/src/state/model_helpers.rs"
+  - path: "crates/cp-base/src/state/data/model_helpers.rs"
     match: "State methods split into model_helpers.rs for 500-line structure limit"
     reason: >
       State model/pricing/cleaning methods extracted from runtime.rs
