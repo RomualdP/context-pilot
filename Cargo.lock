@@ -915,6 +915,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cp-mod-search"
+version = "0.1.0"
+dependencies = [
+ "cp-base",
+ "cp-render",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "cp-mod-spine"
 version = "0.1.0"
 dependencies = [
@@ -6007,6 +6018,7 @@ dependencies = [
  "cp-mod-prompt",
  "cp-mod-queue",
  "cp-mod-scratchpad",
+ "cp-mod-search",
  "cp-mod-spine",
  "cp-mod-todo",
  "cp-mod-tree",
