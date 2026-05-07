@@ -28,6 +28,14 @@ pub(crate) struct SearchPersistData {
     pub ocr_failed: u64,
     /// OCR: files served from the disk cache (persisted across reloads).
     pub ocr_cached: u64,
+    /// Per-file recompute counter: how many times each file has been re-indexed.
+    /// Persisted across TUI reloads to accumulate counts over time.
+    #[serde(default)]
+    pub recompute_counts: HashMap<String, u64>,
+    /// Per-file last-sent timestamp (ms since epoch).
+    /// Persisted so "recently recomputed" survives reloads.
+    #[serde(default)]
+    pub last_sent_ms: HashMap<String, u64>,
 }
 
 /// Full runtime search state stored in the `State` `TypeMap`.
@@ -199,6 +207,12 @@ pub(crate) struct SearchMetrics {
     ///
     /// Refreshed at most every 2 seconds by `overlay_info()`.
     pub live_stats: Option<MeiliLiveStats>,
+    /// Per-file recompute counter: how many times each relative path
+    /// has been delete+re-indexed since project creation.
+    pub recompute_counts: HashMap<String, u64>,
+    /// Per-file last-sent timestamp (ms since epoch): when each file
+    /// was most recently pushed to Meilisearch.
+    pub last_sent_ms: HashMap<String, u64>,
 }
 
 /// Commands sent to the background indexer thread.
@@ -275,6 +289,10 @@ pub struct SearchOverlayInfo {
     pub last_update: String,
     /// Recent Meilisearch tasks (last 5).
     pub recent_tasks: Vec<MeiliTaskInfo>,
+    /// Top files by recompute count (sorted descending, max 8).
+    pub top_recomputed: Vec<(String, u64)>,
+    /// Most recently re-indexed files (sorted by timestamp descending, max 8).
+    pub recently_sent: Vec<(String, u64)>,
 }
 
 // -- Search results ----------------------------------------------------------

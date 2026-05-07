@@ -394,9 +394,15 @@ fn index_one_file(ctx: &IndexerCtx, abs_path: &Path) {
                 m.tree_sitter_chunks = m.tree_sitter_chunks.saturating_add(1);
             }
         }
-        m.last_activity_ms = std::time::SystemTime::now()
+        let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+        m.last_activity_ms = now_ms;
+
+        // Track per-file recompute counts and last-sent timestamps
+        let rc = m.recompute_counts.entry(rel_str.to_string()).or_insert(0);
+        *rc = rc.saturating_add(1);
+        let _prev = m.last_sent_ms.insert(rel_str.to_string(), now_ms);
     }
 }
 

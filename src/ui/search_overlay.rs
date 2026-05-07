@@ -232,6 +232,33 @@ fn build_overlay_lines(state: &State) -> Vec<Line<'static>> {
         }
     }
 
+    // ── Top Recomputed ──
+    if !info.top_recomputed.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header("Top Recomputed"));
+        for (path, count) in &info.top_recomputed {
+            let short = truncate_path(path, 38);
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {count:>4}×  "), Style::default().fg(theme::warning())),
+                Span::styled(short, Style::default().fg(theme::text())),
+            ]));
+        }
+    }
+
+    // ── Recently Sent ──
+    if !info.recently_sent.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header("Recently Sent"));
+        for (path, ts_ms) in &info.recently_sent {
+            let short = truncate_path(path, 38);
+            let ago = if *ts_ms > 0 { format_ago(*ts_ms) } else { "?".to_string() };
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {ago:>8}  "), Style::default().fg(theme::text_muted())),
+                Span::styled(short, Style::default().fg(theme::text())),
+            ]));
+        }
+    }
+
     // ── Footer ──
     lines.push(Line::from(""));
     lines.push(Line::from(dim_span("  Ctrl+C copy · Ctrl+I or Esc to dismiss")));
@@ -274,6 +301,18 @@ fn format_ago(ms_then: u64) -> String {
 /// Create a dimmed span for hint text.
 fn dim_span(text: &'static str) -> Span<'static> {
     Span::styled(text, Style::default().add_modifier(Modifier::DIM))
+}
+
+/// Truncate a file path to fit within `max_len` characters.
+///
+/// If the path is longer, keeps the last `max_len - 1` characters
+/// prefixed with `…` so the filename is always visible.
+fn truncate_path(path: &str, max_len: usize) -> String {
+    if path.len() <= max_len {
+        return path.to_string();
+    }
+    let start = path.len().saturating_sub(max_len.saturating_sub(1));
+    format!("…{}", path.get(start..).unwrap_or(path))
 }
 
 /// Format a byte count as a human-readable string (e.g. "215 MB").
@@ -413,6 +452,23 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
         for task in &info.recent_tasks {
             writeln!(out, "  #{:<6} {:<10} {:<10} {}", task.uid, task.task_type, task.status, task.duration)
                 .unwrap_or(());
+        }
+    }
+
+    // Top Recomputed
+    if !info.top_recomputed.is_empty() {
+        out.push_str("\n── Top Recomputed ──\n");
+        for (path, count) in &info.top_recomputed {
+            writeln!(out, "  {count:>4}×  {path}").unwrap_or(());
+        }
+    }
+
+    // Recently Sent
+    if !info.recently_sent.is_empty() {
+        out.push_str("\n── Recently Sent ──\n");
+        for (path, ts_ms) in &info.recently_sent {
+            let ago = if *ts_ms > 0 { format_ago(*ts_ms) } else { "?".to_string() };
+            writeln!(out, "  {ago:>8}  {path}").unwrap_or(());
         }
     }
 

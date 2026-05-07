@@ -198,6 +198,8 @@ impl Module for SearchModule {
             persist.ocr_succeeded = m.ocr_succeeded;
             persist.ocr_failed = m.ocr_failed;
             persist.ocr_cached = m.ocr_cached;
+            persist.recompute_counts.clone_from(&m.recompute_counts);
+            persist.last_sent_ms.clone_from(&m.last_sent_ms);
         }
         serde_json::to_value(&persist).unwrap_or(serde_json::Value::Null)
     }
@@ -228,6 +230,12 @@ impl Module for SearchModule {
                 m.ocr_failed = persist.ocr_failed;
                 m.ocr_cached = persist.ocr_cached;
                 m.ocr_enabled = true;
+            }
+
+            // Restore recompute tracking from persisted data
+            if let Ok(mut m) = metrics.lock() {
+                m.recompute_counts.clone_from(&persist.recompute_counts);
+                m.last_sent_ms.clone_from(&persist.last_sent_ms);
             }
 
             // Restart indexer + watcher if the server was available

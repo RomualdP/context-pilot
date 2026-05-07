@@ -31,6 +31,17 @@ pub(crate) fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
     ext_vec.sort_by_key(|e| std::cmp::Reverse(e.1));
     ext_vec.truncate(8);
 
+    // Sort recompute counts descending, take top 8
+    let mut top_recomputed: Vec<(String, u64)> =
+        metrics.recompute_counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    top_recomputed.sort_by_key(|e| std::cmp::Reverse(e.1));
+    top_recomputed.truncate(8);
+
+    // Sort last_sent_ms descending (most recent first), take top 8
+    let mut recently_sent: Vec<(String, u64)> = metrics.last_sent_ms.iter().map(|(k, v)| (k.clone(), *v)).collect();
+    recently_sent.sort_by_key(|e| std::cmp::Reverse(e.1));
+    recently_sent.truncate(8);
+
     // Extract live stats (or defaults)
     let live = metrics.live_stats.clone().unwrap_or_default();
 
@@ -72,6 +83,8 @@ pub(crate) fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
                 duration: humanize_duration(&t.duration),
             })
             .collect(),
+        top_recomputed,
+        recently_sent,
     })
 }
 
