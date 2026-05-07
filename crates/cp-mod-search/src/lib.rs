@@ -239,14 +239,18 @@ impl Module for SearchModule {
                 );
             }
 
-            // Restore OCR metrics from persisted data (not stored in Meilisearch)
-            if let Ok(mut m) = metrics.lock() {
+            // Restore OCR metrics from persisted data (not stored in Meilisearch).
+            // Only overwrite if persist has real values — otherwise keep the
+            // inferred values from populate_initial_metrics (which checks the
+            // disk cache and Meilisearch facets as a fallback).
+            if let Ok(mut m) = metrics.lock()
+                && persist.ocr_attempted > 0
+            {
                 m.ocr_attempted = persist.ocr_attempted;
                 m.ocr_succeeded = persist.ocr_succeeded;
                 m.ocr_failed = persist.ocr_failed;
                 m.ocr_cached = persist.ocr_cached;
-                // OCR was available if files were previously processed
-                m.ocr_enabled = persist.ocr_attempted > 0;
+                m.ocr_enabled = true;
             }
 
             // Restart indexer + watcher if the server was available
