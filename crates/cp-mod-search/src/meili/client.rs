@@ -56,36 +56,6 @@ impl MeiliClient {
 
     // -- Index operations ----------------------------------------------------
 
-    /// Enable the experimental vector store feature.
-    ///
-    /// Required before configuring embedders. Idempotent — safe to call
-    /// even if already enabled.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the API call fails.
-    pub(crate) fn enable_vector_store(&self) -> Result<(), String> {
-        let url = format!("{}/experimental-features", self.base_url);
-        let body = serde_json::json!({ "vectorStore": true });
-
-        let resp = self
-            .http
-            .patch(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .body(body.to_string())
-            .send()
-            .map_err(|e| format!("enable_vector_store request failed: {e}"))?;
-
-        let status = resp.status().as_u16();
-        if status == 200 {
-            Ok(())
-        } else {
-            let text = resp.text().unwrap_or_default();
-            Err(format!("enable_vector_store returned HTTP {status}: {}", truncate_str(&text, 200)))
-        }
-    }
-
     /// Configure embedder settings for an index.
     ///
     /// Uses `PATCH /indexes/{uid}/settings/embedders` to set up the embedding
@@ -484,9 +454,4 @@ impl MeiliClient {
             Err(format!("{operation} returned HTTP {status}: {msg}"))
         }
     }
-}
-
-/// Truncate a string to `max_len` characters for error messages.
-fn truncate_str(s: &str, max_len: usize) -> &str {
-    s.get(..s.floor_char_boundary(max_len)).unwrap_or(s)
 }

@@ -38,11 +38,6 @@ pub(crate) fn ensure_indexes(port: u16, master_key: &str, project_hash: &str) ->
     let files_uid = format!("cp_{project_hash}_files");
     let logs_uid = format!("cp_{project_hash}_logs");
 
-    // Enable vector store (required for embedders, idempotent)
-    if let Err(e) = meili.enable_vector_store() {
-        log::warn!("Could not enable vector store: {e}");
-    }
-
     // Files index
     if !meili.index_exists(&files_uid)? {
         let create_task = meili.create_index(&files_uid, "id")?;
@@ -207,9 +202,9 @@ fn count_ocr_indexed_files(extension_counts: &std::collections::HashMap<String, 
 
 /// The `huggingFace` model used for local embeddings.
 ///
-/// BGE-small-en-v1.5: 33M params, 384 dims, ~130 MB download.
-/// Good quality/speed tradeoff for code and text search.
-const EMBEDDER_MODEL: &str = "BAAI/bge-small-en-v1.5";
+/// BGE-base-en-v1.5: 109M params, 768 dims, ~440 MB download.
+/// Best quality/speed tradeoff for code search on CPU (candle runtime).
+const EMBEDDER_MODEL: &str = "BAAI/bge-base-en-v1.5";
 
 /// Configure embedders on the files and logs indexes if not already set.
 ///

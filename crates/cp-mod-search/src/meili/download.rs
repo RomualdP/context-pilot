@@ -28,41 +28,17 @@ fn detect_platform() -> Result<&'static str, String> {
     }
 }
 
-/// Fetch the latest Meilisearch release tag from GitHub.
+/// Pinned Meilisearch version.
 ///
-/// Uses the GitHub Releases API (`/repos/.../releases/latest`).
-///
-/// # Errors
-///
-/// Returns an error if the API request fails or the response is unexpected.
-fn fetch_latest_version() -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .user_agent("context-pilot/0.1")
-        .build()
-        .map_err(|e| format!("Cannot create HTTP client: {e}"))?;
-
-    let resp = client
-        .get("https://api.github.com/repos/meilisearch/meilisearch/releases/latest")
-        .send()
-        .map_err(|e| format!("GitHub API request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API returned status {}", resp.status()));
-    }
-
-    let body: serde_json::Value = resp.json().map_err(|e| format!("Cannot parse GitHub API response: {e}"))?;
-
-    body.get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .map(String::from)
-        .ok_or_else(|| "GitHub API response missing 'tag_name'".to_string())
-}
+/// We pin to a known-good release to avoid breaking changes from `latest`.
+/// Bump this deliberately after testing new Meilisearch versions.
+const MEILISEARCH_VERSION: &str = "v1.13.3";
 
 /// Download the Meilisearch binary for the current platform.
 ///
-/// Fetches the latest version from GitHub, downloads the binary, and
-/// makes it executable. Skips if the binary already exists.
+/// Uses the pinned version from [`MEILISEARCH_VERSION`]. The binary is
+/// stored at `~/.context-pilot/meilisearch/bin/meilisearch`.
+/// Skips if the binary already exists.
 ///
 /// # Errors
 ///
@@ -77,7 +53,7 @@ pub(crate) fn download_binary() -> Result<(), String> {
     }
 
     let platform = detect_platform()?;
-    let tag = fetch_latest_version()?;
+    let tag = MEILISEARCH_VERSION;
 
     let url = format!("https://github.com/meilisearch/meilisearch/releases/download/{tag}/meilisearch-{platform}");
 
