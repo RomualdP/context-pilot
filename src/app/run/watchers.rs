@@ -281,8 +281,8 @@ pub(super) fn check_timer_based_deprecation(app: &mut App) {
 /// On macOS, kqueue uses 1 FD per watched path — without cleanup, opening
 /// hundreds of files over a session will hit the default 256 FD limit.
 fn sync_file_watchers(app: &mut App) {
-    use std::collections::HashSet;
     use cp_base::panels::WatchSpec;
+    use std::collections::HashSet;
     let Some(watcher) = &mut app.file_watcher else { return };
 
     // Collect all currently-wanted watch paths from all modules
@@ -292,26 +292,25 @@ fn sync_file_watchers(app: &mut App) {
     for module in &modules {
         for spec in module.watch_paths(&app.state) {
             match spec {
-                WatchSpec::File(path) => { let _ = wanted_files.insert(path); }
-                WatchSpec::Dir(path) | WatchSpec::DirRecursive(path) => { let _ = wanted_dirs.insert(path); }
+                WatchSpec::File(path) => {
+                    let _ = wanted_files.insert(path);
+                }
+                WatchSpec::Dir(path) | WatchSpec::DirRecursive(path) => {
+                    let _ = wanted_dirs.insert(path);
+                }
             }
         }
     }
 
     // Remove watches for paths no longer needed (frees kqueue FDs)
-    let stale_files: Vec<String> = app.watched_file_paths.iter()
-        .filter(|p| !wanted_files.contains(*p))
-        .cloned()
-        .collect();
+    let stale_files: Vec<String> =
+        app.watched_file_paths.iter().filter(|p| !wanted_files.contains(*p)).cloned().collect();
     for path in &stale_files {
         watcher.unwatch_file(path);
         let _ = app.watched_file_paths.remove(path);
     }
 
-    let stale_dirs: Vec<String> = app.watched_dir_paths.iter()
-        .filter(|p| !wanted_dirs.contains(*p))
-        .cloned()
-        .collect();
+    let stale_dirs: Vec<String> = app.watched_dir_paths.iter().filter(|p| !wanted_dirs.contains(*p)).cloned().collect();
     for path in &stale_dirs {
         watcher.unwatch_dir(path);
         let _ = app.watched_dir_paths.remove(path);

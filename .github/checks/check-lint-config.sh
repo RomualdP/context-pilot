@@ -113,7 +113,8 @@ flush_section() {
     return
   fi
   echo "===SECTION:$1:$start_marker==="
-  sed -n "/^\\${start_marker}/,/^\\${end_prefix}/p" "$fpath" | head -n -1
+  # Use sed '$ d' instead of head -n -1 (BSD head on macOS doesn't support negative counts)
+  sed -n "/^\\${start_marker}/,/^\\${end_prefix}/p" "$fpath" | sed '$ d'
 }
 
 content_hash() {
