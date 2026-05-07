@@ -259,14 +259,9 @@ impl MeiliClient {
 
     // -- Stats ----------------------------------------------------------------
 
-    /// Get global Meilisearch statistics across all indexes.
+    /// Get global statistics across all indexes (`GET /stats`).
     ///
-    /// Uses `GET /stats`. Returns the raw JSON response including
-    /// `databaseSize`, `usedDatabaseSize`, `lastUpdate`, and per-index stats.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error on network failures.
+    /// Returns raw JSON with `databaseSize`, `usedDatabaseSize`, per-index stats.
     pub(crate) fn global_stats(&self) -> Result<serde_json::Value, String> {
         let url = format!("{}/stats", self.base_url);
         let resp = self
@@ -279,13 +274,7 @@ impl MeiliClient {
         resp.json().map_err(|e| format!("global_stats response parse failed: {e}"))
     }
 
-    /// Get index statistics (document count, indexing status).
-    ///
-    /// Uses `GET /indexes/{uid}/stats`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error on network failures or if the index doesn't exist.
+    /// Get index statistics — document count and indexing status (`GET /indexes/{uid}/stats`).
     pub(crate) fn index_stats(&self, uid: &str) -> Result<(u64, bool), String> {
         let url = format!("{}/indexes/{uid}/stats", self.base_url);
         let resp = self
@@ -304,11 +293,38 @@ impl MeiliClient {
         }
 
         let json: serde_json::Value = resp.json().map_err(|e| format!("index_stats response parse failed: {e}"))?;
-
         let doc_count = json.get("numberOfDocuments").and_then(serde_json::Value::as_u64).unwrap_or(0);
         let is_indexing = json.get("isIndexing").and_then(serde_json::Value::as_bool).unwrap_or(false);
-
         Ok((doc_count, is_indexing))
+    }
+
+    /// Get the Meilisearch server version string (`GET /version` → `pkgVersion`).
+    pub(crate) fn version(&self) -> Result<String, String> {
+        let url = format!("{}/version", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .map_err(|e| format!("version request failed: {e}"))?;
+
+        let json: serde_json::Value = resp.json().map_err(|e| format!("version parse failed: {e}"))?;
+        Ok(json.get("pkgVersion").and_then(serde_json::Value::as_str).unwrap_or("unknown").to_string())
+    }
+
+    /// Get recent tasks filtered to specific index UIDs (`GET /tasks?limit=N&indexUids=...`).
+    pub(crate) fn recent_tasks(&self, limit: u32, index_uids: &[&str]) -> Result<serde_json::Value, String> {
+        let uids_param = index_uids.join(",");
+        let url = format!("{}/tasks?limit={limit}&indexUids={uids_param}", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .map_err(|e| format!("recent_tasks request failed: {e}"))?;
+
+        let json: serde_json::Value = resp.json().map_err(|e| format!("recent_tasks parse failed: {e}"))?;
+        Ok(json.get("results").cloned().unwrap_or_else(|| serde_json::Value::Array(Vec::new())))
     }
 
     // -- Search ---------------------------------------------------------------

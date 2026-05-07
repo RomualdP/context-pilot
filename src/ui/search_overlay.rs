@@ -62,11 +62,14 @@ fn build_overlay_lines(state: &State) -> Vec<Line<'static>> {
         if info.port > 0 { ("● online", theme::success()) } else { ("○ offline", theme::error()) };
 
     lines.push(Line::from(""));
+    let version_label =
+        if info.meili_version.is_empty() { String::new() } else { format!("  v{}", info.meili_version) };
     lines.push(Line::from(vec![
         Span::raw("  Server  "),
         Span::styled(server_url, Style::default().fg(theme::text())),
         Span::raw("  "),
         Span::styled(status_label, Style::default().fg(status_color)),
+        Span::styled(version_label, Style::default().fg(theme::text_muted())),
     ]));
 
     // ── Database ──
@@ -78,7 +81,16 @@ fn build_overlay_lines(state: &State) -> Vec<Line<'static>> {
             Span::styled(format_bytes(info.used_database_size_bytes), Style::default().fg(theme::text())),
             Span::styled(" / ", Style::default().fg(theme::text_muted())),
             Span::styled(format_bytes(info.database_size_bytes), Style::default().fg(theme::text_muted())),
+            Span::raw("    "),
+            Span::styled("Docs  ", Style::default().fg(theme::text_muted())),
+            Span::styled(format_bytes(info.raw_document_db_size), Style::default().fg(theme::text())),
         ]));
+        if info.avg_document_size > 0 {
+            lines.push(Line::from(vec![
+                Span::raw("  Avg chunk  "),
+                Span::styled(format_bytes(info.avg_document_size), Style::default().fg(theme::text())),
+            ]));
+        }
     }
 
     // ── Core Stats (two-column) ──
@@ -155,6 +167,21 @@ fn build_overlay_lines(state: &State) -> Vec<Line<'static>> {
             Span::styled(emb_status.0, Style::default().fg(emb_status.1)),
         ]));
 
+        // Embedding coverage
+        if info.files_total_doc_count > 0 {
+            let coverage_pct =
+                info.files_embedded_doc_count.saturating_mul(100).checked_div(info.files_total_doc_count).unwrap_or(0);
+            let cov_color = if coverage_pct >= 100 { theme::success() } else { theme::warning() };
+            lines.push(Line::from(vec![
+                Span::raw("  Coverage "),
+                Span::styled(
+                    format!("{}/{}", info.files_embedded_doc_count, info.files_total_doc_count),
+                    Style::default().fg(cov_color),
+                ),
+                Span::styled(format!("  ({coverage_pct}%)"), Style::default().fg(theme::text_muted())),
+            ]));
+        }
+
         if info.logs_doc_count > 0 {
             lines.push(Line::from(format!("  Logs    {} documents", info.logs_doc_count)));
         }
@@ -181,6 +208,26 @@ fn build_overlay_lines(state: &State) -> Vec<Line<'static>> {
                 Span::raw("  "),
                 Span::styled("Enabled", Style::default().fg(theme::success())),
                 Span::styled(" — no OCR files found yet", Style::default().fg(theme::text_muted())),
+            ]));
+        }
+    }
+
+    // ── Recent Tasks ──
+    if !info.recent_tasks.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header("Recent Tasks"));
+        for task in &info.recent_tasks {
+            let task_color = match task.status.as_str() {
+                "succeeded" => theme::success(),
+                "failed" => theme::error(),
+                "processing" => theme::warning(),
+                _ => theme::text_muted(), // enqueued
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("  #{:<6}", task.uid), Style::default().fg(theme::text_muted())),
+                Span::raw(format!("{:<10} ", task.task_type)),
+                Span::styled(format!("{:<10} ", task.status), Style::default().fg(task_color)),
+                Span::styled(task.duration.clone(), Style::default().fg(theme::text_muted())),
             ]));
         }
     }
@@ -262,9 +309,10 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
     let mut out = String::with_capacity(512);
 
     // Server
+    let version = if info.meili_version.is_empty() { String::new() } else { format!("  v{}", info.meili_version) };
     writeln!(
         out,
-        "Indexing Status\n\nServer  http://127.0.0.1:{}  {}\n",
+        "Indexing Status\n\nServer  http://127.0.0.1:{}  {}{version}\n",
         info.port,
         if info.port > 0 { "online" } else { "offline" },
     )
@@ -274,11 +322,16 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
     if info.database_size_bytes > 0 {
         writeln!(
             out,
-            "── Database ──\nDisk  {} / {}\n",
+            "── Database ──\nDisk  {} / {}    Docs  {}",
             format_bytes(info.used_database_size_bytes),
             format_bytes(info.database_size_bytes),
+            format_bytes(info.raw_document_db_size),
         )
         .unwrap_or(());
+        if info.avg_document_size > 0 {
+            writeln!(out, "Avg chunk  {}", format_bytes(info.avg_document_size)).unwrap_or(());
+        }
+        out.push('\n');
     }
 
     // Core stats
@@ -325,6 +378,12 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
         }
         let status = if info.files_is_indexing { "generating" } else { "ready" };
         writeln!(out, "Vectors {}  {status}", info.files_embedding_count).unwrap_or(());
+        if info.files_total_doc_count > 0 {
+            let pct =
+                info.files_embedded_doc_count.saturating_mul(100).checked_div(info.files_total_doc_count).unwrap_or(0);
+            writeln!(out, "Coverage {}/{}  ({pct}%)", info.files_embedded_doc_count, info.files_total_doc_count)
+                .unwrap_or(());
+        }
         if info.logs_doc_count > 0 {
             writeln!(out, "Logs    {} documents", info.logs_doc_count).unwrap_or(());
         }
@@ -345,6 +404,15 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
             }
         } else {
             out.push_str("Enabled — no OCR files found yet\n");
+        }
+    }
+
+    // Recent Tasks
+    if !info.recent_tasks.is_empty() {
+        out.push_str("\n── Recent Tasks ──\n");
+        for task in &info.recent_tasks {
+            writeln!(out, "  #{:<6} {:<10} {:<10} {}", task.uid, task.task_type, task.status, task.duration)
+                .unwrap_or(());
         }
     }
 

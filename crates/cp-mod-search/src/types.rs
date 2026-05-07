@@ -109,6 +109,19 @@ pub(crate) struct Chunk {
     pub char_end: u32,
 }
 
+/// A recent Meilisearch task (for the overlay "Recent Tasks" section).
+#[derive(Debug, Clone)]
+pub(crate) struct MeiliTask {
+    /// Task UID.
+    pub uid: u64,
+    /// Task type (e.g. "documentAdditionOrUpdate", "settingsUpdate").
+    pub task_type: String,
+    /// Task status ("succeeded", "processing", "enqueued", "failed").
+    pub status: String,
+    /// ISO 8601 duration (e.g. "PT0.254092S") or empty if still running.
+    pub duration: String,
+}
+
 /// Live statistics fetched from the Meilisearch `/stats` endpoint.
 ///
 /// Cached in `SearchMetrics` and refreshed at most every 2 seconds
@@ -129,6 +142,20 @@ pub(crate) struct MeiliLiveStats {
     pub embedding_model: String,
     /// Unix timestamp (ms) when these stats were fetched.
     pub fetched_at_ms: u64,
+    /// Meilisearch server version (e.g. "1.43.0").
+    pub version: String,
+    /// Average document size in bytes (files index).
+    pub avg_document_size: u64,
+    /// Raw document storage size in bytes (files index).
+    pub raw_document_db_size: u64,
+    /// Number of documents that have embeddings (files index).
+    pub files_embedded_doc_count: u64,
+    /// Total number of documents in the files index.
+    pub files_total_doc_count: u64,
+    /// ISO 8601 timestamp of last index update (from Meilisearch).
+    pub last_update: String,
+    /// Recent tasks (last 5, filtered to project indexes).
+    pub recent_tasks: Vec<MeiliTask>,
 }
 
 /// Runtime metrics for the background indexer.
@@ -234,9 +261,36 @@ pub struct SearchOverlayInfo {
     pub logs_doc_count: u64,
     /// Name of the configured embedding model.
     pub embedding_model: String,
+    /// Meilisearch server version (e.g. "1.43.0").
+    pub meili_version: String,
+    /// Average document size in bytes (files index).
+    pub avg_document_size: u64,
+    /// Raw document storage size in bytes (files index).
+    pub raw_document_db_size: u64,
+    /// Number of documents that have embeddings.
+    pub files_embedded_doc_count: u64,
+    /// Total number of documents in the files index.
+    pub files_total_doc_count: u64,
+    /// ISO 8601 timestamp of last index update.
+    pub last_update: String,
+    /// Recent Meilisearch tasks (last 5).
+    pub recent_tasks: Vec<MeiliTaskInfo>,
 }
 
 // -- Search results ----------------------------------------------------------
+
+/// A recent Meilisearch task exposed to the overlay renderer.
+#[derive(Debug, Clone)]
+pub struct MeiliTaskInfo {
+    /// Task UID.
+    pub uid: u64,
+    /// Short task type label (e.g. "docAdd", "docDelete", "settings").
+    pub task_type: String,
+    /// Task status ("succeeded", "processing", "enqueued", "failed").
+    pub status: String,
+    /// Human-readable duration (e.g. "0.25s") or "—" if still running.
+    pub duration: String,
+}
 
 /// A single search result, either a file chunk or a log entry.
 ///

@@ -32,19 +32,7 @@ pub(crate) fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
     ext_vec.truncate(8);
 
     // Extract live stats (or defaults)
-    let (db_size, db_used, emb_count, is_indexing, logs_count, model) = metrics.live_stats.as_ref().map_or_else(
-        || (0, 0, 0, false, 0, String::new()),
-        |ls| {
-            (
-                ls.database_size_bytes,
-                ls.used_database_size_bytes,
-                ls.files_embedding_count,
-                ls.files_is_indexing,
-                ls.logs_doc_count,
-                ls.embedding_model.clone(),
-            )
-        },
-    );
+    let live = metrics.live_stats.clone().unwrap_or_default();
 
     Some(SearchOverlayInfo {
         port: ss.persist.port,
@@ -62,12 +50,28 @@ pub(crate) fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
         ocr_failed: metrics.ocr_failed,
         ocr_cached: metrics.ocr_cached,
         ocr_available: metrics.ocr_enabled,
-        database_size_bytes: db_size,
-        used_database_size_bytes: db_used,
-        files_embedding_count: emb_count,
-        files_is_indexing: is_indexing,
-        logs_doc_count: logs_count,
-        embedding_model: model,
+        database_size_bytes: live.database_size_bytes,
+        used_database_size_bytes: live.used_database_size_bytes,
+        files_embedding_count: live.files_embedding_count,
+        files_is_indexing: live.files_is_indexing,
+        logs_doc_count: live.logs_doc_count,
+        embedding_model: live.embedding_model.clone(),
+        meili_version: live.version,
+        avg_document_size: live.avg_document_size,
+        raw_document_db_size: live.raw_document_db_size,
+        files_embedded_doc_count: live.files_embedded_doc_count,
+        files_total_doc_count: live.files_total_doc_count,
+        last_update: live.last_update,
+        recent_tasks: live
+            .recent_tasks
+            .iter()
+            .map(|t| crate::types::MeiliTaskInfo {
+                uid: t.uid,
+                task_type: shorten_task_type(&t.task_type),
+                status: t.status.clone(),
+                duration: humanize_duration(&t.duration),
+            })
+            .collect(),
     })
 }
 
@@ -120,7 +124,72 @@ fn refresh_live_stats(ss: &SearchState) {
         .and_then(|v| v.get("default")?.get("model")?.as_str().map(String::from))
         .unwrap_or_default();
 
-    let live = parse_live_stats(&stats, &files_uid, &logs_uid, &model);
+    // Fetch server version (cheap GET, never changes but simpler to always fetch)
+    let version = meili.version().unwrap_or_default();
+
+    // Fetch recent tasks filtered to this project's indexes
+    let tasks_json =
+        meili.recent_tasks(5, &[&files_uid, &logs_uid]).unwrap_or_else(|_| serde_json::Value::Array(Vec::new()));
+
+    // -- Parse stats into MeiliLiveStats (inlined to avoid too_many_arguments) --
+
+    let db_size = stats.get("databaseSize").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let db_used = stats.get("usedDatabaseSize").and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let last_update = stats.get("lastUpdate").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+
+    let indexes = stats.get("indexes");
+
+    let files_stats = indexes.and_then(|i| i.get(&files_uid));
+    let emb_count =
+        files_stats.and_then(|f| f.get("numberOfEmbeddings")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let is_indexing =
+        files_stats.and_then(|f| f.get("isIndexing")).and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let avg_doc_size =
+        files_stats.and_then(|f| f.get("avgDocumentSize")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let raw_doc_db =
+        files_stats.and_then(|f| f.get("rawDocumentDbSize")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let embedded_count =
+        files_stats.and_then(|f| f.get("numberOfEmbeddedDocuments")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let total_count =
+        files_stats.and_then(|f| f.get("numberOfDocuments")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+
+    let logs_stats = indexes.and_then(|i| i.get(&logs_uid));
+    let logs_count =
+        logs_stats.and_then(|l| l.get("numberOfDocuments")).and_then(serde_json::Value::as_u64).unwrap_or(0);
+
+    // Parse recent tasks
+    let recent_tasks = tasks_json
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| {
+                    Some(crate::types::MeiliTask {
+                        uid: t.get("uid")?.as_u64()?,
+                        task_type: t.get("type")?.as_str()?.to_string(),
+                        status: t.get("status")?.as_str()?.to_string(),
+                        duration: t.get("duration").and_then(serde_json::Value::as_str).unwrap_or("").to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let live = MeiliLiveStats {
+        database_size_bytes: db_size,
+        used_database_size_bytes: db_used,
+        files_embedding_count: emb_count,
+        files_is_indexing: is_indexing,
+        logs_doc_count: logs_count,
+        embedding_model: model,
+        fetched_at_ms: current_ms(),
+        version,
+        avg_document_size: avg_doc_size,
+        raw_document_db_size: raw_doc_db,
+        files_embedded_doc_count: embedded_count,
+        files_total_doc_count: total_count,
+        last_update,
+        recent_tasks,
+    };
 
     // Write to cache (lock held briefly)
     if let Ok(mut m) = ss.metrics.lock() {
@@ -128,30 +197,40 @@ fn refresh_live_stats(ss: &SearchState) {
     }
 }
 
-/// Parse the raw `/stats` JSON into a [`MeiliLiveStats`].
-fn parse_live_stats(stats: &serde_json::Value, files_uid: &str, logs_uid: &str, model: &str) -> MeiliLiveStats {
-    let db_size = stats.get("databaseSize").and_then(serde_json::Value::as_u64).unwrap_or(0);
-    let db_used = stats.get("usedDatabaseSize").and_then(serde_json::Value::as_u64).unwrap_or(0);
+/// Shorten Meilisearch task type names for compact display.
+fn shorten_task_type(task_type: &str) -> String {
+    match task_type {
+        "documentAdditionOrUpdate" => "docAdd".to_string(),
+        "documentDeletion" => "docDel".to_string(),
+        "settingsUpdate" => "settings".to_string(),
+        "indexCreation" => "create".to_string(),
+        "indexUpdate" => "update".to_string(),
+        "indexDeletion" => "delete".to_string(),
+        "indexSwap" => "swap".to_string(),
+        "taskCancelation" => "cancel".to_string(),
+        "taskDeletion" => "taskDel".to_string(),
+        "dumpCreation" => "dump".to_string(),
+        "snapshotCreation" => "snapshot".to_string(),
+        other => other.to_string(),
+    }
+}
 
-    let indexes = stats.get("indexes");
+/// Convert an ISO 8601 duration string (e.g. "PT0.254092S") to a short
+/// human-readable form (e.g. "0.25s"). Returns "—" for empty strings.
+fn humanize_duration(iso: &str) -> String {
+    if iso.is_empty() {
+        return "\u{2014}".to_string(); // em-dash
+    }
 
-    let files_stats = indexes.and_then(|i| i.get(files_uid));
-    let emb_count =
-        files_stats.and_then(|f| f.get("numberOfEmbeddings")).and_then(serde_json::Value::as_u64).unwrap_or(0);
-    let is_indexing =
-        files_stats.and_then(|f| f.get("isIndexing")).and_then(serde_json::Value::as_bool).unwrap_or(false);
+    // Strip "PT" prefix and "S" suffix: "PT0.254092S" → "0.254092"
+    let stripped = iso.strip_prefix("PT").unwrap_or(iso);
+    let stripped = stripped.strip_suffix('S').unwrap_or(stripped);
 
-    let logs_stats = indexes.and_then(|i| i.get(logs_uid));
-    let logs_count =
-        logs_stats.and_then(|l| l.get("numberOfDocuments")).and_then(serde_json::Value::as_u64).unwrap_or(0);
-
-    MeiliLiveStats {
-        database_size_bytes: db_size,
-        used_database_size_bytes: db_used,
-        files_embedding_count: emb_count,
-        files_is_indexing: is_indexing,
-        logs_doc_count: logs_count,
-        embedding_model: model.to_string(),
-        fetched_at_ms: current_ms(),
+    // Truncate to 2 decimal places for display
+    if let Some((whole, frac)) = stripped.split_once('.') {
+        let short_frac = frac.get(..2).unwrap_or(frac);
+        format!("{whole}.{short_frac}s")
+    } else {
+        format!("{stripped}s")
     }
 }
