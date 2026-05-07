@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 /// Persisted search state — survives TUI reloads.
 ///
 /// Serialized via `save_module_data` / `load_module_data`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct SearchPersistData {
     /// TCP port the Meilisearch server is listening on.
     pub port: u16,
@@ -19,6 +20,14 @@ pub(crate) struct SearchPersistData {
     pub project_hash: String,
     /// Whether the initial full-project indexing has completed.
     pub index_ready: bool,
+    /// OCR: files where conversion was attempted (persisted across reloads).
+    pub ocr_attempted: u64,
+    /// OCR: files successfully converted to text (persisted across reloads).
+    pub ocr_succeeded: u64,
+    /// OCR: files that failed conversion (persisted across reloads).
+    pub ocr_failed: u64,
+    /// OCR: files served from the disk cache (persisted across reloads).
+    pub ocr_cached: u64,
 }
 
 /// Full runtime search state stored in the `State` `TypeMap`.
@@ -132,6 +141,11 @@ pub(crate) struct SearchMetrics {
     pub ocr_cached: u64,
     /// Whether the initial full-project scan has completed.
     pub scan_complete: bool,
+    /// Whether the Datalab OCR client was successfully created.
+    ///
+    /// Set by the indexer thread on startup.  Read by `overlay_info()`
+    /// to decide whether to show the OCR section.
+    pub ocr_enabled: bool,
 }
 
 /// Commands sent to the background indexer thread.

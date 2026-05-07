@@ -64,7 +64,7 @@ pub fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
         ocr_succeeded: metrics.ocr_succeeded,
         ocr_failed: metrics.ocr_failed,
         ocr_cached: metrics.ocr_cached,
-        ocr_available: ss.indexer_tx.is_some(),
+        ocr_available: metrics.ocr_enabled,
     })
 }
 
@@ -200,7 +200,8 @@ impl Module for SearchModule {
             (None, None)
         };
 
-        let persist = SearchPersistData { port, master_key, project_hash, index_ready: false };
+        let persist =
+            SearchPersistData { port, master_key, project_hash, index_ready: false, ..SearchPersistData::default() };
 
         state.set_ext(SearchState { persist, indexer_tx, watcher, metrics });
     }
@@ -210,10 +211,18 @@ impl Module for SearchModule {
     }
 
     fn save_module_data(&self, state: &State) -> serde_json::Value {
-        state
-            .get_ext::<SearchState>()
-            .and_then(|s| serde_json::to_value(&s.persist).ok())
-            .unwrap_or(serde_json::Value::Null)
+        let Some(ss) = state.get_ext::<SearchState>() else {
+            return serde_json::Value::Null;
+        };
+        // Snapshot OCR metrics into persist so they survive TUI reload
+        let mut persist = ss.persist.clone();
+        if let Ok(m) = ss.metrics.lock() {
+            persist.ocr_attempted = m.ocr_attempted;
+            persist.ocr_succeeded = m.ocr_succeeded;
+            persist.ocr_failed = m.ocr_failed;
+            persist.ocr_cached = m.ocr_cached;
+        }
+        serde_json::to_value(&persist).unwrap_or(serde_json::Value::Null)
     }
 
     fn load_module_data(&self, data: &serde_json::Value, state: &mut State) {
@@ -228,6 +237,16 @@ impl Module for SearchModule {
                     &persist.project_hash,
                     &metrics,
                 );
+            }
+
+            // Restore OCR metrics from persisted data (not stored in Meilisearch)
+            if let Ok(mut m) = metrics.lock() {
+                m.ocr_attempted = persist.ocr_attempted;
+                m.ocr_succeeded = persist.ocr_succeeded;
+                m.ocr_failed = persist.ocr_failed;
+                m.ocr_cached = persist.ocr_cached;
+                // OCR was available if files were previously processed
+                m.ocr_enabled = persist.ocr_attempted > 0;
             }
 
             // Restart indexer + watcher if the server was available

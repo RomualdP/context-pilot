@@ -170,6 +170,13 @@ fn indexer_loop(rx: &mpsc::Receiver<IndexerCmd>, params: &IndexerParams) {
         metrics: std::sync::Arc::clone(&params.metrics),
     };
 
+    // Record whether OCR is available for the overlay
+    if ctx.ocr_client.is_some()
+        && let Ok(mut m) = ctx.metrics.lock()
+    {
+        m.ocr_enabled = true;
+    }
+
     while let Ok(first) = rx.recv() {
         let mut batch = vec![first];
 
