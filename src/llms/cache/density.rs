@@ -293,7 +293,7 @@ mod tests {
     // ── Property tests for all densities ────────────────────────────────
 
     #[test]
-    fn test_uniform_properties() {
+    fn uniform_properties() {
         let density = UniformDensity;
         for num_blocks in [1, 5, 50, 200] {
             assert_density_properties(&density, num_blocks);
@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quadratic_properties() {
+    fn quadratic_properties() {
         let density = QuadraticDensity;
         for num_blocks in [1, 5, 50, 200] {
             assert_density_properties(&density, num_blocks);
@@ -309,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn test_power_law_properties() {
+    fn power_law_properties() {
         for alpha in [0.0, 0.5, 1.0, 2.0, 3.0, 4.0] {
             let density = PowerLawDensity { alpha };
             for num_blocks in [1, 5, 50, 200] {
@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empirical_properties() {
+    fn empirical_properties() {
         let density = EmpiricalDensity { counts: vec![0, 3, 1, 0, 7, 2], smoothing: 1.0 };
         for num_blocks in [1, 5, 6, 10, 200] {
             assert_density_properties(&density, num_blocks);
@@ -329,26 +329,26 @@ mod tests {
     // ── Specific value tests ────────────────────────────────────────────
 
     #[test]
-    fn test_uniform_values() {
+    fn uniform_values() {
         let weights = UniformDensity.weights(5);
         assert_eq!(weights, vec![1.0; 5]);
     }
 
     #[test]
-    fn test_quadratic_values() {
+    fn quadratic_values() {
         let weights = QuadraticDensity.weights(5);
         assert_eq!(weights, vec![1.0, 4.0, 9.0, 16.0, 25.0]);
     }
 
     #[test]
-    fn test_power_law_alpha_zero_is_uniform() {
+    fn power_law_alpha_zero_is_uniform() {
         let weights = PowerLawDensity { alpha: 0.0 }.weights(5);
         // i^0 = 1 for all i
         assert_eq!(weights, vec![1.0; 5]);
     }
 
     #[test]
-    fn test_power_law_alpha_two_matches_quadratic() {
+    fn power_law_alpha_two_matches_quadratic() {
         let power = PowerLawDensity { alpha: 2.0 }.weights(10);
         let quad = QuadraticDensity.weights(10);
         for (p_val, q_val) in power.iter().zip(quad.iter()) {
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empirical_with_smoothing() {
+    fn empirical_with_smoothing() {
         let density = EmpiricalDensity { counts: vec![0, 5, 10], smoothing: 1.0 };
         let weights = density.weights(5);
         // counts: [0, 5, 10, (missing), (missing)] + ε=1.0
@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empirical_zero_smoothing_floors_to_min_positive() {
+    fn empirical_zero_smoothing_floors_to_min_positive() {
         let density = EmpiricalDensity { counts: vec![0], smoothing: 0.0 };
         let weights = density.weights(1);
         // smoothing clamped to f64::MIN_POSITIVE, so weight > 0
@@ -379,7 +379,7 @@ mod tests {
     // ── Edge cases ──────────────────────────────────────────────────────
 
     #[test]
-    fn test_zero_blocks() {
+    fn zero_blocks() {
         assert!(UniformDensity.weights(0).is_empty());
         assert!(QuadraticDensity.weights(0).is_empty());
         assert!(PowerLawDensity { alpha: 2.0 }.weights(0).is_empty());
@@ -387,19 +387,18 @@ mod tests {
     }
 
     #[test]
-    fn test_single_block() {
-        for num_blocks in [1] {
-            assert_density_properties(&UniformDensity, num_blocks);
-            assert_density_properties(&QuadraticDensity, num_blocks);
-            assert_density_properties(&PowerLawDensity { alpha: 3.0 }, num_blocks);
-            assert_density_properties(&EmpiricalDensity { counts: vec![], smoothing: 1.0 }, num_blocks);
-        }
+    fn single_block() {
+        let num_blocks = 1;
+        assert_density_properties(&UniformDensity, num_blocks);
+        assert_density_properties(&QuadraticDensity, num_blocks);
+        assert_density_properties(&PowerLawDensity { alpha: 3.0 }, num_blocks);
+        assert_density_properties(&EmpiricalDensity { counts: vec![], smoothing: 1.0 }, num_blocks);
     }
 
     // ── Monotonicity tests ──────────────────────────────────────────────
 
     #[test]
-    fn test_quadratic_monotonically_increasing() {
+    fn quadratic_monotonically_increasing() {
         let weights = QuadraticDensity.weights(20);
         for pair in weights.windows(2) {
             let left = pair.first().copied().unwrap_or(0.0);
@@ -409,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn test_power_law_positive_alpha_monotonically_increasing() {
+    fn power_law_positive_alpha_monotonically_increasing() {
         for alpha in [0.5, 1.0, 2.0, 3.0] {
             let weights = PowerLawDensity { alpha }.weights(20);
             for pair in weights.windows(2) {
@@ -423,7 +422,7 @@ mod tests {
     // ── Factory tests ───────────────────────────────────────────────────
 
     #[test]
-    fn test_density_kind_builds_all_variants() {
+    fn density_kind_builds_all_variants() {
         let kinds = [
             DensityKind::Uniform,
             DensityKind::Quadratic,

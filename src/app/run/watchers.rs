@@ -282,12 +282,13 @@ pub(super) fn check_timer_based_deprecation(app: &mut App) {
 /// hundreds of files over a session will hit the default 256 FD limit.
 fn sync_file_watchers(app: &mut App) {
     use cp_base::panels::WatchSpec;
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
     let Some(watcher) = &mut app.file_watcher else { return };
 
     // Collect all currently-wanted watch paths from all modules
-    let mut wanted_files: HashSet<String> = HashSet::new();
-    let mut wanted_dirs: HashSet<String> = HashSet::new();
+    // BTreeSet (not HashSet) — deterministic iteration avoids iter_over_hash_type lint.
+    let mut wanted_files: BTreeSet<String> = BTreeSet::new();
+    let mut wanted_dirs: BTreeSet<String> = BTreeSet::new();
     let modules = crate::modules::all_modules();
     for module in &modules {
         for spec in module.watch_paths(&app.state) {

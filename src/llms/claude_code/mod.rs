@@ -5,6 +5,7 @@
 //! Replicates Claude Code's request signature to access Claude 4.5 models.
 
 mod check_api;
+mod debug;
 mod message_format;
 mod stream_types;
 
@@ -49,27 +50,6 @@ fn map_model_name(model: &str) -> &str {
         "claude-haiku-4-5" => "claude-haiku-4-5-20251001",
         _ => model,
     }
-}
-
-/// Directory for last-request debug dumps
-const LAST_REQUESTS_DIR: &str = ".context-pilot/last_requests";
-
-/// Dump the outgoing API request to disk for debugging.
-/// Written to `.context-pilot/last_requests/{worker_id}_last_request.json`.
-fn dump_last_request(worker_id: &str, api_request: &Value) {
-    let debug = serde_json::json!({
-        "request_url": CLAUDE_CODE_ENDPOINT,
-        "request_headers": {
-            "anthropic-beta": OAUTH_BETA_HEADER,
-            "anthropic-version": API_VERSION,
-            "user-agent": "claude-cli/2.1.37 (external, cli)",
-            "x-app": "cli",
-        },
-        "request_body": api_request,
-    });
-    let _r1 = fs::create_dir_all(LAST_REQUESTS_DIR);
-    let path = format!("{LAST_REQUESTS_DIR}/{worker_id}_last_request.json");
-    let _r2 = fs::write(path, serde_json::to_string_pretty(&debug).unwrap_or_default());
 }
 
 /// Claude Code OAuth client
@@ -292,7 +272,7 @@ impl ClaudeCodeClient {
         });
 
         // Always dump last request for debugging (overwritten each call)
-        dump_last_request(&request.worker_id, &api_request);
+        debug::dump_last_request(&request.worker_id, &api_request);
 
         let response = client
             .post(CLAUDE_CODE_ENDPOINT)
@@ -348,38 +328,14 @@ impl ClaudeCodeClient {
                     line_count = line_count.saturating_add(1);
                 }
                 Err(e) => {
-                    // Walk error source chain. Known causes: TimedOut, ConnectionReset, UnexpectedEof
-                    let error_kind = format!("{:?}", e.kind());
-                    let mut root_cause = String::new();
-                    let mut source: Option<&dyn std::error::Error> = std::error::Error::source(&e);
-                    while let Some(s) = source {
-                        root_cause = format!("{s}");
-                        source = std::error::Error::source(s);
-                    }
-                    let tool_ctx = match &current_tool {
-                        Some((id, name, partial)) => {
-                            format!("In-flight tool: {} (id={}), partial input: {} bytes", name, id, partial.len())
-                        }
-                        None => "No tool in progress".to_string(),
-                    };
-                    let recent =
-                        if last_lines.is_empty() { "(no lines read)".to_string() } else { last_lines.join("\n") };
-                    let verbose = format!(
-                        "{}\n\
-                         Error kind: {} | Root cause: {}\n\
-                         Stream position: {} bytes, {} lines read\n\
-                         {}\n\
-                         Response headers:\n{}\n\
-                         Last SSE lines:\n{}",
-                        e,
-                        error_kind,
-                        if root_cause.is_empty() { "(none)".to_string() } else { root_cause },
+                    let verbose = debug::build_stream_read_error(&debug::StreamErrorContext {
+                        err: &e,
+                        current_tool: current_tool.as_ref(),
                         total_bytes,
                         line_count,
-                        tool_ctx,
-                        resp_headers,
-                        recent
-                    );
+                        resp_headers: &resp_headers,
+                        last_lines: &last_lines,
+                    });
                     return Err(LlmError::StreamRead(verbose));
                 }
             }

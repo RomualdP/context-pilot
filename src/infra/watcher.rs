@@ -152,22 +152,22 @@ impl FileWatcher {
     /// Unwatch a file, releasing its kqueue FD.
     pub(crate) fn unwatch_file(&mut self, path: &str) {
         let path_buf = PathBuf::from(path);
-        let canonical = path_buf.canonicalize().unwrap_or_else(|_| path_buf);
-        if let Ok(mut files) = self.watched_files.lock() {
-            if files.remove(&canonical).is_some() {
-                let _r = self.watcher.unwatch(&canonical);
-            }
+        let canonical = path_buf.canonicalize().unwrap_or(path_buf);
+        if let Ok(mut files) = self.watched_files.lock()
+            && files.remove(&canonical).is_some()
+        {
+            let _r = self.watcher.unwatch(&canonical);
         }
     }
 
     /// Unwatch a directory, releasing its kqueue FD.
     pub(crate) fn unwatch_dir(&mut self, path: &str) {
         let path_buf = PathBuf::from(path);
-        let canonical = path_buf.canonicalize().unwrap_or_else(|_| path_buf);
-        if let Ok(mut dirs) = self.watched_dirs.lock() {
-            if dirs.remove(&canonical).is_some() {
-                let _r = self.watcher.unwatch(&canonical);
-            }
+        let canonical = path_buf.canonicalize().unwrap_or(path_buf);
+        if let Ok(mut dirs) = self.watched_dirs.lock()
+            && dirs.remove(&canonical).is_some()
+        {
+            let _r = self.watcher.unwatch(&canonical);
         }
     }
 

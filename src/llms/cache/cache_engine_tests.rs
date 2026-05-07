@@ -10,27 +10,33 @@ fn make_text_block(text: &str) -> ContentBlock {
 fn make_messages(block_count: usize) -> Vec<ApiMessage> {
     let mut msgs: Vec<ApiMessage> = Vec::new();
     for idx in 0..block_count {
-        let role = if idx % 2 == 0 { "user" } else { "assistant" };
+        let role = if idx & 1 == 0 { "user" } else { "assistant" };
         msgs.push(ApiMessage { role: role.to_string(), content: vec![make_text_block(&format!("block_{idx}"))] });
     }
     msgs
 }
 
 #[test]
-fn test_accumulated_hashes_are_chained() {
+fn accumulated_hashes_are_chained() {
     let msgs = make_messages(3);
     let infos = compute_accumulated_hashes(&msgs);
     assert_eq!(infos.len(), 3);
-    // Each hash should be different (chained)
-    assert_ne!(infos[0].acc_hash, infos[1].acc_hash);
-    assert_ne!(infos[1].acc_hash, infos[2].acc_hash);
+    // Each hash should be different (chained) — compare adjacent pairs via windows
+    for pair in infos.windows(2) {
+        let left = pair.first().map(|x| &x.acc_hash);
+        let right = pair.get(1).map(|x| &x.acc_hash);
+        assert_ne!(left, right);
+    }
     // Cumulative tokens should be non-decreasing
-    assert!(infos[0].cumulative_tokens <= infos[1].cumulative_tokens);
-    assert!(infos[1].cumulative_tokens <= infos[2].cumulative_tokens);
+    for pair in infos.windows(2) {
+        let left = pair.first().map(|x| x.cumulative_tokens);
+        let right = pair.get(1).map(|x| x.cumulative_tokens);
+        assert!(left <= right);
+    }
 }
 
 #[test]
-fn test_same_content_produces_same_hash() {
+fn same_content_produces_same_hash() {
     let msgs1 = make_messages(3);
     let msgs2 = make_messages(3);
     let infos1 = compute_accumulated_hashes(&msgs1);
@@ -41,7 +47,7 @@ fn test_same_content_produces_same_hash() {
 }
 
 #[test]
-fn test_tool_use_different_inputs_produce_different_hashes() {
+fn tool_use_different_inputs_produce_different_hashes() {
     let msg_a = vec![ApiMessage {
         role: "assistant".to_string(),
         content: vec![ContentBlock::ToolUse {
@@ -64,14 +70,13 @@ fn test_tool_use_different_inputs_produce_different_hashes() {
 
     assert_eq!(infos_a.len(), 1);
     assert_eq!(infos_b.len(), 1);
-    assert_ne!(
-        infos_a[0].acc_hash, infos_b[0].acc_hash,
-        "ToolUse with same name but different inputs must hash differently"
-    );
+    let hash_a = infos_a.first().map(|x| &x.acc_hash);
+    let hash_b = infos_b.first().map(|x| &x.acc_hash);
+    assert_ne!(hash_a, hash_b, "ToolUse with same name but different inputs must hash differently");
 }
 
 #[test]
-fn test_tool_use_different_ids_produce_different_hashes() {
+fn tool_use_different_ids_produce_different_hashes() {
     let input = serde_json::json!({"query": "hello"});
     let msg_a = vec![ApiMessage {
         role: "assistant".to_string(),
@@ -89,14 +94,13 @@ fn test_tool_use_different_ids_produce_different_hashes() {
     let infos_a = compute_accumulated_hashes(&msg_a);
     let infos_b = compute_accumulated_hashes(&msg_b);
 
-    assert_ne!(
-        infos_a[0].acc_hash, infos_b[0].acc_hash,
-        "ToolUse with same name+inputs but different IDs must hash differently"
-    );
+    let hash_a = infos_a.first().map(|x| &x.acc_hash);
+    let hash_b = infos_b.first().map(|x| &x.acc_hash);
+    assert_ne!(hash_a, hash_b, "ToolUse with same name+inputs but different IDs must hash differently");
 }
 
 #[test]
-fn test_prune_removes_old_entries() {
+fn prune_removes_old_entries() {
     let mut engine = CacheEngine::default();
     let now = 1_000_000_u64;
     engine.breakpoints.push(BreakpointEntry {
@@ -106,29 +110,31 @@ fn test_prune_removes_old_entries() {
     engine.breakpoints.push(BreakpointEntry { acc_hash: "fresh".to_string(), timestamp_ms: now });
     engine.prune(now);
     assert_eq!(engine.breakpoints.len(), 1);
-    assert_eq!(engine.breakpoints[0].acc_hash, "fresh");
+    assert_eq!(engine.breakpoints.first().map(|bp| bp.acc_hash.as_str()), Some("fresh"));
 }
 
 #[test]
-fn test_frontier_detection() {
+fn frontier_detection() {
     let msgs = make_messages(10);
     let infos = compute_accumulated_hashes(&msgs);
 
     let mut engine = CacheEngine::default();
-    engine.breakpoints.push(BreakpointEntry { acc_hash: infos[4].acc_hash.clone(), timestamp_ms: 999_999 });
+    let hash_at_4 = infos.get(4).map(|x| x.acc_hash.clone()).unwrap_or_default();
+    engine.breakpoints.push(BreakpointEntry { acc_hash: hash_at_4, timestamp_ms: 999_999 });
 
     let frontier = engine.find_cache_frontier(&infos);
     assert_eq!(frontier, Some(4));
 }
 
 #[test]
-fn test_beacon_placed_after_frontier() {
+fn beacon_placed_after_frontier() {
     let msgs = make_messages(40);
 
     let mut engine = CacheEngine::default();
     let infos = compute_accumulated_hashes(&msgs);
     // Frontier at block 10 → beacon should be at block 30 (10 + 20)
-    engine.breakpoints.push(BreakpointEntry { acc_hash: infos[10].acc_hash.clone(), timestamp_ms: 999_999 });
+    let hash_at_10 = infos.get(10).map(|x| x.acc_hash.clone()).unwrap_or_default();
+    engine.breakpoints.push(BreakpointEntry { acc_hash: hash_at_10, timestamp_ms: 999_999 });
 
     let plan = engine.compute_breakpoints(&msgs);
     // Beacon at 0-indexed position 30 → msg_idx 30
@@ -137,7 +143,7 @@ fn test_beacon_placed_after_frontier() {
 }
 
 #[test]
-fn test_no_frontier_beacon_at_tail() {
+fn no_frontier_beacon_at_tail() {
     let msgs = make_messages(10);
     let engine = CacheEngine::default(); // no stored BPs
 
@@ -148,7 +154,7 @@ fn test_no_frontier_beacon_at_tail() {
 }
 
 #[test]
-fn test_record_and_retrieve() {
+fn record_and_retrieve() {
     let mut engine = CacheEngine::default();
     let hashes = vec!["hash_a".to_string(), "hash_b".to_string()];
     engine.record_breakpoints(&hashes, 1_000_000);
@@ -157,23 +163,24 @@ fn test_record_and_retrieve() {
     // Recording same hash again should refresh, not duplicate
     engine.record_breakpoints(&["hash_a".to_string()], 2_000_000);
     assert_eq!(engine.breakpoints.len(), 2);
-    assert_eq!(engine.breakpoints.iter().find(|bp| bp.acc_hash == "hash_a").unwrap().timestamp_ms, 2_000_000);
+    let ts = engine.breakpoints.iter().find(|bp| bp.acc_hash == "hash_a").map(|bp| bp.timestamp_ms);
+    assert_eq!(ts, Some(2_000_000));
 }
 
 #[test]
-fn test_serialization_roundtrip() {
+fn serialization_roundtrip() {
     let mut engine = CacheEngine::default();
     engine.breakpoints.push(BreakpointEntry { acc_hash: "test_hash".to_string(), timestamp_ms: 12345 });
 
     let json = engine.to_json();
     let restored = CacheEngine::from_json(&json);
     assert_eq!(restored.breakpoints.len(), 1);
-    assert_eq!(restored.breakpoints[0].acc_hash, "test_hash");
-    assert_eq!(restored.breakpoints[0].timestamp_ms, 12345);
+    assert_eq!(restored.breakpoints.first().map(|bp| bp.acc_hash.as_str()), Some("test_hash"));
+    assert_eq!(restored.breakpoints.first().map(|bp| bp.timestamp_ms), Some(12345));
 }
 
 #[test]
-fn test_empty_prompt() {
+fn empty_prompt() {
     let engine = CacheEngine::default();
     let plan = engine.compute_breakpoints(&[]);
     assert!(plan.positions.is_empty());
@@ -181,7 +188,7 @@ fn test_empty_prompt() {
 }
 
 #[test]
-fn test_plan_respects_four_bp_limit() {
+fn plan_respects_four_bp_limit() {
     let msgs = make_messages(100);
     let engine = CacheEngine::default();
 
@@ -190,7 +197,7 @@ fn test_plan_respects_four_bp_limit() {
 }
 
 #[test]
-fn test_optimizer_spreads_bps() {
+fn optimizer_spreads_bps() {
     let msgs = make_messages(100);
     let engine = CacheEngine::default();
 
@@ -201,19 +208,23 @@ fn test_optimizer_spreads_bps() {
     if plan.positions.len() >= 3 {
         let mut msg_indices: Vec<usize> = plan.positions.iter().map(|(m, _)| *m).collect();
         msg_indices.sort_unstable();
-        let span = msg_indices.last().copied().unwrap_or(0) - msg_indices.first().copied().unwrap_or(0);
+        let last = msg_indices.last().copied().unwrap_or(0);
+        let first = msg_indices.first().copied().unwrap_or(0);
+        let span = last.saturating_sub(first);
         assert!(span > 10, "BPs too clustered: {msg_indices:?}");
     }
 }
 
 #[test]
-fn test_alive_bps_become_omega() {
+fn alive_bps_become_omega() {
     let msgs = make_messages(60);
     let infos = compute_accumulated_hashes(&msgs);
 
     let mut engine = CacheEngine::default();
     // Store BPs at positions 15 and 30 — these become Ω
-    engine.record_breakpoints(&[infos[15].acc_hash.clone(), infos[30].acc_hash.clone()], 999_000);
+    let hash_15 = infos.get(15).map(|x| x.acc_hash.clone()).unwrap_or_default();
+    let hash_30 = infos.get(30).map(|x| x.acc_hash.clone()).unwrap_or_default();
+    engine.record_breakpoints(&[hash_15, hash_30], 999_000);
 
     let plan = engine.compute_breakpoints(&msgs);
     assert_eq!(plan.alive_count, 2);
@@ -223,12 +234,13 @@ fn test_alive_bps_become_omega() {
 }
 
 #[test]
-fn test_full_pipeline_with_frontier() {
+fn full_pipeline_with_frontier() {
     let msgs = make_messages(60);
     let infos = compute_accumulated_hashes(&msgs);
 
     let mut engine = CacheEngine::default();
-    engine.record_breakpoints(&[infos[20].acc_hash.clone()], 999_000);
+    let hash_20 = infos.get(20).map(|x| x.acc_hash.clone()).unwrap_or_default();
+    engine.record_breakpoints(&[hash_20], 999_000);
 
     let plan = engine.compute_breakpoints(&msgs);
 
@@ -242,7 +254,7 @@ fn test_full_pipeline_with_frontier() {
 }
 
 #[test]
-fn test_deterministic() {
+fn deterministic() {
     let msgs = make_messages(50);
     let engine = CacheEngine::default();
 

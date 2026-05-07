@@ -1,12 +1,24 @@
 use super::*;
 
+/// Simple xorshift-like PRNG returning u32 values.
+/// Using u32 output avoids precision-loss casts (u32 fits losslessly in f64).
+fn next_rand_u32(state: &mut u64) -> u32 {
+    *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+    u32::try_from(*state >> 33).unwrap_or(0)
+}
+
+/// Convert usize to f64 safely for small values (via u32 intermediate).
+fn usize_as_f64(val: usize) -> f64 {
+    f64::from(u32::try_from(val).unwrap_or(u32::MAX))
+}
+
 /// Brute-force: enumerate all subsets of {1..N-1}\Ω of size ≤ budget,
 /// compute L(Γ) for each, return the minimum.
 fn brute_force_optimal(tokens: &[u32], density_weights: &[f64], omega: &[usize], budget: usize) -> (Vec<usize>, f64) {
     let num_blocks = tokens.len();
     let ps = PrefixSums::build(tokens, density_weights);
 
-    let omega_set: std::collections::HashSet<usize> = omega.iter().copied().collect();
+    let omega_set: std::collections::BTreeSet<usize> = omega.iter().copied().collect();
     let candidates: Vec<usize> = (1..num_blocks).filter(|x| !omega_set.contains(x)).collect();
 
     let mut best_cost = f64::INFINITY;
@@ -15,7 +27,7 @@ fn brute_force_optimal(tokens: &[u32], density_weights: &[f64], omega: &[usize],
     let max_size = budget.min(candidates.len());
     for size in 0..=max_size {
         for combo in combinations(&candidates, size) {
-            let mut bounds = Vec::with_capacity(omega.len() + combo.len() + 2);
+            let mut bounds = Vec::with_capacity(omega.len().saturating_add(combo.len()).saturating_add(2));
             bounds.push(0);
             bounds.extend_from_slice(omega);
             bounds.extend_from_slice(&combo);
@@ -52,7 +64,7 @@ fn combinations(items: &[usize], count: usize) -> Vec<Vec<usize>> {
     }
     let mut result = Vec::new();
     for (idx, &item) in items.iter().enumerate() {
-        let rest = &items[idx.saturating_add(1)..];
+        let rest = items.get(idx.saturating_add(1)..).unwrap_or_default();
         for mut sub in combinations(rest, count.saturating_sub(1)) {
             sub.insert(0, item);
             result.push(sub);
@@ -64,9 +76,9 @@ fn combinations(items: &[usize], count: usize) -> Vec<Vec<usize>> {
 // ── Brute-force agreement tests ─────────────────────────────────────
 
 #[test]
-fn test_brute_force_uniform_small() {
+fn brute_force_uniform_small() {
     for num_blocks in 6_usize..=12 {
-        let tokens: Vec<u32> = (1..=num_blocks).map(|i| i as u32).collect();
+        let tokens: Vec<u32> = (1..=num_blocks).map(|i| u32::try_from(i).unwrap_or(0)).collect();
         let weights: Vec<f64> = vec![1.0; num_blocks];
         for k_val in 1..=3_usize.min(num_blocks.saturating_sub(1)) {
             let dp_result = optimize_gamma(&tokens, &weights, &[], k_val);
@@ -81,10 +93,10 @@ fn test_brute_force_uniform_small() {
 }
 
 #[test]
-fn test_brute_force_quadratic_density() {
+fn brute_force_quadratic_density() {
     for num_blocks in 8_usize..=14 {
         let tokens: Vec<u32> = vec![10; num_blocks];
-        let weights: Vec<f64> = (1..=num_blocks).map(|i: usize| (i.saturating_mul(i)) as f64).collect();
+        let weights: Vec<f64> = (1..=num_blocks).map(|i: usize| usize_as_f64(i.saturating_mul(i))).collect();
         for k_val in 1..=3_usize.min(num_blocks.saturating_sub(1)) {
             let dp_result = optimize_gamma(&tokens, &weights, &[], k_val);
             let (_, bf_cost) = brute_force_optimal(&tokens, &weights, &[], k_val);
@@ -98,7 +110,7 @@ fn test_brute_force_quadratic_density() {
 }
 
 #[test]
-fn test_brute_force_with_omega() {
+fn brute_force_with_omega() {
     let num_blocks = 10;
     let tokens: Vec<u32> = vec![5; num_blocks];
     let weights: Vec<f64> = vec![1.0; num_blocks];
@@ -118,21 +130,15 @@ fn test_brute_force_with_omega() {
 }
 
 #[test]
-fn test_brute_force_random_densities() {
+fn brute_force_random_densities() {
     let mut seed: u64 = 42;
-    let next_rand = |state: &mut u64| -> f64 {
-        *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-        (*state >> 33) as f64 / (u32::MAX as f64)
-    };
 
     for num_blocks in 10_usize..=18 {
-        let tokens: Vec<u32> = (0..num_blocks)
-            .map(|_| {
-                let val = (next_rand(&mut seed) * 50.0) as u32;
-                val.max(1)
-            })
+        let tokens: Vec<u32> = std::iter::repeat_with(|| next_rand_u32(&mut seed).checked_rem(50).unwrap_or(0).max(1))
+            .take(num_blocks)
             .collect();
-        let weights: Vec<f64> = (0..num_blocks).map(|_| next_rand(&mut seed).max(0.01)).collect();
+        let weights: Vec<f64> =
+            std::iter::repeat_with(|| f64::from(next_rand_u32(&mut seed)).max(0.01)).take(num_blocks).collect();
 
         for k_val in 1..=3_usize.min(num_blocks.saturating_sub(1)) {
             let dp_result = optimize_gamma(&tokens, &weights, &[], k_val);
@@ -147,18 +153,20 @@ fn test_brute_force_random_densities() {
 }
 
 #[test]
-fn test_brute_force_random_with_omega() {
+fn brute_force_random_with_omega() {
     let mut seed: u64 = 1337;
-    let next_rand = |state: &mut u64| -> f64 {
-        *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
-        (*state >> 33) as f64 / (u32::MAX as f64)
-    };
 
     for num_blocks in 12_usize..=16 {
-        let tokens: Vec<u32> = (0..num_blocks).map(|_| ((next_rand(&mut seed) * 30.0) as u32).max(1)).collect();
-        let weights: Vec<f64> = (0..num_blocks).map(|_| next_rand(&mut seed).max(0.01)).collect();
+        let tokens: Vec<u32> = std::iter::repeat_with(|| next_rand_u32(&mut seed).checked_rem(30).unwrap_or(0).max(1))
+            .take(num_blocks)
+            .collect();
+        let weights: Vec<f64> =
+            std::iter::repeat_with(|| f64::from(next_rand_u32(&mut seed)).max(0.01)).take(num_blocks).collect();
 
-        let o1_raw = (next_rand(&mut seed) * num_blocks.saturating_sub(1) as f64) as usize;
+        let o1_raw = usize::try_from(
+            next_rand_u32(&mut seed).checked_rem(u32::try_from(num_blocks.saturating_sub(1)).unwrap_or(1)).unwrap_or(0),
+        )
+        .unwrap_or(0);
         let o1_val = o1_raw.max(1).min(num_blocks.saturating_sub(2));
         let omega = vec![o1_val];
 
@@ -175,9 +183,9 @@ fn test_brute_force_random_with_omega() {
 // ── Property tests ──────────────────────────────────────────────────
 
 #[test]
-fn test_cost_monotone_in_k() {
+fn cost_monotone_in_k() {
     let tokens: Vec<u32> = vec![10; 50];
-    let weights: Vec<f64> = (1..=50_usize).map(|i| (i.saturating_mul(i)) as f64).collect();
+    let weights: Vec<f64> = (1..=50_usize).map(|i| usize_as_f64(i.saturating_mul(i))).collect();
 
     let mut prev_cost = f64::INFINITY;
     for k_val in 0..=5 {
@@ -193,7 +201,7 @@ fn test_cost_monotone_in_k() {
 }
 
 #[test]
-fn test_gamma_disjoint_from_omega() {
+fn gamma_disjoint_from_omega() {
     let tokens: Vec<u32> = vec![10; 20];
     let weights: Vec<f64> = vec![1.0; 20];
     let omega = vec![5, 10, 15];
@@ -205,20 +213,20 @@ fn test_gamma_disjoint_from_omega() {
 }
 
 #[test]
-fn test_gamma_positions_in_range() {
+fn gamma_positions_in_range() {
     let tokens: Vec<u32> = vec![10; 30];
     let weights: Vec<f64> = vec![1.0; 30];
 
     let result = optimize_gamma(&tokens, &weights, &[], 3);
     for &g_pos in &result.gamma {
-        assert!(g_pos >= 1 && g_pos < 30, "Γ position {g_pos} out of range [1, 29]");
+        assert!((1..30).contains(&g_pos), "Γ position {g_pos} out of range [1, 29]");
     }
 }
 
 #[test]
-fn test_gamma_sorted() {
+fn gamma_sorted() {
     let tokens: Vec<u32> = vec![10; 50];
-    let weights: Vec<f64> = (1..=50_usize).map(|i| (i.saturating_mul(i)) as f64).collect();
+    let weights: Vec<f64> = (1..=50_usize).map(|i| usize_as_f64(i.saturating_mul(i))).collect();
 
     let result = optimize_gamma(&tokens, &weights, &[], 3);
     for pair in result.gamma.windows(2) {
@@ -229,10 +237,10 @@ fn test_gamma_sorted() {
 }
 
 #[test]
-fn test_tail_heavy_density_shifts_gamma_right() {
+fn tail_heavy_density_shifts_gamma_right() {
     let num_blocks = 100;
     let tokens: Vec<u32> = vec![10; num_blocks];
-    let weights: Vec<f64> = (1..=num_blocks).map(|i| (i as f64).powi(4)).collect();
+    let weights: Vec<f64> = (1..=num_blocks).map(|i| usize_as_f64(i).powi(4)).collect();
 
     let result = optimize_gamma(&tokens, &weights, &[], 3);
     assert_eq!(result.gamma.len(), 3);
@@ -244,21 +252,21 @@ fn test_tail_heavy_density_shifts_gamma_right() {
 // ── Edge cases ──────────────────────────────────────────────────────
 
 #[test]
-fn test_empty_input() {
+fn empty_input() {
     let result = optimize_gamma(&[], &[], &[], 3);
     assert!(result.gamma.is_empty());
     assert!((result.cost - 0.0).abs() < 1e-9);
 }
 
 #[test]
-fn test_single_block() {
+fn single_block() {
     let result = optimize_gamma(&[42], &[1.0], &[], 3);
     assert!(result.gamma.is_empty());
     assert!((result.cost - 42.0).abs() < 1e-9);
 }
 
 #[test]
-fn test_k_zero() {
+fn k_zero() {
     let tokens: Vec<u32> = vec![10; 10];
     let weights: Vec<f64> = vec![1.0; 10];
     let result = optimize_gamma(&tokens, &weights, &[], 0);
@@ -268,7 +276,7 @@ fn test_k_zero() {
 }
 
 #[test]
-fn test_k_exceeds_available_slots() {
+fn k_exceeds_available_slots() {
     let tokens: Vec<u32> = vec![10; 5];
     let weights: Vec<f64> = vec![1.0; 5];
     let omega = vec![2, 4];
@@ -278,7 +286,7 @@ fn test_k_exceeds_available_slots() {
 }
 
 #[test]
-fn test_omega_at_every_position() {
+fn omega_at_every_position() {
     let num_blocks = 5;
     let tokens: Vec<u32> = vec![10; num_blocks];
     let weights: Vec<f64> = vec![1.0; num_blocks];
@@ -289,7 +297,7 @@ fn test_omega_at_every_position() {
 }
 
 #[test]
-fn test_two_blocks() {
+fn two_blocks() {
     let tokens = vec![10_u32, 20];
     let weights = vec![1.0, 1.0];
 
@@ -304,7 +312,7 @@ fn test_two_blocks() {
 }
 
 #[test]
-fn test_deterministic() {
+fn deterministic() {
     let tokens: Vec<u32> = vec![5, 10, 15, 20, 25, 30];
     let weights: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
 

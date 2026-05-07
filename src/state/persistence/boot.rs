@@ -56,11 +56,11 @@ pub(crate) fn boot_init_modules(state: &mut State, module_data: &BootModuleData,
     }
 
     // Load project-specific .env first (takes priority — dotenvy won't override existing env vars)
-    let _r = dotenvy::dotenv().ok();
+    let _local = dotenvy::dotenv().ok();
     // Load global .env as fallback (only sets vars not already present from project .env)
     if let Ok(home) = std::env::var("HOME") {
         let global_env = std::path::PathBuf::from(home).join(".context-pilot").join(".env");
-        let _r = dotenvy::from_path(&global_env).ok();
+        let _global = dotenvy::from_path(&global_env).ok();
     }
     cp_mod_github::types::GithubState::get_mut(state).github_token = std::env::var("GITHUB_TOKEN").ok();
 
