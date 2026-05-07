@@ -34,11 +34,11 @@ pub(crate) use cp_mod_preset::PresetModule;
 pub(crate) use cp_mod_prompt::PromptModule;
 pub(crate) use cp_mod_queue::QueueModule;
 pub(crate) use cp_mod_scratchpad::ScratchpadModule;
+pub(crate) use cp_mod_search::SearchModule;
 pub(crate) use cp_mod_spine::SpineModule;
 pub(crate) use cp_mod_todo::TodoModule;
 pub(crate) use cp_mod_tree::TreeModule;
 pub(crate) use cp_mod_typst::TypstModule;
-pub(crate) use cp_mod_search::SearchModule;
 
 // Re-export Module trait and helpers from cp-base
 pub(crate) use cp_base::modules::{Module, ToolVisualizer};

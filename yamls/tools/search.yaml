@@ -1,0 +1,31 @@
+# Search tool — Meilisearch full-text search across project files and logs.
+#
+# Files are automatically indexed in the background using tree-sitter AST
+# chunking (semantic: functions, structs, classes) with a character-based
+# fallback for unsupported languages. Logs are indexed with tags, importance,
+# and full-text content.
+#
+# Results appear in a dynamic search panel (YAML-formatted, like brave_search).
+# Use include_context=false for "peek" searches that don't consume context tokens.
+
+tools:
+  search:
+    description: |
+      Search the project codebase and/or logs. Files are automatically indexed
+      in the background using tree-sitter AST chunking (semantic: functions,
+      structs, classes) with a character-based fallback for unsupported languages.
+      Logs are indexed with tags, importance, and full-text content.
+      
+      Results appear in a dynamic search panel (YAML-formatted, like brave_search).
+      Use include_context=false for "peek" searches that don't consume context tokens.
+
+    parameters:
+      query: "Search query. Supports natural language and exact phrases."
+      scope: "Where to search: 'all' (both files and logs), 'project' (files only), 'logs' (logs only). Default 'all'."
+      path_prefix: "Filter files by path prefix (e.g., 'src/app/'). Project scope only."
+      extension: "Filter files by extension (e.g., 'rs', 'py'). Project scope only."
+      sort: "Sort order: 'relevance' (default), 'date_asc', 'date_desc'. 'date_*' sorts by timestamp (logs) or last_modified (files)."
+      from_date: "ISO 8601 date. Only results after this date."
+      to_date: "ISO 8601 date. Only results before this date."
+      include_context: "If true, results appear in both the tool response and the panel. If false, results appear only in the panel ('peek' mode — saves context tokens)."
+      limit: "Max results per scope (1-50, default 20)."

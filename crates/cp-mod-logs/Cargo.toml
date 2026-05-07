@@ -13,7 +13,7 @@ readme.workspace = true
 cp-base.workspace = true
 cp-render.workspace = true
 cp-mod-memory = { path = "../cp-mod-memory" }
-crossterm.workspace = true
+log = "0.4"
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

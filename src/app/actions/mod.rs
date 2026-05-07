@@ -231,6 +231,11 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             state.flags.ui.dirty = true;
             ActionResult::Nothing
         }
+        Action::ToggleIndexOverlay => {
+            state.flags.overlays.index_status = !state.flags.overlays.index_status;
+            state.flags.ui.dirty = true;
+            ActionResult::Nothing
+        }
         Action::ConfigSelectProvider(provider) => {
             state.llm_provider = provider;
             state.flags.lifecycle.api_check_in_progress = true;

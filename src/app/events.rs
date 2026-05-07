@@ -22,6 +22,7 @@ pub(crate) fn handle_event(event: &Event, state: &State) -> Option<Action> {
                     KeyCode::Char('l') => return Some(Action::ClearConversation),
                     KeyCode::Char('n') => return Some(Action::NewContext),
                     KeyCode::Char('h') => return Some(Action::ToggleConfigView),
+                    KeyCode::Char('i') => return Some(Action::ToggleIndexOverlay),
                     KeyCode::Char('v') => return Some(Action::CycleSidebarMode),
                     KeyCode::Char('o') => return Some(Action::ResetSessionCosts),
                     KeyCode::Char('p') => return Some(Action::OpenCommandPalette),
@@ -59,6 +60,11 @@ pub(crate) fn handle_event(event: &Event, state: &State) -> Option<Action> {
             // Config view handles its own keys when open
             if state.flags.config.config_view {
                 return Some(handle_config_event(key, state));
+            }
+
+            // Index overlay: Esc dismisses, all other keys are consumed
+            if state.flags.overlays.index_status {
+                return Some(if key.code == KeyCode::Esc { Action::ToggleIndexOverlay } else { Action::None });
             }
 
             // Escape stops streaming

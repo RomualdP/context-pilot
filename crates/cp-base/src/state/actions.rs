@@ -77,6 +77,8 @@ pub enum Action {
     TogglePerfMonitor,
     /// Toggle the config/settings overlay (F1).
     ToggleConfigView,
+    /// Toggle the Meilisearch indexing status overlay (Ctrl+I).
+    ToggleIndexOverlay,
 
     // === Config overlay — primary model ===
     /// Select primary LLM provider.

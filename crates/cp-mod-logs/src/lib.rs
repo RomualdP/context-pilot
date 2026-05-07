@@ -1,13 +1,11 @@
-//! Logs module — timestamped entries, summarization, and conversation history.
+//! Logs module — timestamped entries and conversation history.
 //!
-//! Four tools: `log_create`, `log_summarize` (collapse multiple into parent),
-//! `log_toggle` (expand/collapse summaries), `Close_conversation_history`
+//! Two tools: `log_create` (with tags + importance), `Close_conversation_history`
 //! (archive a history panel with log/memory extraction). Logs are stored
-//! globally in chunked JSON files under `.context-pilot/logs/`.
+//! globally in chunked JSON files under `.context-pilot/logs/` and indexed
+//! by the search module for full-text retrieval.
 
-/// Logs panel: tree-structured display of log entries with summaries.
-mod panel;
-/// Tool implementations: create, summarize, toggle, close conversation history.
+/// Tool implementations: create, close conversation history.
 mod tools;
 /// Log state types: `LogEntry`, `LogsState`.
 pub mod types;
@@ -47,6 +45,50 @@ fn logs_dir() -> PathBuf {
 /// Get chunk index for a log ID number
 const fn chunk_index(log_id_num: usize) -> usize {
     cp_base::panels::time_arith::div_const::<LOGS_CHUNK_SIZE>(log_id_num)
+}
+
+/// Schema version marker file path.
+fn schema_marker_path() -> PathBuf {
+    logs_dir().join(".schema_v2")
+}
+
+/// Perform clean-slate migration to the v2 schema (tags + importance, no summaries).
+///
+/// If the marker file `.schema_v2` does not exist in the logs directory,
+/// all existing chunk files are deleted and the counter is reset.
+fn migrate_if_needed() {
+    let marker = schema_marker_path();
+    if marker.exists() {
+        return;
+    }
+
+    let dir = logs_dir();
+    if dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("chunk_") || n == "next_id.json")
+                {
+                    let _r = fs::remove_file(&path);
+                }
+            }
+        }
+    } else {
+        let _r = fs::create_dir_all(&dir);
+    }
+
+    // Write reset next_id.json
+    let next_id_json = serde_json::json!({ "next_log_id": 1 });
+    if let Ok(s) = serde_json::to_string_pretty(&next_id_json) {
+        let _r = fs::write(dir.join("next_id.json"), s);
+    }
+
+    // Write marker
+    let _r = fs::write(&marker, "migrated");
+    log::info!("Logs: clean-slate migration to v2 schema complete");
 }
 
 /// Build write operations for chunked log persistence (CPU only — no I/O).
@@ -131,7 +173,7 @@ fn load_logs_chunked() -> (Vec<LogEntry>, usize) {
     (all_logs, next_log_id)
 }
 
-/// Logs module: timestamped entries, summarization, and conversation history management.
+/// Logs module: timestamped entries and conversation history management.
 #[derive(Debug, Clone, Copy)]
 pub struct LogsModule;
 
@@ -156,6 +198,7 @@ impl Module for LogsModule {
     }
 
     fn init_state(&self, state: &mut State) {
+        migrate_if_needed();
         state.set_ext(LogsState::new());
     }
 
@@ -170,6 +213,8 @@ impl Module for LogsModule {
     }
 
     fn load_module_data(&self, _data: &serde_json::Value, state: &mut State) {
+        migrate_if_needed();
+
         // Load logs from chunked files on disk
         let (logs, next_log_id) = load_logs_chunked();
         if !logs.is_empty() || next_log_id > 1 {
@@ -179,17 +224,11 @@ impl Module for LogsModule {
         }
     }
 
-    fn save_worker_data(&self, state: &State) -> serde_json::Value {
-        serde_json::json!({
-            "open_log_ids": LogsState::get(state).open_log_ids,
-        })
+    fn save_worker_data(&self, _state: &State) -> serde_json::Value {
+        serde_json::Value::Null
     }
 
-    fn load_worker_data(&self, data: &serde_json::Value, state: &mut State) {
-        if let Some(arr) = data.get("open_log_ids").and_then(|v| v.as_array()) {
-            LogsState::get_mut(state).open_log_ids = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
-        }
-    }
+    fn load_worker_data(&self, _data: &serde_json::Value, _state: &mut State) {}
 
     fn tool_definitions(&self) -> Vec<ToolDefinition> {
         let t = &*TOOL_TEXTS;
@@ -202,22 +241,14 @@ impl Module for LogsModule {
                     "entries",
                     ParamType::Object(vec![
                         ToolParam::new("content", ParamType::String).desc("Short, atomic log entry").required(),
+                        ToolParam::new("importance", ParamType::String)
+                            .desc("Importance level")
+                            .enum_vals(&["low", "medium", "high", "critical"]),
+                        ToolParam::new("tags", ParamType::Array(Box::new(ParamType::String)))
+                            .desc("Freeform tags for categorization (e.g., ['decision', 'architecture'])"),
                     ]),
                     true,
                 )
-                .build(),
-            ToolDefinition::from_yaml("log_summarize", t)
-                .short_desc("Summarize multiple logs into a parent log")
-                .category("Context")
-                .reverie_allowed(true)
-                .param_array("log_ids", ParamType::String, true)
-                .param("content", ParamType::String, true)
-                .build(),
-            ToolDefinition::from_yaml("log_toggle", t)
-                .short_desc("Expand or collapse a log summary")
-                .category("Context")
-                .param("id", ParamType::String, true)
-                .param_enum("action", &["expand", "collapse"], true)
                 .build(),
             ToolDefinition::from_yaml("Close_conversation_history", t)
                 .short_desc("Close a conversation history panel with logs/memories")
@@ -230,6 +261,11 @@ impl Module for LogsModule {
                         ToolParam::new("content", ParamType::String)
                             .desc("Short, atomic log entry to remember")
                             .required(),
+                        ToolParam::new("importance", ParamType::String)
+                            .desc("Importance level")
+                            .enum_vals(&["low", "medium", "high", "critical"]),
+                        ToolParam::new("tags", ParamType::Array(Box::new(ParamType::String)))
+                            .desc("Freeform tags for categorization"),
                     ]),
                     false,
                 )
@@ -249,34 +285,6 @@ impl Module for LogsModule {
 
     fn pre_flight(&self, tool: &ToolUse, state: &State) -> Option<Verdict> {
         match tool.name.as_str() {
-            "log_summarize" => {
-                let mut pf = Verdict::new();
-                if let Some(ids) = tool.input.get("log_ids").and_then(|v| v.as_array()) {
-                    let logs = &LogsState::get(state).logs;
-                    for id_val in ids {
-                        if let Some(id) = id_val.as_str()
-                            && !logs.iter().any(|l| l.id == id)
-                        {
-                            pf.errors.push(format!("Log '{id}' not found"));
-                        }
-                    }
-                }
-                Some(pf)
-            }
-            "log_toggle" => {
-                let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    let logs = &LogsState::get(state).logs;
-                    match logs.iter().find(|l| l.id == id) {
-                        None => pf.errors.push(format!("Log '{id}' not found")),
-                        Some(log) if log.children_ids.is_empty() => {
-                            pf.errors.push(format!("Log '{id}' has no children — can only toggle summaries"));
-                        }
-                        _ => {}
-                    }
-                }
-                Some(pf)
-            }
             "Close_conversation_history" => {
                 let mut pf = Verdict::new();
                 // Auto-activate queue — closing history panels is destructive
@@ -320,35 +328,26 @@ impl Module for LogsModule {
     fn execute_tool(&self, tool: &ToolUse, state: &mut State) -> Option<ToolResult> {
         match tool.name.as_str() {
             "log_create" => Some(tools::execute_log_create(tool, state)),
-            "log_summarize" => Some(tools::execute_log_summarize(tool, state)),
-            "log_toggle" => Some(tools::execute_log_toggle(tool, state)),
             "Close_conversation_history" => Some(tools::execute_close_conversation_history(tool, state)),
             _ => None,
         }
     }
 
     fn tool_visualizers(&self) -> Vec<(&'static str, ToolVisualizer)> {
-        vec![
-            ("log_create", visualize_logs_output),
-            ("log_summarize", visualize_logs_output),
-            ("log_toggle", visualize_logs_output),
-            ("Close_conversation_history", visualize_logs_output),
-        ]
+        vec![("log_create", visualize_logs_output), ("Close_conversation_history", visualize_logs_output)]
     }
 
-    fn create_panel(&self, context_type: &Kind) -> Option<Box<dyn Panel>> {
-        match context_type.as_str() {
-            Kind::LOGS => Some(Box::new(panel::LogsPanel)),
-            _ => None,
-        }
+    fn create_panel(&self, _context_type: &Kind) -> Option<Box<dyn Panel>> {
+        // No fixed panel — logs are searched via the search module.
+        None
     }
 
     fn fixed_panel_types(&self) -> Vec<Kind> {
-        vec![Kind::new(Kind::LOGS)]
+        vec![]
     }
 
     fn fixed_panel_defaults(&self) -> Vec<(Kind, &'static str, bool)> {
-        vec![(Kind::new(Kind::LOGS), "Logs", true)]
+        vec![]
     }
 
     fn dynamic_panel_types(&self) -> Vec<Kind> {
@@ -356,16 +355,7 @@ impl Module for LogsModule {
     }
 
     fn context_type_metadata(&self) -> Vec<cp_base::state::context::TypeMeta> {
-        vec![cp_base::state::context::TypeMeta {
-            context_type: "logs",
-            icon_id: "memory",
-            is_fixed: true,
-            needs_cache: false,
-            fixed_order: Some(6),
-            display_name: "logs",
-            short_name: "logs",
-            needs_async_wait: false,
-        }]
+        vec![]
     }
 
     fn tool_category_descriptions(&self) -> Vec<(&'static str, &'static str)> {
@@ -437,10 +427,6 @@ fn visualize_logs_output(content: &str, width: usize) -> Vec<cp_render::Block> {
                 Semantic::Error
             } else if line.starts_with("Created") || line.starts_with("Closed") {
                 Semantic::Success
-            } else if line.contains("summary") || line.contains("Summary") {
-                Semantic::Info
-            } else if line.contains("Expanded") || line.contains("Collapsed") {
-                Semantic::Warning
             } else if line.starts_with('L') && line.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
                 Semantic::Info
             } else {

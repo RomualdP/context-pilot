@@ -17,6 +17,5 @@ context_threshold_notification: |
   You should proactively manage your context to stay under the threshold:
   - Close file panels you no longer need (Close_panel)
   - Close grep/glob results that have served their purpose
-  - Summarize logs if there are many top-level entries (log_summarize)
   - Close conversation history panels after extracting key information
   Review your open panels and close any that are no longer essential.

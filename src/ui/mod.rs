@@ -12,6 +12,8 @@ pub(crate) mod ir;
 pub(crate) mod markdown;
 /// Performance monitoring overlay and metrics.
 pub(crate) mod perf;
+/// Meilisearch indexing status overlay (Ctrl+I).
+pub(crate) mod search_overlay;
 /// Theme color constants re-exported from the infra layer.
 pub(crate) use crate::infra::constants::theme;
 /// Typewriter animation buffer re-exported from helpers.
@@ -72,6 +74,11 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &mut State) {
     // Render config overlay if open
     if state.flags.config.config_view {
         help::config_overlay::render_config_overlay(frame, state, area);
+    }
+
+    // Render Meilisearch indexing status overlay if open
+    if state.flags.overlays.index_status {
+        search_overlay::render_index_overlay(frame, state, area);
     }
 
     PERF.frame_end();

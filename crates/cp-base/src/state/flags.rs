@@ -103,6 +103,14 @@ pub struct Lifecycle {
     pub waiting_for_panels: bool,
 }
 
+/// Module-specific overlay flags — kept separate from core UI flags
+/// to avoid the 3-bool struct limit.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ModuleOverlays {
+    /// Meilisearch indexing status overlay (Ctrl+I to toggle).
+    pub index_status: bool,
+}
+
 /// Composite of all boolean status flags, organized by domain.
 ///
 /// Access individual flags via domain sub-structs: `flags.stream.is_streaming`,
@@ -117,6 +125,8 @@ pub struct StatusBools {
     pub config: ConfigOverlay,
     /// Async operation and reload lifecycle.
     pub lifecycle: Lifecycle,
+    /// Module-specific overlay toggles.
+    pub overlays: ModuleOverlays,
 }
 
 /// Advisory state for a tool call currently being streamed by the LLM.

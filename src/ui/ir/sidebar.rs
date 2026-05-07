@@ -26,7 +26,7 @@ fn fixed_panel_badge(ctx_type: &str, state: &State) -> Option<String> {
         "spine" => cp_mod_spine::types::SpineState::unprocessed_notifications(state).len(),
         "logs" => {
             let ls = cp_mod_logs::types::LogsState::get(state);
-            ls.logs.iter().filter(|l| l.is_top_level()).count()
+            ls.logs.len()
         }
         "callback" => cp_mod_callback::types::CallbackState::get(state).active_set.len(),
         "scratchpad" => cp_mod_scratchpad::types::ScratchpadState::get(state).scratchpad_cells.len(),
