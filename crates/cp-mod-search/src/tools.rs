@@ -205,10 +205,13 @@ fn format_results(query: &str, file_results: &[SearchResult], log_results: &[Sea
                 _ = writeln!(out, "- `{path}` [{chunk}] {name}{lines} ({ext})");
             }
 
-            // Snippet: first 3 lines of content
-            let snippet: String = r.content.lines().take(3).collect::<Vec<_>>().join("\n  ");
-            if !snippet.is_empty() {
-                _ = writeln!(out, "  {snippet}");
+            // Content: show full chunk (already sized by splitter)
+            if !r.content.is_empty() {
+                _ = writeln!(out, "  ```");
+                for line in r.content.lines() {
+                    _ = writeln!(out, "  {line}");
+                }
+                _ = writeln!(out, "  ```");
             }
         }
         out.push('\n');
@@ -223,8 +226,10 @@ fn format_results(query: &str, file_results: &[SearchResult], log_results: &[Sea
             let tags_str =
                 r.tags.as_ref().filter(|t| !t.is_empty()).map(|t| format!(" #{}", t.join(" #"))).unwrap_or_default();
 
-            let snippet: String = r.content.lines().take(3).collect::<Vec<_>>().join("\n  ");
-            _ = writeln!(out, "- [{id}] {dt} · {importance}{tags_str}\n  {snippet}");
+            _ = writeln!(out, "- [{id}] {dt} · {importance}{tags_str}");
+            if !r.content.is_empty() {
+                _ = writeln!(out, "  {}", r.content);
+            }
         }
         out.push('\n');
     }

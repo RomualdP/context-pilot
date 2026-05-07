@@ -251,8 +251,6 @@ impl MeiliClient {
             "q": params.query,
             "limit": params.limit,
             "attributesToHighlight": ["content"],
-            "attributesToCrop": ["content"],
-            "cropLength": 60,
             "showMatchesPosition": false,
         });
 
