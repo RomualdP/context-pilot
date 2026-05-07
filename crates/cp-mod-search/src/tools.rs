@@ -295,6 +295,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         .get("limit")
         .and_then(serde_json::Value::as_u64)
         .map_or(20_u32, |n| u32::try_from(n.min(50)).unwrap_or(50));
+    let semantic_ratio = tool.input.get("semantic_ratio").and_then(serde_json::Value::as_f64);
 
     // --- Resolve index UIDs --------------------------------------------------
 
@@ -324,6 +325,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
             filter: file_filter.as_deref(),
             sort: file_sort,
             limit,
+            semantic_ratio,
         }) {
             Ok(resp) => {
                 if let Some(hits) = resp.get("hits").and_then(|h| h.as_array()) {
@@ -348,6 +350,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
             filter: log_filter.as_deref(),
             sort: log_sort,
             limit,
+            semantic_ratio,
         }) {
             Ok(resp) => {
                 if let Some(hits) = resp.get("hits").and_then(|h| h.as_array()) {

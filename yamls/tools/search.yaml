@@ -28,3 +28,4 @@ tools:
       from_date: "ISO 8601 date. Only results after this date."
       to_date: "ISO 8601 date. Only results before this date."
       limit: "Max results per scope (1-50, default 20)."
+      semantic_ratio: "Hybrid search ratio (0.0-1.0). 0.0 = pure keyword (default when omitted), 0.5 = balanced hybrid, 1.0 = pure semantic. Use ~0.5 for conceptual queries ('authentication logic', 'error handling') and omit for exact matches ('fn main', 'TODO')."

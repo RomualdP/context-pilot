@@ -38,6 +38,11 @@ pub(crate) fn ensure_indexes(port: u16, master_key: &str, project_hash: &str) ->
     let files_uid = format!("cp_{project_hash}_files");
     let logs_uid = format!("cp_{project_hash}_logs");
 
+    // Enable vector store (required for embedders, idempotent)
+    if let Err(e) = meili.enable_vector_store() {
+        log::warn!("Could not enable vector store: {e}");
+    }
+
     // Files index
     if !meili.index_exists(&files_uid)? {
         let create_task = meili.create_index(&files_uid, "id")?;
@@ -55,6 +60,9 @@ pub(crate) fn ensure_indexes(port: u16, master_key: &str, project_hash: &str) ->
         meili.wait_for_task(settings_task)?;
         log::info!("Created logs index: {logs_uid}");
     }
+
+    // Configure embedders for hybrid search (idempotent — only if not already set)
+    configure_embedders(&meili, &files_uid, &logs_uid);
 
     Ok(())
 }
@@ -193,4 +201,74 @@ fn count_ocr_cache_files() -> u64 {
 /// count (not file count) — used as a lower bound for OCR activity.
 fn count_ocr_indexed_files(extension_counts: &std::collections::HashMap<String, u64>) -> u64 {
     extension_counts.iter().filter(|(ext, _)| crate::ocr::is_ocr_extension(ext)).map(|(_, count)| *count).sum()
+}
+
+// -- Embedder configuration --------------------------------------------------
+
+/// The `huggingFace` model used for local embeddings.
+///
+/// BGE-small-en-v1.5: 33M params, 384 dims, ~130 MB download.
+/// Good quality/speed tradeoff for code and text search.
+const EMBEDDER_MODEL: &str = "BAAI/bge-small-en-v1.5";
+
+/// Configure embedders on the files and logs indexes if not already set.
+///
+/// Uses the built-in `huggingFace` source which runs embeddings locally
+/// via `candle` — no external service needed.
+///
+/// This is a fire-and-forget operation: we submit the settings update and
+/// let Meilisearch generate embeddings in the background. For ~4000 chunks
+/// on Apple Silicon, initial embedding takes roughly 3–5 minutes.
+fn configure_embedders(meili: &client::MeiliClient, files_uid: &str, logs_uid: &str) {
+    // Check if files index already has embedders configured
+    let files_has_embedder =
+        meili.get_embedder_settings(files_uid).ok().and_then(|v| v.as_object().map(|m| !m.is_empty())).unwrap_or(false);
+
+    if !files_has_embedder {
+        let settings = files_embedder_settings();
+        match meili.update_embedder_settings(files_uid, &settings) {
+            Ok(task_uid) => log::info!("Configuring embedder for {files_uid} (task {task_uid})"),
+            Err(e) => log::warn!("Failed to configure embedder for {files_uid}: {e}"),
+        }
+    }
+
+    // Check if logs index already has embedders configured
+    let logs_has_embedder =
+        meili.get_embedder_settings(logs_uid).ok().and_then(|v| v.as_object().map(|m| !m.is_empty())).unwrap_or(false);
+
+    if !logs_has_embedder {
+        let settings = logs_embedder_settings();
+        match meili.update_embedder_settings(logs_uid, &settings) {
+            Ok(task_uid) => log::info!("Configuring embedder for {logs_uid} (task {task_uid})"),
+            Err(e) => log::warn!("Failed to configure embedder for {logs_uid}: {e}"),
+        }
+    }
+}
+
+/// Embedder settings for the files index.
+///
+/// Uses Liquid template to combine file path, chunk type/name, and content
+/// into a rich embedding input that captures WHERE and WHAT the code is.
+fn files_embedder_settings() -> serde_json::Value {
+    serde_json::json!({
+        "default": {
+            "source": "huggingFace",
+            "model": EMBEDDER_MODEL,
+            "documentTemplate": "{{doc.file_path}} [{{doc.chunk_type}}] {{doc.chunk_name}}: {{doc.content | truncatewords: 100}}",
+            "documentTemplateMaxBytes": 1024
+        }
+    })
+}
+
+/// Embedder settings for the logs index.
+///
+/// Simpler template since logs are short free-text entries.
+fn logs_embedder_settings() -> serde_json::Value {
+    serde_json::json!({
+        "default": {
+            "source": "huggingFace",
+            "model": EMBEDDER_MODEL,
+            "documentTemplate": "[{{doc.importance}}] {{doc.content}}"
+        }
+    })
 }

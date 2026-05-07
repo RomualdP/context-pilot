@@ -34,6 +34,9 @@ pub(crate) struct SearchParams<'qry> {
     pub sort: Option<&'qry str>,
     /// Maximum number of results to return.
     pub limit: u32,
+    /// Semantic search ratio (0.0 = keyword only, 1.0 = semantic only).
+    /// When `Some`, enables hybrid search with the given ratio.
+    pub semantic_ratio: Option<f64>,
 }
 
 impl MeiliClient {
@@ -52,6 +55,88 @@ impl MeiliClient {
     }
 
     // -- Index operations ----------------------------------------------------
+
+    /// Enable the experimental vector store feature.
+    ///
+    /// Required before configuring embedders. Idempotent — safe to call
+    /// even if already enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails.
+    pub(crate) fn enable_vector_store(&self) -> Result<(), String> {
+        let url = format!("{}/experimental-features", self.base_url);
+        let body = serde_json::json!({ "vectorStore": true });
+
+        let resp = self
+            .http
+            .patch(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send()
+            .map_err(|e| format!("enable_vector_store request failed: {e}"))?;
+
+        let status = resp.status().as_u16();
+        if status == 200 {
+            Ok(())
+        } else {
+            let text = resp.text().unwrap_or_default();
+            Err(format!("enable_vector_store returned HTTP {status}: {}", truncate_str(&text, 200)))
+        }
+    }
+
+    /// Configure embedder settings for an index.
+    ///
+    /// Uses `PUT /indexes/{uid}/settings/embedders` to set up the embedding
+    /// source (e.g. `huggingFace`). Returns the task UID for polling.
+    ///
+    /// Meilisearch will generate embeddings for all existing documents
+    /// as a background task after this call.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails.
+    pub(crate) fn update_embedder_settings(&self, uid: &str, settings: &serde_json::Value) -> Result<u64, String> {
+        let url = format!("{}/indexes/{uid}/settings/embedders", self.base_url);
+
+        let resp = self
+            .http
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .body(settings.to_string())
+            .send()
+            .map_err(|e| format!("update_embedder_settings request failed: {e}"))?;
+
+        Self::extract_task_uid(resp, "update_embedder_settings")
+    }
+
+    /// Read the current embedder settings for an index.
+    ///
+    /// Returns the raw JSON value from `GET /indexes/{uid}/settings/embedders`.
+    /// Returns an empty object if no embedders are configured or on any error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on network failures.
+    pub(crate) fn get_embedder_settings(&self, uid: &str) -> Result<serde_json::Value, String> {
+        let url = format!("{}/indexes/{uid}/settings/embedders", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .map_err(|e| format!("get_embedder_settings request failed: {e}"))?;
+
+        let status = resp.status().as_u16();
+        if status == 200 {
+            resp.json().map_err(|e| format!("get_embedder_settings parse failed: {e}"))
+        } else {
+            // Return empty object on any error (feature not enabled, index not found, etc.)
+            Ok(serde_json::Value::Object(serde_json::Map::new()))
+        }
+    }
 
     /// Check whether an index exists.
     ///
@@ -265,6 +350,17 @@ impl MeiliClient {
             let _prev = obj
                 .insert("sort".to_string(), serde_json::Value::Array(vec![serde_json::Value::String(s.to_string())]));
         }
+        if let Some(ratio) = params.semantic_ratio
+            && let Some(obj) = body.as_object_mut()
+        {
+            let _prev = obj.insert(
+                "hybrid".to_string(),
+                serde_json::json!({
+                    "semanticRatio": ratio,
+                    "embedder": "default"
+                }),
+            );
+        }
 
         let resp = self
             .http
@@ -388,4 +484,9 @@ impl MeiliClient {
             Err(format!("{operation} returned HTTP {status}: {msg}"))
         }
     }
+}
+
+/// Truncate a string to `max_len` characters for error messages.
+fn truncate_str(s: &str, max_len: usize) -> &str {
+    s.get(..s.floor_char_boundary(max_len)).unwrap_or(s)
 }
