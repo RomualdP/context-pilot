@@ -109,6 +109,9 @@ pub struct Lifecycle {
 pub struct ModuleOverlays {
     /// Meilisearch indexing status overlay (Ctrl+I to toggle).
     pub index_status: bool,
+    /// Timestamp (ms since epoch) of the last "Copied!" flash.
+    /// Overlay shows a brief "✓ Copied!" when `now < copied_flash_ms + 1500`.
+    pub copied_flash_ms: u64,
 }
 
 /// Composite of all boolean status flags, organized by domain.

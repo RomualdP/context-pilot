@@ -1045,6 +1045,7 @@ chrono.workspace = true
 regex.workspace = true
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 dotenvy = "0.15"
+rlimit = "0.10"
 unicode-width.workspace = true
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 secrecy = { version = "0.10", features = ["serde"] }

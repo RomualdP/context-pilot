@@ -25,8 +25,15 @@ pub(crate) fn render_index_overlay(frame: &mut Frame<'_>, state: &State, area: R
     let height = u16::try_from(lines.len().saturating_add(2)).unwrap_or(30).min(area.height);
     let popup = centered_rect(OVERLAY_WIDTH, height, area);
 
+    // Show "✓ Copied!" flash in title for 1.5 seconds after copy
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let now_u64 = u64::try_from(now_ms).unwrap_or(u64::MAX);
+    let flash_active =
+        state.flags.overlays.copied_flash_ms > 0 && now_u64.saturating_sub(state.flags.overlays.copied_flash_ms) < 1500;
+    let title = if flash_active { " ✓ Copied! " } else { " Indexing Status " };
+
     let block = Block::default()
-        .title(" Indexing Status ")
+        .title(title)
         .borders(Borders::ALL)
         .style(Style::default().bg(theme::bg_base()).fg(theme::text()));
 
@@ -144,7 +151,7 @@ fn build_overlay_lines(state: &State) -> Vec<Line<'static>> {
 
     // ── Footer ──
     lines.push(Line::from(""));
-    lines.push(Line::from(dim_span("  Press Ctrl+I or Esc to dismiss")));
+    lines.push(Line::from(dim_span("  Ctrl+C copy · Ctrl+I or Esc to dismiss")));
 
     lines
 }
@@ -184,4 +191,83 @@ fn format_ago(ms_then: u64) -> String {
 /// Create a dimmed span for hint text.
 fn dim_span(text: &'static str) -> Span<'static> {
     Span::styled(text, Style::default().add_modifier(Modifier::DIM))
+}
+
+/// Build the overlay content as plain text for clipboard copying.
+///
+/// Produces a clean, terminal-agnostic text version of the overlay
+/// that can be pasted into chat messages, issue reports, etc.
+pub(crate) fn build_overlay_text(state: &State) -> String {
+    use std::fmt::Write as _;
+
+    let Some(info) = cp_mod_search::overlay_info(state) else {
+        return "Search module not initialized.\n".to_string();
+    };
+
+    let mut out = String::with_capacity(512);
+
+    // Server
+    writeln!(
+        out,
+        "Indexing Status\n\nServer  http://127.0.0.1:{}  {}\n",
+        info.port,
+        if info.port > 0 { "online" } else { "offline" },
+    )
+    .unwrap_or(());
+
+    // Core stats
+    writeln!(
+        out,
+        "Files  {}    Chunks  {}\nQueue  {} pending    Errors  {}\nStatus {}    Last  {}",
+        info.files_indexed,
+        info.chunks_indexed,
+        info.queue_depth,
+        info.error_count,
+        if info.index_ready { "Ready" } else { "Scanning" },
+        if info.last_activity_ms > 0 { format_ago(info.last_activity_ms) } else { "never".to_string() },
+    )
+    .unwrap_or(());
+
+    // Extensions
+    if !info.top_extensions.is_empty() {
+        out.push_str("\n── Extensions ──\n");
+        let total: u64 = info.top_extensions.iter().map(|e| e.1).sum();
+        for (ext, count) in &info.top_extensions {
+            let pct = if total > 0 { count.saturating_mul(100).checked_div(total).unwrap_or(0) } else { 0 };
+            writeln!(out, "  {ext:<6} {count:>4}  {pct}%").unwrap_or(());
+        }
+    }
+
+    // Splitter
+    let total_chunks = info.tree_sitter_chunks.saturating_add(info.fallback_chunks);
+    if total_chunks > 0 {
+        let ts_pct = info.tree_sitter_chunks.saturating_mul(100).checked_div(total_chunks).unwrap_or(0);
+        let fb_pct = 100_u64.saturating_sub(ts_pct);
+        writeln!(
+            out,
+            "\n── Splitter ──\nTree-sitter  {} chunks ({ts_pct}%)\nFallback     {} chunks ({fb_pct}%)",
+            info.tree_sitter_chunks, info.fallback_chunks,
+        )
+        .unwrap_or(());
+    }
+
+    // OCR
+    if info.ocr_available || info.ocr_attempted > 0 {
+        out.push_str("\n── OCR Pipeline ──\n");
+        if info.ocr_attempted > 0 {
+            writeln!(
+                out,
+                "Attempted  {}   Succeeded  {}   Cached  {}",
+                info.ocr_attempted, info.ocr_succeeded, info.ocr_cached,
+            )
+            .unwrap_or(());
+            if info.ocr_failed > 0 {
+                writeln!(out, "Failed     {}", info.ocr_failed).unwrap_or(());
+            }
+        } else {
+            out.push_str("Enabled — no OCR files found yet\n");
+        }
+    }
+
+    out
 }

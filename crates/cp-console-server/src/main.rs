@@ -375,8 +375,22 @@ impl ConnectionHandler {
 // Main: daemonize and listen
 // ---------------------------------------------------------------------------
 
+/// Raise the process file-descriptor soft limit. The console server holds
+/// pipes, sockets, and log files for every managed child — the macOS default
+/// of 256 FDs is easily exhausted. We raise to `min(hard_limit, 8192)`.
+fn raise_fd_limit() {
+    let Ok((soft, hard)) = rlimit::getrlimit(rlimit::Resource::NOFILE) else {
+        return;
+    };
+    let target = hard.min(8192);
+    if soft < target {
+        let _r = rlimit::setrlimit(rlimit::Resource::NOFILE, target, hard);
+    }
+}
+
 /// Entry point: parse arguments, bind the Unix socket, and start the accept loop.
 fn main() {
+    raise_fd_limit();
     let Some(socket_path) = std::env::args().nth(1) else {
         drop(writeln!(std::io::stderr(), "Usage: cp-console-server <socket_path>"));
         return;

@@ -733,6 +733,7 @@ name = "cp-console-server"
 version = "0.1.0"
 dependencies = [
  "nix 0.30.1",
+ "rlimit",
  "serde",
  "serde_json",
  "signal-hook",
@@ -4559,6 +4560,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rlimit"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7043b63bd0cd1aaa628e476b80e6d4023a3b50eb32789f2728908107bd0c793a"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "rmp"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6163,6 +6173,7 @@ dependencies = [
  "ratatui",
  "regex",
  "reqwest",
+ "rlimit",
  "secrecy",
  "serde",
  "serde_json",

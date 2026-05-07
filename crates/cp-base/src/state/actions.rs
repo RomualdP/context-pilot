@@ -79,6 +79,8 @@ pub enum Action {
     ToggleConfigView,
     /// Toggle the Meilisearch indexing status overlay (Ctrl+I).
     ToggleIndexOverlay,
+    /// Copy the index overlay content to the system clipboard (Ctrl+C while overlay is open).
+    CopyIndexOverlay,
 
     // === Config overlay — primary model ===
     /// Select primary LLM provider.

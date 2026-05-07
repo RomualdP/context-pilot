@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
+use notify::{EventKind, PollWatcher, RecursiveMode, Watcher as _};
 
 use crate::meili::client::MeiliClient;
 use crate::ocr;
@@ -21,6 +21,15 @@ use crate::types::IndexerCmd;
 
 /// Duration to wait after the first event before processing a batch.
 const DEBOUNCE_MS: u64 = 200;
+
+/// Poll interval for the file watcher.
+///
+/// Uses [`PollWatcher`] which periodically walks the directory tree and
+/// diffs against its last known state — **zero kernel-level FDs** needed.
+/// 3 seconds strikes a good balance between responsiveness and CPU overhead.
+/// (The previous `RecommendedWatcher` with kqueue used one FD per file,
+/// exhausting the 256-FD macOS default on any non-trivial project.)
+const POLL_INTERVAL_SECS: u64 = 3;
 
 /// Parameters for starting the background indexer.
 pub(crate) struct IndexerParams {
@@ -61,14 +70,16 @@ struct IndexerCtx {
 /// # Errors
 ///
 /// Returns an error if the file watcher cannot be created.
-pub(crate) fn start(params: IndexerParams) -> Result<(mpsc::Sender<IndexerCmd>, RecommendedWatcher), String> {
+pub(crate) fn start(params: IndexerParams) -> Result<(mpsc::Sender<IndexerCmd>, PollWatcher), String> {
     let (tx, rx) = mpsc::channel::<IndexerCmd>();
 
     // Clone sender for the watcher callback
     let watcher_tx = tx.clone();
 
-    // Set up file watcher
-    let mut watcher = RecommendedWatcher::new(
+    // Set up polling file watcher — walks the tree every POLL_INTERVAL_SECS.
+    // Unlike RecommendedWatcher (kqueue), PollWatcher uses ZERO kernel FDs
+    // for watching.  The slight latency (≤3s) is fine for a search index.
+    let mut watcher = PollWatcher::new(
         move |res: Result<notify::Event, notify::Error>| {
             if let Ok(event) = res {
                 for path in &event.paths {
@@ -81,7 +92,7 @@ pub(crate) fn start(params: IndexerParams) -> Result<(mpsc::Sender<IndexerCmd>, 
                 }
             }
         },
-        notify::Config::default(),
+        notify::Config::default().with_poll_interval(Duration::from_secs(POLL_INTERVAL_SECS)),
     )
     .map_err(|e| format!("Cannot create file watcher: {e}"))?;
 

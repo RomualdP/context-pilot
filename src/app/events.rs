@@ -62,9 +62,38 @@ pub(crate) fn handle_event(event: &Event, state: &State) -> Option<Action> {
                 return Some(handle_config_event(key, state));
             }
 
-            // Index overlay: Esc dismisses, all other keys are consumed
+            // Index overlay: Esc dismisses, Ctrl+C copies, all other keys consumed
             if state.flags.overlays.index_status {
-                return Some(if key.code == KeyCode::Esc { Action::ToggleIndexOverlay } else { Action::None });
+                return Some(match key.code {
+                    KeyCode::Esc => Action::ToggleIndexOverlay,
+                    KeyCode::Char('c') if ctrl => Action::CopyIndexOverlay,
+                    KeyCode::Backspace
+                    | KeyCode::Enter
+                    | KeyCode::Left
+                    | KeyCode::Right
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Tab
+                    | KeyCode::BackTab
+                    | KeyCode::Delete
+                    | KeyCode::Insert
+                    | KeyCode::F(_)
+                    | KeyCode::Char(_)
+                    | KeyCode::Null
+                    | KeyCode::CapsLock
+                    | KeyCode::ScrollLock
+                    | KeyCode::NumLock
+                    | KeyCode::PrintScreen
+                    | KeyCode::Pause
+                    | KeyCode::Menu
+                    | KeyCode::KeypadBegin
+                    | KeyCode::Media(_)
+                    | KeyCode::Modifier(_) => Action::None,
+                });
             }
 
             // Escape stops streaming

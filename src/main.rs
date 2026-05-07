@@ -184,6 +184,20 @@ fn init_file_logger() {
     log::set_max_level(log::LevelFilter::Trace);
 }
 
+/// Raise the process file-descriptor soft limit to avoid "too many open files"
+/// errors. The Meilisearch server, file watchers, indexer, and console server
+/// collectively need hundreds of FDs. macOS defaults to a soft limit of 256,
+/// which is too low. We raise it to `min(hard_limit, 8192)` — no root needed.
+fn raise_fd_limit() {
+    let Ok((soft, hard)) = rlimit::getrlimit(rlimit::Resource::NOFILE) else {
+        return;
+    };
+    let target = hard.min(8192);
+    if soft < target {
+        let _r = rlimit::setrlimit(rlimit::Resource::NOFILE, target, hard);
+    }
+}
+
 use crossterm::{
     ExecutableCommand as _,
     event::{DisableBracketedPaste, EnableBracketedPaste},
@@ -214,6 +228,7 @@ fn main() -> ExitCode {
     }
 
     init_file_logger();
+    raise_fd_limit();
 
     // Parse CLI args
     let args: Vec<String> = std::env::args().collect();

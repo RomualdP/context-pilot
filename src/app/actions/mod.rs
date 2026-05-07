@@ -236,6 +236,21 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             state.flags.ui.dirty = true;
             ActionResult::Nothing
         }
+        Action::CopyIndexOverlay => {
+            let text = crate::ui::search_overlay::build_overlay_text(state);
+            // Copy to clipboard via pbcopy (macOS)
+            if let Ok(mut child) = std::process::Command::new("pbcopy").stdin(std::process::Stdio::piped()).spawn() {
+                if let Some(mut stdin) = child.stdin.take() {
+                    use std::io::Write as _;
+                    let _r = stdin.write_all(text.as_bytes());
+                }
+                let _r = child.wait();
+            }
+            // Set flash timestamp for UI feedback
+            state.flags.overlays.copied_flash_ms = crate::app::panels::now_ms();
+            state.flags.ui.dirty = true;
+            ActionResult::Nothing
+        }
         Action::ConfigSelectProvider(provider) => {
             state.llm_provider = provider;
             state.flags.lifecycle.api_check_in_progress = true;
