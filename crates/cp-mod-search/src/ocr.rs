@@ -147,9 +147,15 @@ impl DatalabClient {
     fn submit_once(&self, file_bytes: &[u8], file_name: &str) -> Result<String, String> {
         let url = format!("{BASE_URL}/convert");
 
+        // Infer MIME type from the filename extension.
+        // The Datalab API rejects `application/octet-stream` — it validates
+        // the content type to determine whether the file format is supported.
+        let ext = Path::new(file_name).extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
+        let mime = mime_for_extension(ext).unwrap_or("application/octet-stream");
+
         let file_part = reqwest::blocking::multipart::Part::bytes(file_bytes.to_vec())
             .file_name(file_name.to_string())
-            .mime_str("application/octet-stream")
+            .mime_str(mime)
             .map_err(|e| format!("Cannot set MIME type: {e}"))?;
 
         let form = reqwest::blocking::multipart::Form::new()
@@ -314,5 +320,24 @@ pub(crate) fn api_key_from_env() -> Option<String> {
 /// plain text and need the Datalab API for text extraction.
 #[must_use]
 pub(crate) fn is_ocr_extension(ext: &str) -> bool {
-    matches!(ext, "pdf" | "png" | "jpg" | "jpeg" | "tiff" | "tif" | "bmp" | "webp" | "heic")
+    mime_for_extension(ext).is_some()
+}
+
+/// Map a file extension to its MIME type for the Datalab API upload.
+///
+/// Returns `None` for unsupported extensions.  The Datalab `/convert`
+/// endpoint validates the MIME type and rejects `application/octet-stream`,
+/// so we must send the correct content type for each file format.
+fn mime_for_extension(ext: &str) -> Option<&'static str> {
+    match ext {
+        "pdf" => Some("application/pdf"),
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "tiff" | "tif" => Some("image/tiff"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "heic" => Some("image/heic"),
+        _ => None,
+    }
 }
