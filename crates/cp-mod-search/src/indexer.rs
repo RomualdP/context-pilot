@@ -13,9 +13,10 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
-use crate::client::MeiliClient;
-use crate::types;
+use crate::meili::client::MeiliClient;
+use crate::ocr;
 use crate::splitter::SplitterChain;
+use crate::types;
 use crate::types::IndexerCmd;
 
 /// Duration to wait after the first event before processing a batch.
@@ -43,6 +44,9 @@ struct IndexerCtx {
     project_root: PathBuf,
     /// File splitter chain (tree-sitter → fixed-size fallback).
     splitter: SplitterChain,
+    /// Optional Datalab OCR client for converting PDFs/images to text.
+    /// `None` when `DATALAB_API_KEY` is not set.
+    ocr_client: Option<ocr::DatalabClient>,
 }
 
 /// Start the background indexer and file watcher.
@@ -122,6 +126,16 @@ fn indexer_loop(rx: &mpsc::Receiver<IndexerCmd>, params: &IndexerParams) {
         files_uid: format!("cp_{}_files", params.project_hash),
         project_root: params.project_root.clone(),
         splitter: SplitterChain::new(),
+        ocr_client: ocr::api_key_from_env().and_then(|key| match ocr::DatalabClient::new(&key) {
+            Ok(c) => {
+                log::info!("Indexer: Datalab OCR enabled");
+                Some(c)
+            }
+            Err(e) => {
+                log::warn!("Indexer: cannot create Datalab client: {e}");
+                None
+            }
+        }),
     };
 
     while let Ok(first) = rx.recv() {
@@ -202,9 +216,11 @@ fn index_one_file(ctx: &IndexerCtx, abs_path: &Path) {
         }
     }
 
-    // Check extension allowlist
+    // Check extension allowlist (text files) or OCR eligibility (binary files)
     let ext = rel_path.extension().and_then(std::ffi::OsStr::to_str).unwrap_or("");
-    if !types::is_allowed_extension(ext) {
+    let is_text = types::is_allowed_extension(ext);
+    let is_ocr = ocr::is_ocr_extension(ext);
+    if !is_text && !is_ocr {
         return;
     }
 
@@ -214,17 +230,36 @@ fn index_one_file(ctx: &IndexerCtx, abs_path: &Path) {
         return;
     }
 
-    // Check file size
+    // Check file size (different limits for text vs OCR)
     let Ok(meta) = std::fs::metadata(abs_path) else {
         return;
     };
-    if meta.len() > types::MAX_FILE_SIZE {
+    let size_limit = if is_ocr { ocr::MAX_OCR_FILE_SIZE } else { types::MAX_FILE_SIZE };
+    if meta.len() > size_limit {
         return;
     }
 
-    // Read content (skip binary files that fail UTF-8)
-    let Ok(content) = std::fs::read_to_string(abs_path) else {
-        return;
+    // Get text content — either read directly or convert via OCR
+    let content = if is_ocr {
+        // OCR path: convert binary file to markdown via Datalab API
+        let Some(ref ocr_client) = ctx.ocr_client else {
+            // No API key — skip silently
+            return;
+        };
+        match ocr_client.convert_to_text(abs_path) {
+            Ok(text) if !text.trim().is_empty() => text,
+            Ok(_) => return, // Empty OCR result — nothing to index
+            Err(e) => {
+                log::warn!("OCR failed for {rel_str}: {e}");
+                return;
+            }
+        }
+    } else {
+        // Text path: read file directly (skip binary files that fail UTF-8)
+        let Ok(text) = std::fs::read_to_string(abs_path) else {
+            return;
+        };
+        text
     };
 
     // Delete existing chunks for this path (delete → re-insert strategy)

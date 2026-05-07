@@ -27,31 +27,8 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_PATH="/usr/local/bin/cpilot"
 GITIGNORE_GLOBAL="$HOME/.gitignore_global"
-
-# Pick install dir. On Apple Silicon macOS, /usr/local/bin often does not
-# exist by default, but /opt/homebrew/bin does and is on PATH. Prefer that
-# when present; otherwise fall back to /usr/local/bin (creating it if needed).
-if [ -d "/opt/homebrew/bin" ]; then
-  INSTALL_DIR="/opt/homebrew/bin"
-else
-  INSTALL_DIR="/usr/local/bin"
-fi
-INSTALL_PATH="$INSTALL_DIR/cpilot"
-
-# Pick a shell rc file that the user actually sources. macOS defaults to zsh;
-# Linux distros usually default to bash. Prefer the file matching $SHELL, else
-# fall back to whichever exists, else create ~/.bashrc.
-case "${SHELL##*/}" in
-  zsh)  SHELL_RC="$HOME/.zshrc" ;;
-  bash) SHELL_RC="$HOME/.bashrc" ;;
-  *)
-    if [ -f "$HOME/.zshrc" ]; then SHELL_RC="$HOME/.zshrc"
-    elif [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
-    else SHELL_RC="$HOME/.bashrc"
-    fi
-    ;;
-esac
 
 echo "=== Context Pilot — Local Deploy ==="
 echo ""
@@ -65,14 +42,13 @@ echo "      Build complete."
 
 # 2. Install binary (sudo only for this step)
 echo "[2/4] Installing to $INSTALL_PATH..."
-# Ensure the install directory exists (e.g. fresh macOS may lack /usr/local/bin).
-sudo mkdir -p "$INSTALL_DIR"
 # Remove old binary first to avoid "Text file busy" when the running process holds it open.
 # The running process keeps its inode alive, but the directory entry is freed for the new copy.
 sudo rm -f "$INSTALL_PATH"
 sudo cp "$SCRIPT_DIR/target/release/tui" "$INSTALL_PATH"
 sudo chmod +x "$INSTALL_PATH"
 # Also install the console server binary alongside
+INSTALL_DIR="$(dirname "$INSTALL_PATH")"
 sudo rm -f "$INSTALL_DIR/cp-console-server"
 sudo cp "$SCRIPT_DIR/target/release/cp-console-server" "$INSTALL_DIR/cp-console-server"
 sudo chmod +x "$INSTALL_DIR/cp-console-server"
@@ -90,21 +66,21 @@ fi
 git config --global core.excludesFile "$GITIGNORE_GLOBAL"
 
 # 4. Export API keys from .env
-echo "[4/4] Checking API keys in $SHELL_RC..."
+echo "[4/4] Checking API keys in ~/.bashrc..."
 if [ -f "$SCRIPT_DIR/.env" ]; then
     KEYS_ADDED=0
     while IFS= read -r line; do
         # Skip comments and empty lines
         [[ -z "$line" || "$line" == \#* ]] && continue
         KEY_NAME="${line%%=*}"
-        if ! grep -q "export $KEY_NAME=" "$SHELL_RC" 2>/dev/null; then
-            echo "export $line" >> "$SHELL_RC"
-            echo "      Added $KEY_NAME to $SHELL_RC"
+        if ! grep -q "export $KEY_NAME=" "$HOME/.bashrc" 2>/dev/null; then
+            echo "export $line" >> "$HOME/.bashrc"
+            echo "      Added $KEY_NAME to ~/.bashrc"
             KEYS_ADDED=$((KEYS_ADDED + 1))
         fi
     done < "$SCRIPT_DIR/.env"
     if [ "$KEYS_ADDED" -eq 0 ]; then
-        echo "      All API keys already in $SHELL_RC — skipping."
+        echo "      All API keys already in ~/.bashrc — skipping."
     fi
 else
     echo "      No .env file found — skipping API key export."
@@ -118,4 +94,4 @@ echo "Usage:"
 echo "  cd /path/to/any/project"
 echo "  cpilot"
 echo ""
-echo "If this is a new shell session, run: source $SHELL_RC"
+echo "If this is a new shell session, run: source ~/.bashrc"

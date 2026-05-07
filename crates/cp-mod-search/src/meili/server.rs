@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use super::download;
+
 // -- Global paths ------------------------------------------------------------
 
 /// Root of all global Meilisearch data: `~/.context-pilot/meilisearch/`.
@@ -20,7 +22,7 @@ fn global_meili_dir() -> Result<PathBuf, String> {
 }
 
 /// Path to the Meilisearch binary: `~/.context-pilot/meilisearch/bin/meilisearch`.
-fn binary_path() -> Result<PathBuf, String> {
+pub(super) fn binary_path() -> Result<PathBuf, String> {
     global_meili_dir().map(|d| d.join("bin/meilisearch"))
 }
 
@@ -58,7 +60,7 @@ fn projects_path() -> Result<PathBuf, String> {
 /// # Errors
 ///
 /// Returns an error if the directories cannot be created.
-fn ensure_global_dirs() -> Result<PathBuf, String> {
+pub(super) fn ensure_global_dirs() -> Result<PathBuf, String> {
     let root = global_meili_dir()?;
 
     for sub in &["bin", "data"] {
@@ -178,112 +180,6 @@ fn read_master_key() -> Option<String> {
     if trimmed.is_empty() { None } else { Some(trimmed) }
 }
 
-// -- Platform detection & download -------------------------------------------
-
-/// Detect the current platform for Meilisearch binary download.
-///
-/// Returns the platform suffix used in GitHub release asset names.
-///
-/// # Errors
-///
-/// Returns an error if the platform is unsupported.
-fn detect_platform() -> Result<&'static str, String> {
-    if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
-        Ok("macos-apple-silicon")
-    } else if cfg!(target_os = "macos") && cfg!(target_arch = "x86_64") {
-        Ok("macos-amd64")
-    } else if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
-        Ok("linux-amd64")
-    } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
-        Ok("linux-aarch64")
-    } else {
-        Err(format!("Unsupported platform: {} / {}", std::env::consts::OS, std::env::consts::ARCH))
-    }
-}
-
-/// Fetch the latest Meilisearch release tag from GitHub.
-///
-/// Uses the GitHub Releases API (`/repos/.../releases/latest`).
-///
-/// # Errors
-///
-/// Returns an error if the API request fails or the response is unexpected.
-fn fetch_latest_version() -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .user_agent("context-pilot/0.1")
-        .build()
-        .map_err(|e| format!("Cannot create HTTP client: {e}"))?;
-
-    let resp = client
-        .get("https://api.github.com/repos/meilisearch/meilisearch/releases/latest")
-        .send()
-        .map_err(|e| format!("GitHub API request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API returned status {}", resp.status()));
-    }
-
-    let body: serde_json::Value = resp.json().map_err(|e| format!("Cannot parse GitHub API response: {e}"))?;
-
-    body.get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .map(String::from)
-        .ok_or_else(|| "GitHub API response missing 'tag_name'".to_string())
-}
-
-/// Download the Meilisearch binary for the current platform.
-///
-/// Fetches the latest version from GitHub, downloads the binary, and
-/// makes it executable.
-///
-/// # Errors
-///
-/// Returns an error if the download fails or the platform is unsupported.
-pub(crate) fn download_binary() -> Result<(), String> {
-    let _root = ensure_global_dirs()?;
-    let bin = binary_path()?;
-
-    // Skip if already downloaded
-    if bin.exists() {
-        return Ok(());
-    }
-
-    let platform = detect_platform()?;
-    let tag = fetch_latest_version()?;
-
-    let url = format!("https://github.com/meilisearch/meilisearch/releases/download/{tag}/meilisearch-{platform}");
-
-    log::info!("Downloading Meilisearch {tag} for {platform}...");
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(300))
-        .user_agent("context-pilot/0.1")
-        .build()
-        .map_err(|e| format!("Cannot create HTTP client: {e}"))?;
-
-    let resp = client.get(&url).send().map_err(|e| format!("Download failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Download returned HTTP {}", resp.status()));
-    }
-
-    let bytes = resp.bytes().map_err(|e| format!("Cannot read download body: {e}"))?;
-
-    std::fs::write(&bin, &bytes).map_err(|e| format!("Cannot write binary to {}: {e}", bin.display()))?;
-
-    // Make executable
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(&bin, perms).map_err(|e| format!("Cannot chmod binary: {e}"))?;
-    }
-
-    log::info!("Meilisearch binary downloaded to {}", bin.display());
-    Ok(())
-}
-
 // -- Health check ------------------------------------------------------------
 
 /// Check if the Meilisearch server is healthy.
@@ -365,7 +261,7 @@ pub(crate) fn ensure_server_running() -> Result<ServerInfo, String> {
     }
 
     // Phase 1: ensure binary exists
-    download_binary()?;
+    download::download_binary()?;
     let _root = ensure_global_dirs()?;
 
     // Phase 2: ensure master key exists
@@ -452,7 +348,7 @@ pub(crate) fn cleanup_orphan_indexes(port: u16, master_key: &str) {
     }
 
     // Delete indexes for orphan projects
-    let Ok(client) = crate::client::MeiliClient::new(port, master_key) else {
+    let Ok(client) = super::client::MeiliClient::new(port, master_key) else {
         return;
     };
 

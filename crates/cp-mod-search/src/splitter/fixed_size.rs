@@ -6,9 +6,9 @@
 
 use std::path::Path;
 
-use crate::types::FALLBACK_CHUNK_SIZE;
 use crate::splitter::Splitter;
 use crate::types::Chunk;
+use crate::types::FALLBACK_CHUNK_SIZE;
 
 /// Splits files into fixed-size character chunks on line boundaries.
 ///

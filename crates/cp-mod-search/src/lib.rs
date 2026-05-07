@@ -7,14 +7,14 @@
 //! One tool: `search` — queries both file and log indexes.
 //! Results appear as dynamic search result panels.
 
-/// Meilisearch HTTP API client: index management, document CRUD, search.
-pub mod client;
 /// Background file indexer thread and file watcher.
 pub mod indexer;
+/// Meilisearch HTTP client, server lifecycle, and binary download.
+pub mod meili;
+/// Datalab OCR API client for converting PDFs/images to text.
+pub mod ocr;
 /// Dynamic search result panel rendering and creation.
 pub mod panel;
-/// Meilisearch server lifecycle: download, start, health check, reconnect.
-pub mod server;
 /// File content splitter chain (fixed-size fallback, future tree-sitter).
 pub mod splitter;
 /// Search tool dispatch and execution.
@@ -62,7 +62,7 @@ fn hex_encode_4_bytes(bytes: &[u8]) -> String {
 ///
 /// Returns an error if any API call fails.
 fn ensure_indexes(port: u16, master_key: &str, project_hash: &str) -> Result<(), String> {
-    let meili = client::MeiliClient::new(port, master_key)?;
+    let meili = meili::client::MeiliClient::new(port, master_key)?;
 
     let files_uid = format!("cp_{project_hash}_files");
     let logs_uid = format!("cp_{project_hash}_logs");
@@ -126,7 +126,7 @@ fn populate_initial_metrics(
     project_hash: &str,
     metrics: &std::sync::Arc<std::sync::Mutex<types::SearchMetrics>>,
 ) {
-    let Ok(meili) = client::MeiliClient::new(port, master_key) else {
+    let Ok(meili) = meili::client::MeiliClient::new(port, master_key) else {
         return;
     };
 
@@ -235,12 +235,12 @@ impl Module for SearchModule {
         let project_hash = hash_project_path(&project_path);
 
         // Try to start/reconnect to the global Meilisearch server
-        let (port, master_key) = match server::ensure_server_running() {
+        let (port, master_key) = match meili::server::ensure_server_running() {
             Ok(info) => {
                 // Register this project for orphan cleanup
-                let _r = server::register_project(&project_path, &project_hash);
+                let _r = meili::server::register_project(&project_path, &project_hash);
                 // Clean up stale indexes from deleted projects
-                server::cleanup_orphan_indexes(info.port, &info.master_key);
+                meili::server::cleanup_orphan_indexes(info.port, &info.master_key);
                 (info.port, info.master_key)
             }
             Err(e) => {

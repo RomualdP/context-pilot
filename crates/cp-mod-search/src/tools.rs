@@ -6,7 +6,7 @@
 use cp_base::state::runtime::State;
 use cp_base::tools::{ToolResult, ToolUse};
 
-use crate::client::MeiliClient;
+use crate::meili::client::MeiliClient;
 use crate::types::{SearchResult, SearchState};
 
 /// Dispatch search tool calls.
@@ -284,7 +284,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         let file_filter = build_file_filter(extension, from_date, to_date);
         let file_sort = file_sort_string(sort);
 
-        match client.search(&crate::client::SearchParams {
+        match client.search(&crate::meili::client::SearchParams {
             uid: &files_uid,
             query: &effective_query,
             filter: file_filter.as_deref(),
@@ -308,7 +308,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         let log_filter = build_log_filter(from_date, to_date);
         let log_sort = log_sort_string(sort);
 
-        match client.search(&crate::client::SearchParams {
+        match client.search(&crate::meili::client::SearchParams {
             uid: &logs_uid,
             query,
             filter: log_filter.as_deref(),
