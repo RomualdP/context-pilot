@@ -277,20 +277,56 @@ pub(super) fn check_timer_based_deprecation(app: &mut App) {
 }
 
 /// Sync file watchers from all modules' `watch_paths()`.
-/// Called periodically to catch panels created during tool execution.
+/// Adds new watches and **removes stale ones** to prevent FD exhaustion.
+/// On macOS, kqueue uses 1 FD per watched path — without cleanup, opening
+/// hundreds of files over a session will hit the default 256 FD limit.
 fn sync_file_watchers(app: &mut App) {
+    use std::collections::HashSet;
     use cp_base::panels::WatchSpec;
     let Some(watcher) = &mut app.file_watcher else { return };
 
+    // Collect all currently-wanted watch paths from all modules
+    let mut wanted_files: HashSet<String> = HashSet::new();
+    let mut wanted_dirs: HashSet<String> = HashSet::new();
     let modules = crate::modules::all_modules();
     for module in &modules {
         for spec in module.watch_paths(&app.state) {
             match spec {
-                WatchSpec::File(path) => {
-                    if !app.watched_file_paths.contains(&path) && watcher.watch_file(&path).is_ok() {
-                        let _ = app.watched_file_paths.insert(path);
-                    }
-                }
+                WatchSpec::File(path) => { let _ = wanted_files.insert(path); }
+                WatchSpec::Dir(path) | WatchSpec::DirRecursive(path) => { let _ = wanted_dirs.insert(path); }
+            }
+        }
+    }
+
+    // Remove watches for paths no longer needed (frees kqueue FDs)
+    let stale_files: Vec<String> = app.watched_file_paths.iter()
+        .filter(|p| !wanted_files.contains(*p))
+        .cloned()
+        .collect();
+    for path in &stale_files {
+        watcher.unwatch_file(path);
+        let _ = app.watched_file_paths.remove(path);
+    }
+
+    let stale_dirs: Vec<String> = app.watched_dir_paths.iter()
+        .filter(|p| !wanted_dirs.contains(*p))
+        .cloned()
+        .collect();
+    for path in &stale_dirs {
+        watcher.unwatch_dir(path);
+        let _ = app.watched_dir_paths.remove(path);
+    }
+
+    // Add watches for new paths
+    for path in wanted_files {
+        if !app.watched_file_paths.contains(&path) && watcher.watch_file(&path).is_ok() {
+            let _ = app.watched_file_paths.insert(path);
+        }
+    }
+    for module in &modules {
+        for spec in module.watch_paths(&app.state) {
+            match spec {
+                WatchSpec::File(_) => {} // Already handled above
                 WatchSpec::Dir(path) => {
                     if !app.watched_dir_paths.contains(&path) && watcher.watch_dir(&path).is_ok() {
                         let _ = app.watched_dir_paths.insert(path);
