@@ -257,13 +257,19 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                 let sentinel_id = format!("cb_block_{}", app.state.next_tool_id);
                 app.state.next_tool_id = app.state.next_tool_id.saturating_add(1);
 
-                let _summaries = callback_firing::fire_blocking_callbacks(&mut app.state, &blocking_cbs, &sentinel_id);
+                let summaries =
+                    callback_firing::fire_blocking_callbacks(&mut app.state, &blocking_cbs, &sentinel_id);
 
                 // Tag the last Edit/Write tool result with sentinel so pipeline knows to wait.
                 // Store original content so we can reconstruct: original + callback output.
                 for tr in tool_results.iter_mut().rev() {
                     if tr.tool_name == "Edit" || tr.tool_name == "Write" {
                         tr.content = format!("{}{}{}", CONSOLE_WAIT_BLOCKING_SENTINEL, sentinel_id, tr.content,);
+                        // Append spawn failure summaries so they're visible in the final result
+                        // (not silently discarded). Successful spawns show "running (blocking)".
+                        if !summaries.is_empty() {
+                            let _r = write!(tr.content, "\nCallbacks:\n{}", summaries.join("\n"));
+                        }
                         break;
                     }
                 }

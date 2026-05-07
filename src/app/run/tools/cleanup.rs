@@ -114,8 +114,22 @@ pub(crate) fn check_watchers(app: &mut App, tx: &Sender<StreamEvent>) {
     }
 
     // --- Blocking sentinel replacement ---
-    if app.pending_console_wait_tool_results.is_none() || blocking_results.is_empty() {
+    if app.pending_console_wait_tool_results.is_none() {
         return;
+    }
+
+    // If no new blocking results came in this poll cycle, check if any blocking
+    // watchers still exist. If none remain (all spawned callbacks completed, timed out,
+    // or ALL failed to spawn), fall through to resume the pipeline.
+    // Without this, a spawn failure (e.g., "too many open files") that prevents watcher
+    // registration causes an infinite stall — no watcher ever fires, blocking_results
+    // stays empty forever, and the pipeline never resumes.
+    if blocking_results.is_empty() {
+        let watcher_reg = WatcherRegistry::get(&app.state);
+        if watcher_reg.has_blocking_watchers() {
+            return; // Still waiting for real watchers to complete
+        }
+        // No blocking watchers remain — fall through to resolve sentinels and resume
     }
 
     // Accumulate partial blocking results into App-level storage.
