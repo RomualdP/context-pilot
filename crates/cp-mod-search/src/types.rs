@@ -130,6 +130,8 @@ pub(crate) struct SearchMetrics {
     pub ocr_failed: u64,
     /// OCR: files served from the disk cache.
     pub ocr_cached: u64,
+    /// Whether the initial full-project scan has completed.
+    pub scan_complete: bool,
 }
 
 /// Commands sent to the background indexer thread.
@@ -139,6 +141,8 @@ pub(crate) enum IndexerCmd {
     IndexFile(PathBuf),
     /// Remove all indexed chunks for a file.
     DeleteFile(PathBuf),
+    /// The initial full-project scan has finished.
+    ScanComplete,
 }
 
 // -- Public overlay info -----------------------------------------------------

@@ -109,7 +109,7 @@ pub fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
         queue_depth: metrics.queue_depth,
         error_count: metrics.error_count,
         last_activity_ms: metrics.last_activity_ms,
-        index_ready: ss.persist.index_ready,
+        index_ready: metrics.scan_complete,
         top_extensions: ext_vec,
         tree_sitter_chunks: metrics.tree_sitter_chunks,
         fallback_chunks: metrics.fallback_chunks,
@@ -374,11 +374,11 @@ impl Module for SearchModule {
             return Some("Search: server not available\n".to_string());
         }
 
-        let (chunks, files) = {
+        let (chunks, files, scan_complete) = {
             let metrics = ss.metrics.lock().ok()?;
-            (metrics.chunks_indexed, metrics.files_indexed)
+            (metrics.chunks_indexed, metrics.files_indexed, metrics.scan_complete)
         };
-        let status = if ss.persist.index_ready { "ready" } else { "indexing" };
+        let status = if scan_complete { "ready" } else { "indexing" };
 
         Some(format!("Search: {chunks} chunks indexed across ~{files} files (port {port}, {status})\n"))
     }

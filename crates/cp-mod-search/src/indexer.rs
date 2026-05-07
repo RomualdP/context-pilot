@@ -107,6 +107,7 @@ pub(crate) fn start(params: IndexerParams) -> Result<(mpsc::Sender<IndexerCmd>, 
         .name("search-scan".into())
         .spawn(move || {
             scan_directory(&scan_tx, &scan_root);
+            let _r = scan_tx.send(IndexerCmd::ScanComplete);
         })
         .map_err(|e| format!("Cannot spawn scan thread: {e}"))?;
 
@@ -184,6 +185,12 @@ fn indexer_loop(rx: &mpsc::Receiver<IndexerCmd>, params: &IndexerParams) {
                 IndexerCmd::DeleteFile(ref path) => {
                     delete_one_file(&ctx, path);
                 }
+                IndexerCmd::ScanComplete => {
+                    if let Ok(mut m) = ctx.metrics.lock() {
+                        m.scan_complete = true;
+                    }
+                    log::info!("Initial project scan complete");
+                }
             }
         }
     }
@@ -195,18 +202,27 @@ fn indexer_loop(rx: &mpsc::Receiver<IndexerCmd>, params: &IndexerParams) {
 ///
 /// If the same path appears multiple times (e.g., rapid saves),
 /// only the last command (Index or Delete) is kept.
+/// `ScanComplete` is always preserved (appended at the end).
 fn deduplicate(batch: Vec<IndexerCmd>) -> Vec<IndexerCmd> {
     let mut latest: HashMap<PathBuf, IndexerCmd> = HashMap::new();
+    let mut has_scan_complete = false;
 
     for cmd in batch {
         match &cmd {
             IndexerCmd::IndexFile(p) | IndexerCmd::DeleteFile(p) => {
                 let _prev = latest.insert(p.clone(), cmd);
             }
+            IndexerCmd::ScanComplete => {
+                has_scan_complete = true;
+            }
         }
     }
 
-    latest.into_values().collect()
+    let mut result: Vec<IndexerCmd> = latest.into_values().collect();
+    if has_scan_complete {
+        result.push(IndexerCmd::ScanComplete);
+    }
+    result
 }
 
 // -- File indexing -----------------------------------------------------------
