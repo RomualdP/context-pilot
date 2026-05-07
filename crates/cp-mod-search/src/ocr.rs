@@ -12,7 +12,7 @@
 //!
 //! Authentication is via the `X-Api-Key` header using `DATALAB_API_KEY`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// Base URL for the Datalab cloud API.
@@ -67,15 +67,29 @@ impl DatalabClient {
 
     /// Convert a file to markdown text via the Datalab API.
     ///
-    /// Submits the file for conversion, polls until complete, and
-    /// returns the extracted markdown.  Blocks the calling thread.
+    /// Checks the global disk cache (`~/.context-pilot/ocr-cache/`) first.
+    /// On a cache miss, calls the Datalab API and stores the result.
+    /// Blocks the calling thread.
     ///
     /// # Errors
     ///
-    /// Returns an error if submission fails, polling times out, or
-    /// the API returns an error status.
+    /// Returns an error if the file cannot be read, submission fails,
+    /// polling times out, or the API returns an error status.
     pub(crate) fn convert_to_text(&self, path: &Path) -> Result<String, String> {
-        let request_id = self.submit(path)?;
+        // Read file bytes (needed for both hash check and upload).
+        let file_bytes = std::fs::read(path).map_err(|e| format!("Cannot read file for OCR: {e}"))?;
+
+        // Check cache by content hash.
+        let hash = sha256_hex(&file_bytes);
+        if let Some(cached) = read_cache(&hash) {
+            log::debug!("OCR cache hit for {} ({hash})", path.display());
+            return Ok(cached);
+        }
+
+        // Cache miss — call the Datalab API.
+        let file_name = path.file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("document").to_string();
+
+        let request_id = self.submit(&file_bytes, &file_name)?;
 
         // Small delay before starting to poll (conversion takes time).
         std::thread::sleep(POLL_INITIAL_DELAY);
@@ -85,25 +99,24 @@ impl DatalabClient {
         // Rate-limit guard: pause before the next submission.
         std::thread::sleep(INTER_REQUEST_DELAY);
 
+        // Cache the result (including empty — avoids re-calling for no-text files).
+        write_cache(&hash, &markdown);
+
         Ok(markdown)
     }
 
-    /// Submit a file for conversion.
+    /// Submit file bytes for conversion.
     ///
     /// Retries up to [`MAX_SUBMIT_RETRIES`] times with exponential backoff
     /// on transient failures (5xx, 429, network errors).
     ///
     /// Returns the `request_id` for polling.
-    fn submit(&self, path: &Path) -> Result<String, String> {
-        let file_bytes = std::fs::read(path).map_err(|e| format!("Cannot read file for OCR: {e}"))?;
-
-        let file_name = path.file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("document").to_string();
-
+    fn submit(&self, file_bytes: &[u8], file_name: &str) -> Result<String, String> {
         let mut last_err = String::from("no attempts made");
         let mut delay = Duration::from_secs(1);
 
         for _attempt in 0..MAX_SUBMIT_RETRIES {
-            match self.submit_once(&file_bytes, &file_name) {
+            match self.submit_once(file_bytes, file_name) {
                 Ok(id) => return Ok(id),
                 Err(e) => {
                     last_err = e;
@@ -229,6 +242,51 @@ impl DatalabClient {
             std::thread::sleep(delay);
             delay = delay.saturating_mul(2).min(POLL_MAX_DELAY);
         }
+    }
+}
+
+// -- Disk cache --------------------------------------------------------------
+
+/// Global cache directory for OCR results: `~/.context-pilot/ocr-cache/`.
+fn cache_dir() -> Option<PathBuf> {
+    std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".context-pilot/ocr-cache"))
+}
+
+/// Compute the SHA-256 hex digest of a byte slice (used as cache key).
+fn sha256_hex(data: &[u8]) -> String {
+    use sha2::Digest as _;
+    let hash = sha2::Sha256::digest(data);
+    let mut hex = String::with_capacity(64);
+    for &b in hash.as_slice() {
+        use std::fmt::Write as _;
+        let _r = write!(hex, "{b:02x}");
+    }
+    hex
+}
+
+/// Try to read a cached OCR result by content hash.
+///
+/// Returns `Some(markdown)` on hit, `None` on miss or any I/O error.
+fn read_cache(hash: &str) -> Option<String> {
+    let path = cache_dir()?.join(format!("{hash}.md"));
+    std::fs::read_to_string(path).ok()
+}
+
+/// Write an OCR result to the disk cache.
+///
+/// Creates the cache directory if it doesn't exist.
+/// Failures are logged but never fatal — the cache is best-effort.
+fn write_cache(hash: &str, markdown: &str) {
+    let Some(dir) = cache_dir() else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("Cannot create OCR cache dir {}: {e}", dir.display());
+        return;
+    }
+    let path = dir.join(format!("{hash}.md"));
+    if let Err(e) = std::fs::write(&path, markdown) {
+        log::warn!("Cannot write OCR cache {}: {e}", path.display());
     }
 }
 

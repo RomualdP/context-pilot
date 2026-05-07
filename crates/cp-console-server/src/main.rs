@@ -211,29 +211,30 @@ fn handle_send(sessions: &Sessions, key: &str, input: &str) -> Response {
 }
 
 /// Terminate the child process for session `key` (SIGTERM then SIGKILL if needed).
+///
+/// Also removes the session from the map to free pipe FDs.  Without
+/// this cleanup, sessions accumulate forever — each holding a pipe FD
+/// — until the 256-FD ulimit is exhausted and new spawns fail.
 fn handle_kill(sessions: &Sessions, key: &str) -> Response {
-    // Extract pid under lock (lock auto-drops after match expression)
-    let pid = match sessions.lock().unwrap_or_else(PoisonError::into_inner).get_mut(key) {
-        None => return Response::err(format!("Session '{key}' not found")),
-        Some(session) if session.is_terminal() => {
-            drop(session.stdin.take());
-            return Response::ok();
-        }
-        Some(session) => session.pid,
+    // Extract pid + remove session atomically (frees pipe FDs immediately).
+    let removed = sessions.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+
+    let Some(mut session) = removed else {
+        return Response::err(format!("Session '{key}' not found"));
     };
 
-    // Kill process without holding the session lock
-    drop(Command::new("kill").args([&pid.to_string()]).output());
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    if is_pid_alive(pid) {
-        drop(Command::new("kill").args(["-9", &pid.to_string()]).output());
+    // Drop stdin pipe FD.
+    drop(session.stdin.take());
+
+    // If still running, kill the process.
+    if !session.is_terminal() {
+        drop(Command::new("kill").args([&session.pid.to_string()]).output());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if is_pid_alive(session.pid) {
+            drop(Command::new("kill").args(["-9", &session.pid.to_string()]).output());
+        }
     }
 
-    // Update session state under lock
-    if let Some(session) = sessions.lock().unwrap_or_else(PoisonError::into_inner).get_mut(key) {
-        session.status = SessionStatus::Exited(-9);
-        drop(session.stdin.take());
-    }
     Response::ok()
 }
 
