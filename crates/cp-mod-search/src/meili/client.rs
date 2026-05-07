@@ -250,7 +250,7 @@ impl MeiliClient {
         let mut body = serde_json::json!({
             "q": params.query,
             "limit": params.limit,
-            "attributesToHighlight": ["content"],
+            "showRankingScore": true,
             "showMatchesPosition": false,
         });
 

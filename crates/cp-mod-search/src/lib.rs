@@ -130,7 +130,6 @@ impl Module for SearchModule {
                 .param_enum("sort", &["relevance", "date_asc", "date_desc"], false)
                 .param("from_date", ParamType::String, false)
                 .param("to_date", ParamType::String, false)
-                .param("include_context", ParamType::Boolean, false)
                 .param("limit", ParamType::Integer, false)
                 .build(),
         ]

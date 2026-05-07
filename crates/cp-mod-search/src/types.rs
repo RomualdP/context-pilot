@@ -227,6 +227,8 @@ pub(crate) struct SearchResult {
     pub importance: Option<String>,
     /// Tags — log results only.
     pub tags: Option<Vec<String>>,
+    /// Meilisearch ranking score (0.0–1.0), when `showRankingScore` is enabled.
+    pub ranking_score: Option<f64>,
 }
 
 // -- Configuration constants -------------------------------------------------

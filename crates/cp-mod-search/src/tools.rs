@@ -127,13 +127,7 @@ fn log_sort_string(sort: &str) -> Option<&'static str> {
 
 /// Parse a single Meilisearch hit from the files index.
 fn parse_file_hit(hit: &serde_json::Value) -> SearchResult {
-    let content = hit
-        .get("_formatted")
-        .and_then(|f| f.get("content"))
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| hit.get("content").and_then(serde_json::Value::as_str))
-        .unwrap_or("")
-        .to_string();
+    let content = hit.get("content").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
 
     SearchResult {
         content,
@@ -147,18 +141,13 @@ fn parse_file_hit(hit: &serde_json::Value) -> SearchResult {
         datetime: None,
         importance: None,
         tags: None,
+        ranking_score: hit.get("_rankingScore").and_then(serde_json::Value::as_f64),
     }
 }
 
 /// Parse a single Meilisearch hit from the logs index.
 fn parse_log_hit(hit: &serde_json::Value) -> SearchResult {
-    let content = hit
-        .get("_formatted")
-        .and_then(|f| f.get("content"))
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| hit.get("content").and_then(serde_json::Value::as_str))
-        .unwrap_or("")
-        .to_string();
+    let content = hit.get("content").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
 
     SearchResult {
         content,
@@ -175,70 +164,111 @@ fn parse_log_hit(hit: &serde_json::Value) -> SearchResult {
             .get("tags")
             .and_then(serde_json::Value::as_array)
             .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect()),
+        ranking_score: hit.get("_rankingScore").and_then(serde_json::Value::as_f64),
     }
 }
 
-/// Format search results as human-readable text for panel and tool output.
+/// Format search results as YAML for panel display.
+///
+/// File results are grouped by path. All metadata is included.
+/// Uses `serde_yaml` for consistent formatting matching the brave module style.
 fn format_results(query: &str, file_results: &[SearchResult], log_results: &[SearchResult]) -> String {
-    use std::fmt::Write as _;
+    use std::collections::BTreeMap;
 
     let total = file_results.len().saturating_add(log_results.len());
-    let mut out = String::new();
 
-    _ = writeln!(out, "# Search: \"{query}\" ({total} results)\n");
+    let mut root = serde_json::Map::new();
+    drop(root.insert("query".into(), serde_json::Value::String(query.to_string())));
+    drop(root.insert("total_results".into(), serde_json::json!(total)));
+
+    // -- File results, grouped by path ---------------------------------------
 
     if !file_results.is_empty() {
-        _ = writeln!(out, "## Files ({})\n", file_results.len());
+        // Group chunks by file path, preserving insertion order via BTreeMap
+        let mut by_path: BTreeMap<String, Vec<&SearchResult>> = BTreeMap::new();
         for r in file_results {
-            let path = r.file_path.as_deref().unwrap_or("?");
-            let chunk = r.chunk_type.as_deref().unwrap_or("raw");
-            let name = r.chunk_name.as_deref().unwrap_or("");
-            let lines = match (r.line_start, r.line_end) {
-                (Some(s), Some(e)) => format!(" lines {s}-{e}"),
-                _ => String::new(),
-            };
-            let ext = r.extension.as_deref().unwrap_or("");
-
-            if name.is_empty() {
-                _ = writeln!(out, "- `{path}` [{chunk}]{lines} ({ext})");
-            } else {
-                _ = writeln!(out, "- `{path}` [{chunk}] {name}{lines} ({ext})");
-            }
-
-            // Content: show full chunk (already sized by splitter)
-            if !r.content.is_empty() {
-                _ = writeln!(out, "  ```");
-                for line in r.content.lines() {
-                    _ = writeln!(out, "  {line}");
-                }
-                _ = writeln!(out, "  ```");
-            }
+            let path = r.file_path.as_deref().unwrap_or("unknown").to_string();
+            by_path.entry(path).or_default().push(r);
         }
-        out.push('\n');
+
+        let mut files_arr: Vec<serde_json::Value> = Vec::new();
+        for (path, chunks) in &by_path {
+            let ext = chunks.first().and_then(|c| c.extension.as_deref()).unwrap_or("");
+            let mut file_obj = serde_json::Map::new();
+            drop(file_obj.insert("path".into(), serde_json::Value::String(path.clone())));
+            drop(file_obj.insert("extension".into(), serde_json::Value::String(ext.to_string())));
+
+            let chunks_arr: Vec<serde_json::Value> = chunks.iter().map(|chunk| build_chunk_value(chunk)).collect();
+
+            drop(file_obj.insert("chunks".into(), serde_json::Value::Array(chunks_arr)));
+            files_arr.push(serde_json::Value::Object(file_obj));
+        }
+        drop(root.insert("files".into(), serde_json::Value::Array(files_arr)));
     }
+
+    // -- Log results ---------------------------------------------------------
 
     if !log_results.is_empty() {
-        _ = writeln!(out, "## Logs ({})\n", log_results.len());
-        for r in log_results {
-            let id = r.log_id.as_deref().unwrap_or("?");
-            let dt = r.datetime.as_deref().unwrap_or("?");
-            let importance = r.importance.as_deref().unwrap_or("medium");
-            let tags_str =
-                r.tags.as_ref().filter(|t| !t.is_empty()).map(|t| format!(" #{}", t.join(" #"))).unwrap_or_default();
-
-            _ = writeln!(out, "- [{id}] {dt} · {importance}{tags_str}");
-            if !r.content.is_empty() {
-                _ = writeln!(out, "  {}", r.content);
-            }
-        }
-        out.push('\n');
+        let logs_arr: Vec<serde_json::Value> = log_results.iter().map(build_log_value).collect();
+        drop(root.insert("logs".into(), serde_json::Value::Array(logs_arr)));
     }
 
-    if file_results.is_empty() && log_results.is_empty() {
-        out.push_str("No results found.\n");
-    }
+    // -- Serialize to YAML ---------------------------------------------------
 
-    out
+    serde_yaml::to_string(&serde_json::Value::Object(root)).unwrap_or_else(|_| "# Failed to serialize results\n".into())
+}
+
+/// Build a JSON value for a single file chunk.
+fn build_chunk_value(chunk: &SearchResult) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    drop(
+        obj.insert("type".into(), serde_json::Value::String(chunk.chunk_type.as_deref().unwrap_or("raw").to_string())),
+    );
+    if let Some(ref name) = chunk.chunk_name
+        && !name.is_empty()
+    {
+        drop(obj.insert("name".into(), serde_json::Value::String(name.clone())));
+    }
+    if let Some(start) = chunk.line_start {
+        drop(obj.insert("line_start".into(), serde_json::json!(start)));
+    }
+    if let Some(end) = chunk.line_end {
+        drop(obj.insert("line_end".into(), serde_json::json!(end)));
+    }
+    if let Some(score) = chunk.ranking_score {
+        drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
+    }
+    if !chunk.content.is_empty() {
+        drop(obj.insert("content".into(), serde_json::Value::String(chunk.content.clone())));
+    }
+    serde_json::Value::Object(obj)
+}
+
+/// Build a JSON value for a single log result.
+fn build_log_value(r: &SearchResult) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    if let Some(ref id) = r.log_id {
+        drop(obj.insert("id".into(), serde_json::Value::String(id.clone())));
+    }
+    if let Some(ref dt) = r.datetime {
+        drop(obj.insert("datetime".into(), serde_json::Value::String(dt.clone())));
+    }
+    if let Some(ref imp) = r.importance {
+        drop(obj.insert("importance".into(), serde_json::Value::String(imp.clone())));
+    }
+    if let Some(ref tags) = r.tags {
+        drop(obj.insert(
+            "tags".into(),
+            serde_json::Value::Array(tags.iter().map(|t| serde_json::Value::String(t.clone())).collect()),
+        ));
+    }
+    if let Some(score) = r.ranking_score {
+        drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
+    }
+    if !r.content.is_empty() {
+        drop(obj.insert("content".into(), serde_json::Value::String(r.content.clone())));
+    }
+    serde_json::Value::Object(obj)
 }
 
 /// Execute the `search` tool.
@@ -260,7 +290,6 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
     let sort = tool.input.get("sort").and_then(serde_json::Value::as_str).unwrap_or("relevance");
     let from_date = tool.input.get("from_date").and_then(serde_json::Value::as_str);
     let to_date = tool.input.get("to_date").and_then(serde_json::Value::as_str);
-    let include_context = tool.input.get("include_context").and_then(serde_json::Value::as_bool).unwrap_or(true);
     let limit = tool
         .input
         .get("limit")
@@ -337,12 +366,8 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
     let log_count = log_results.len();
     let panel_content = format_results(query, &file_results, &log_results);
 
-    // Create dynamic panel
+    // Create dynamic panel — full content lives there, not in the tool result.
     let panel_id = crate::panel::create(state, &format!("search: {query}"), &panel_content);
 
-    if include_context {
-        ok_result(tool, format!("Created panel {panel_id}\n\n{panel_content}"))
-    } else {
-        ok_result(tool, format!("Created panel {panel_id}: {file_count} files, {log_count} logs for \"{query}\""))
-    }
+    ok_result(tool, format!("Created panel {panel_id}: {file_count} file chunks, {log_count} logs for \"{query}\""))
 }

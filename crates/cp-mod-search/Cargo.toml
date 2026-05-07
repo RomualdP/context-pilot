@@ -28,6 +28,7 @@ tree-sitter-java.workspace = true
 tree-sitter-c.workspace = true
 tree-sitter-cpp.workspace = true
 chrono.workspace = true
+serde_yaml.workspace = true
 log = "0.4"
 
 [lints]
