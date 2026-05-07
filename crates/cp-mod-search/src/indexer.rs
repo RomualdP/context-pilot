@@ -43,6 +43,12 @@ pub(crate) struct IndexerParams {
     pub project_root: PathBuf,
     /// Shared metrics updated by the indexer thread.
     pub metrics: std::sync::Arc<std::sync::Mutex<types::SearchMetrics>>,
+    /// Skip the initial full-project scan.
+    ///
+    /// Set to `true` on TUI reload — Meilisearch already has data from
+    /// the previous session and the `PollWatcher` picks up incremental
+    /// changes.  Set to `false` on first boot (fresh indexes).
+    pub skip_initial_scan: bool,
 }
 
 /// Internal context for the running indexer thread.
@@ -101,15 +107,24 @@ pub(crate) fn start(params: IndexerParams) -> Result<(mpsc::Sender<IndexerCmd>, 
         .map_err(|e| format!("Cannot watch project root: {e}"))?;
 
     // Spawn initial scan on a helper thread (queues IndexFile commands)
-    let scan_tx = tx.clone();
-    let scan_root = params.project_root.clone();
-    let _scan_handle = std::thread::Builder::new()
-        .name("search-scan".into())
-        .spawn(move || {
-            scan_directory(&scan_tx, &scan_root);
-            let _r = scan_tx.send(IndexerCmd::ScanComplete);
-        })
-        .map_err(|e| format!("Cannot spawn scan thread: {e}"))?;
+    if params.skip_initial_scan {
+        // Reload path: Meilisearch already has data from the previous session.
+        // Mark scan as complete immediately — the PollWatcher handles incremental changes.
+        if let Ok(mut m) = params.metrics.lock() {
+            m.scan_complete = true;
+        }
+        log::info!("Skipping initial scan (reload with existing indexes)");
+    } else {
+        let scan_tx = tx.clone();
+        let scan_root = params.project_root.clone();
+        let _scan_handle = std::thread::Builder::new()
+            .name("search-scan".into())
+            .spawn(move || {
+                scan_directory(&scan_tx, &scan_root);
+                let _r = scan_tx.send(IndexerCmd::ScanComplete);
+            })
+            .map_err(|e| format!("Cannot spawn scan thread: {e}"))?;
+    }
 
     // Spawn the indexer thread
     let _indexer_handle = std::thread::Builder::new()

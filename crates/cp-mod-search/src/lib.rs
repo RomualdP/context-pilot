@@ -276,6 +276,7 @@ impl Module for SearchModule {
                 project_hash: project_hash.clone(),
                 project_root: std::path::PathBuf::from(&project_path),
                 metrics: std::sync::Arc::clone(&metrics),
+                skip_initial_scan: false,
             }) {
                 Ok((tx, w)) => (Some(tx), Some(types::WatcherHandle::new(w))),
                 Err(e) => {
@@ -321,6 +322,7 @@ impl Module for SearchModule {
                     project_hash: persist.project_hash.clone(),
                     project_root: std::path::PathBuf::from(&project_path),
                     metrics: std::sync::Arc::clone(&metrics),
+                    skip_initial_scan: true,
                 }) {
                     Ok((tx, w)) => (Some(tx), Some(types::WatcherHandle::new(w))),
                     Err(e) => {
