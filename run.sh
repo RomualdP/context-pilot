@@ -3,6 +3,11 @@
 
 CONFIG_FILE=".context-pilot/config.json"
 
+# Raise FD limit — macOS defaults to 256 which is too low for kqueue
+# (1 FD per watched file/dir). A session with 60+ tree folders open
+# plus .git/ watches easily exceeds the default.
+ulimit -n 2048 2>/dev/null
+
 # Load environment variables from .env
 if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
