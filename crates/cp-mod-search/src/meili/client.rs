@@ -282,6 +282,43 @@ impl MeiliClient {
         Ok(json)
     }
 
+    /// Query facet distribution for one or more attributes.
+    ///
+    /// Sends an empty-query search with `facets` to get value counts.
+    /// Used to populate overlay metrics (extension breakdown, chunk types)
+    /// without re-indexing.
+    ///
+    /// Returns the raw `facetDistribution` object from the response.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails or the response cannot be parsed.
+    pub(crate) fn facet_distribution(&self, uid: &str, facets: &[&str]) -> Result<serde_json::Value, String> {
+        let url = format!("{}/indexes/{uid}/search", self.base_url);
+        let facet_arr: Vec<serde_json::Value> =
+            facets.iter().map(|f| serde_json::Value::String((*f).to_string())).collect();
+
+        let body = serde_json::json!({
+            "q": "",
+            "limit": 0,
+            "facets": facet_arr,
+        });
+
+        let resp = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send()
+            .map_err(|e| format!("facet_distribution request failed: {e}"))?;
+
+        let json: serde_json::Value =
+            resp.json().map_err(|e| format!("facet_distribution response parse failed: {e}"))?;
+
+        Ok(json.get("facetDistribution").cloned().unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())))
+    }
+
     // -- Task management -----------------------------------------------------
 
     /// Poll a task until it reaches a terminal state (`succeeded` or `failed`).

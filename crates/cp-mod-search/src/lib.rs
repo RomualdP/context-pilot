@@ -35,59 +35,6 @@ use types::{SearchOverlayInfo, SearchPersistData, SearchState};
 static TOOL_TEXTS: std::sync::LazyLock<ToolTexts> =
     std::sync::LazyLock::new(|| ToolTexts::parse(include_str!("../../../yamls/tools/search.yaml")));
 
-/// Compute an 8-character hex hash of a path for per-project index naming.
-fn hash_project_path(path: &str) -> String {
-    use sha2::Digest as _;
-    let hash = sha2::Sha256::digest(path.as_bytes());
-    // Take first 4 bytes → 8 hex chars
-    hex_encode_4_bytes(hash.as_slice())
-}
-
-/// Encode the first 4 bytes of a slice as an 8-character lowercase hex string.
-fn hex_encode_4_bytes(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(8);
-    for &b in bytes.iter().take(4) {
-        use std::fmt::Write as _;
-        let _r = write!(out, "{b:02x}");
-    }
-    out
-}
-
-/// Create per-project Meilisearch indexes if they don't already exist.
-///
-/// Creates `cp_{hash}_files` and `cp_{hash}_logs` indexes with appropriate
-/// settings (searchable, filterable, sortable attributes).
-///
-/// # Errors
-///
-/// Returns an error if any API call fails.
-fn ensure_indexes(port: u16, master_key: &str, project_hash: &str) -> Result<(), String> {
-    let meili = meili::client::MeiliClient::new(port, master_key)?;
-
-    let files_uid = format!("cp_{project_hash}_files");
-    let logs_uid = format!("cp_{project_hash}_logs");
-
-    // Files index
-    if !meili.index_exists(&files_uid)? {
-        let create_task = meili.create_index(&files_uid, "id")?;
-        meili.wait_for_task(create_task)?;
-        let settings_task = meili.update_settings(&files_uid, &types::files_index_settings())?;
-        meili.wait_for_task(settings_task)?;
-        log::info!("Created files index: {files_uid}");
-    }
-
-    // Logs index
-    if !meili.index_exists(&logs_uid)? {
-        let create_task = meili.create_index(&logs_uid, "id")?;
-        meili.wait_for_task(create_task)?;
-        let settings_task = meili.update_settings(&logs_uid, &types::logs_index_settings())?;
-        meili.wait_for_task(settings_task)?;
-        log::info!("Created logs index: {logs_uid}");
-    }
-
-    Ok(())
-}
-
 /// Read overlay information from the search module's state.
 ///
 /// Returns `None` if the search module hasn't been initialized.
@@ -119,41 +66,6 @@ pub fn overlay_info(state: &State) -> Option<SearchOverlayInfo> {
         ocr_cached: metrics.ocr_cached,
         ocr_available: ss.indexer_tx.is_some(),
     })
-}
-
-/// Query Meilisearch for initial index statistics and populate metrics.
-///
-/// Called once during `init_state` / `load_module_data` so the Ctrl+I overlay
-/// shows correct counts immediately (before the indexer has done any work).
-fn populate_initial_metrics(
-    port: u16,
-    master_key: &str,
-    project_hash: &str,
-    metrics: &std::sync::Arc<std::sync::Mutex<types::SearchMetrics>>,
-) {
-    let Ok(meili) = meili::client::MeiliClient::new(port, master_key) else {
-        return;
-    };
-
-    let files_uid = format!("cp_{project_hash}_files");
-    let logs_uid = format!("cp_{project_hash}_logs");
-
-    let (mut chunks, files) = if let Ok((count, _indexing)) = meili.index_stats(&files_uid) {
-        let f = count.checked_div(3).unwrap_or(0).max(u64::from(count > 0));
-        (count, f)
-    } else {
-        (0, 0)
-    };
-
-    // Also count logs (optional — just for awareness)
-    if let Ok((log_count, _)) = meili.index_stats(&logs_uid) {
-        chunks = chunks.saturating_add(log_count);
-    }
-
-    if let Ok(mut m) = metrics.lock() {
-        m.chunks_indexed = chunks;
-        m.files_indexed = files;
-    }
 }
 
 /// Meilisearch-powered search module.
@@ -237,7 +149,7 @@ impl Module for SearchModule {
 
     fn init_state(&self, state: &mut State) {
         let project_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
-        let project_hash = hash_project_path(&project_path);
+        let project_hash = meili::bootstrap::hash_project_path(&project_path);
 
         // Try to start/reconnect to the global Meilisearch server
         let (port, master_key) = match meili::server::ensure_server_running() {
@@ -256,7 +168,7 @@ impl Module for SearchModule {
 
         // Create per-project indexes if the server is available
         if port > 0
-            && let Err(e) = ensure_indexes(port, &master_key, &project_hash)
+            && let Err(e) = meili::bootstrap::ensure_indexes(port, &master_key, &project_hash)
         {
             log::warn!("Failed to create Meilisearch indexes: {e}");
         }
@@ -266,7 +178,7 @@ impl Module for SearchModule {
 
         // Populate initial metrics from existing Meilisearch indexes
         if port > 0 {
-            populate_initial_metrics(port, &master_key, &project_hash, &metrics);
+            meili::bootstrap::populate_initial_metrics(port, &master_key, &project_hash, &metrics);
         }
 
         let (indexer_tx, watcher) = if port > 0 {
@@ -310,7 +222,12 @@ impl Module for SearchModule {
 
             // Populate initial metrics from existing Meilisearch indexes
             if persist.port > 0 {
-                populate_initial_metrics(persist.port, &persist.master_key, &persist.project_hash, &metrics);
+                meili::bootstrap::populate_initial_metrics(
+                    persist.port,
+                    &persist.master_key,
+                    &persist.project_hash,
+                    &metrics,
+                );
             }
 
             // Restart indexer + watcher if the server was available
