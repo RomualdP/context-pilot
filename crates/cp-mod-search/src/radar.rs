@@ -268,12 +268,7 @@ pub(crate) fn refresh(state: &mut State) {
     if !recent_signals.is_empty() {
         let _h2 = writeln!(yaml, "anchors:");
         for sig in &recent_signals {
-            let truncated = if sig.len() > 80 {
-                format!("{}...", sig.get(..sig.floor_char_boundary(77)).unwrap_or(""))
-            } else {
-                (*sig).to_string()
-            };
-            let _h3 = writeln!(yaml, "  - \"{}\"", truncated.replace('"', "\\\""));
+            let _h3 = writeln!(yaml, "  - \"{}\"", sig.replace('"', "\\\""));
         }
     }
 
