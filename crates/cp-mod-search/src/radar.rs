@@ -82,20 +82,19 @@ fn decay(age_ms: f64, half_life_ms: f64) -> f64 {
 
 /// Append YAML lines for a single radar entry.
 fn write_entry(yaml: &mut String, entry: &ScoredResult) {
-    let _w0 = writeln!(yaml, "- id: {}", entry.log_id);
-    let _w1 = writeln!(yaml, "  datetime: \"{}\"", entry.datetime);
-    let _w2 = writeln!(yaml, "  importance: {}", entry.importance);
-    if !entry.tags.is_empty() {
-        let _w3 = writeln!(yaml, "  tags: [{}]", entry.tags.join(", "));
-    }
     // Truncate long content to keep within token budget
     let content = if entry.content.len() > 200 {
         format!("{}...", entry.content.get(..entry.content.floor_char_boundary(197)).unwrap_or(""))
     } else {
         entry.content.clone()
     };
-    let _w4 = writeln!(yaml, "  content: \"{}\"", content.replace('"', "\\\""));
-    let _w5 = writeln!(yaml, "  score: {:.3}", entry.score);
+    let _w0 = writeln!(yaml, "  - content: \"{}\"", content.replace('"', "\\\""));
+    let _w1 = writeln!(yaml, "    datetime: \"{}\"", entry.datetime);
+    let _w2 = writeln!(yaml, "    importance: {}", entry.importance);
+    if !entry.tags.is_empty() {
+        let _w3 = writeln!(yaml, "    tags: [{}]", entry.tags.join(", "));
+    }
+    let _w4 = writeln!(yaml, "    score: {:.3}", entry.score);
 }
 
 /// Format milliseconds as a human-readable duration (e.g. "42m", "1h24m", "3d2h").
@@ -264,27 +263,24 @@ pub(crate) fn refresh(state: &mut State) {
         format_duration_ms(span_ms as f64)
     );
 
-    // Show the 3 most recent signals as "active signals"
+    // Show the 3 most recent signals as "active signals" in YAML format
     let recent_signals: Vec<&str> = signals.iter().rev().take(3).map(|s| s.content.as_str()).collect();
     if !recent_signals.is_empty() {
-        let _h2 = write!(yaml, "# Active signals:");
-        for (i, sig) in recent_signals.iter().enumerate() {
-            let truncated = if sig.len() > 60 {
-                format!("{}...", sig.get(..sig.floor_char_boundary(57)).unwrap_or(""))
+        let _h2 = writeln!(yaml, "anchors:");
+        for sig in &recent_signals {
+            let truncated = if sig.len() > 80 {
+                format!("{}...", sig.get(..sig.floor_char_boundary(77)).unwrap_or(""))
             } else {
                 (*sig).to_string()
             };
-            if i == recent_signals.len().saturating_sub(1) {
-                let _h3 = writeln!(yaml, " \"{truncated}\"");
-            } else {
-                let _h4 = write!(yaml, " \"{truncated}\"");
-            }
+            let _h3 = writeln!(yaml, "  - \"{}\"", truncated.replace('"', "\\\""));
         }
     }
 
     if ranked.is_empty() {
-        let _h5 = writeln!(yaml, "# No matching logs found");
+        let _h4 = writeln!(yaml, "# No matching logs found");
     } else {
+        let _h5 = writeln!(yaml, "results:");
         for entry in &ranked {
             write_entry(&mut yaml, entry);
         }
@@ -340,7 +336,14 @@ impl Panel for ContextRadarPanel {
         false
     }
 
-    fn refresh(&self, _state: &mut State) {}
+    fn refresh(&self, state: &mut State) {
+        let yaml = get_radar_yaml(state);
+        let token_count = cp_base::state::context::estimate_tokens(&yaml);
+        if let Some(ctx) = state.context.iter_mut().find(|c| c.context_type.as_str() == RADAR_PANEL_TYPE) {
+            ctx.token_count = token_count;
+            ctx.full_token_count = token_count;
+        }
+    }
 
     fn refresh_cache(&self, _request: CacheRequest) -> Option<CacheUpdate> {
         None
@@ -359,7 +362,7 @@ impl Panel for ContextRadarPanel {
     }
 
     fn max_freezes(&self) -> u8 {
-        0
+        3
     }
 
     fn context(&self, state: &State) -> Vec<ContextItem> {
