@@ -205,7 +205,31 @@ impl Module for SearchModule {
     }
 
     fn load_module_data(&self, data: &serde_json::Value, state: &mut State) {
-        if let Ok(persist) = serde_json::from_value::<SearchPersistData>(data.clone()) {
+        if let Ok(mut persist) = serde_json::from_value::<SearchPersistData>(data.clone()) {
+            // Re-validate server connection — the port may have changed if the
+            // Meilisearch process was killed and restarted between saves.
+            match meili::server::ensure_server_running() {
+                Ok(info) => {
+                    persist.port = info.port;
+                    persist.master_key = info.master_key;
+                }
+                Err(e) => {
+                    log::warn!("Meilisearch server not available on reload: {e}");
+                    persist.port = 0;
+                    persist.master_key = String::new();
+                }
+            }
+
+            // Ensure indexes + embedders exist (idempotent — skips if already configured).
+            // Needed because embedder settings may have been removed or the server
+            // was wiped between saves.
+            if persist.port > 0
+                && let Err(e) =
+                    meili::bootstrap::ensure_indexes(persist.port, &persist.master_key, &persist.project_hash)
+            {
+                log::warn!("Failed to ensure Meilisearch indexes on reload: {e}");
+            }
+
             let metrics = std::sync::Arc::new(std::sync::Mutex::new(types::SearchMetrics::default()));
 
             // Populate initial metrics from existing Meilisearch indexes

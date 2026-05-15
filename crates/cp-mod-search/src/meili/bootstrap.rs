@@ -200,29 +200,37 @@ fn count_ocr_indexed_files(extension_counts: &std::collections::HashMap<String, 
 
 // -- Embedder configuration --------------------------------------------------
 
-/// The `huggingFace` model used for local embeddings.
+/// Voyage AI API endpoint for embeddings.
+const VOYAGE_URL: &str = "https://api.voyageai.com/v1/embeddings";
+
+/// Voyage AI model optimized for code search.
 ///
-/// BGE-base-en-v1.5: 109M params, 768 dims, ~440 MB download.
-/// Best quality/speed tradeoff for code search on CPU (candle runtime).
-const EMBEDDER_MODEL: &str = "BAAI/bge-base-en-v1.5";
+/// voyage-code-3: 1024 dimensions, 32K context window, optimized for code
+/// retrieval and semantic search across source files.
+const VOYAGE_MODEL: &str = "voyage-code-3";
 
 /// Configure embedders on the files and logs indexes if not already set.
 ///
-/// Uses the built-in `huggingFace` source which runs embeddings locally
-/// via `candle` — no external service needed.
+/// Uses the Voyage AI REST API for embeddings — zero local CPU usage.
+/// Requires `VOYAGE_API_KEY` environment variable. If the key is missing,
+/// embedders are skipped and search falls back to keyword-only mode.
 ///
-/// This is a fire-and-forget operation: we submit the settings update and
-/// let Meilisearch generate embeddings in the background. For ~4000 chunks
-/// on Apple Silicon, initial embedding takes roughly 3–5 minutes.
+/// This is a fire-and-forget operation: Meilisearch will call the Voyage API
+/// in the background to generate embeddings for all documents.
 fn configure_embedders(meili: &client::MeiliClient, files_uid: &str, logs_uid: &str) {
+    let Some(api_key) = read_voyage_api_key() else {
+        log::info!("VOYAGE_API_KEY not set — skipping embedder configuration (keyword-only search)");
+        return;
+    };
+
     // Check if files index already has embedders configured
     let files_has_embedder =
         meili.get_embedder_settings(files_uid).ok().and_then(|v| v.as_object().map(|m| !m.is_empty())).unwrap_or(false);
 
     if !files_has_embedder {
-        let settings = files_embedder_settings();
+        let settings = files_embedder_settings(&api_key);
         match meili.update_embedder_settings(files_uid, &settings) {
-            Ok(task_uid) => log::info!("Configuring embedder for {files_uid} (task {task_uid})"),
+            Ok(task_uid) => log::info!("Configuring Voyage embedder for {files_uid} (task {task_uid})"),
             Err(e) => log::warn!("Failed to configure embedder for {files_uid}: {e}"),
         }
     }
@@ -232,23 +240,42 @@ fn configure_embedders(meili: &client::MeiliClient, files_uid: &str, logs_uid: &
         meili.get_embedder_settings(logs_uid).ok().and_then(|v| v.as_object().map(|m| !m.is_empty())).unwrap_or(false);
 
     if !logs_has_embedder {
-        let settings = logs_embedder_settings();
+        let settings = logs_embedder_settings(&api_key);
         match meili.update_embedder_settings(logs_uid, &settings) {
-            Ok(task_uid) => log::info!("Configuring embedder for {logs_uid} (task {task_uid})"),
+            Ok(task_uid) => log::info!("Configuring Voyage embedder for {logs_uid} (task {task_uid})"),
             Err(e) => log::warn!("Failed to configure embedder for {logs_uid}: {e}"),
         }
     }
 }
 
+/// Read the Voyage AI API key from environment.
+///
+/// Checks `VOYAGE_API_KEY` env var. Returns `None` if not set or empty.
+fn read_voyage_api_key() -> Option<String> {
+    std::env::var("VOYAGE_API_KEY").ok().filter(|k| !k.is_empty())
+}
+
 /// Embedder settings for the files index.
 ///
-/// Uses Liquid template to combine file path, chunk type/name, and content
-/// into a rich embedding input that captures WHERE and WHAT the code is.
-fn files_embedder_settings() -> serde_json::Value {
+/// Uses Voyage AI REST API with `voyage-code-3` model. The document template
+/// combines file path, chunk type/name, and content into a rich embedding
+/// input that captures WHERE and WHAT the code is.
+fn files_embedder_settings(api_key: &str) -> serde_json::Value {
     serde_json::json!({
         "default": {
-            "source": "huggingFace",
-            "model": EMBEDDER_MODEL,
+            "source": "rest",
+            "url": VOYAGE_URL,
+            "apiKey": api_key,
+            "request": {
+                "model": VOYAGE_MODEL,
+                "input": ["{{text}}", "{{..}}"]
+            },
+            "response": {
+                "data": [
+                    { "embedding": "{{embedding}}" },
+                    "{{..}}"
+                ]
+            },
             "documentTemplate": "{{doc.file_path}} [{{doc.chunk_type}}] {{doc.chunk_name}}: {{doc.content | truncatewords: 100}}",
             "documentTemplateMaxBytes": 1024
         }
@@ -258,11 +285,22 @@ fn files_embedder_settings() -> serde_json::Value {
 /// Embedder settings for the logs index.
 ///
 /// Simpler template since logs are short free-text entries.
-fn logs_embedder_settings() -> serde_json::Value {
+fn logs_embedder_settings(api_key: &str) -> serde_json::Value {
     serde_json::json!({
         "default": {
-            "source": "huggingFace",
-            "model": EMBEDDER_MODEL,
+            "source": "rest",
+            "url": VOYAGE_URL,
+            "apiKey": api_key,
+            "request": {
+                "model": VOYAGE_MODEL,
+                "input": ["{{text}}", "{{..}}"]
+            },
+            "response": {
+                "data": [
+                    { "embedding": "{{embedding}}" },
+                    "{{..}}"
+                ]
+            },
             "documentTemplate": "[{{doc.importance}}] {{doc.content}}"
         }
     })

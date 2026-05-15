@@ -287,6 +287,8 @@ pub(crate) fn ensure_server_running() -> Result<ServerInfo, String> {
         .arg(&data)
         .arg("--env")
         .arg("production")
+        .arg("--max-indexing-threads")
+        .arg("2")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
