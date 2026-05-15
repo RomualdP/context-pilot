@@ -313,12 +313,17 @@ impl Panel for ContextRadarPanel {
             .map(|line| {
                 let semantic = if line.starts_with('#') {
                     Semantic::Muted
-                } else if line.starts_with("- id:") {
+                } else if line == "anchors:" || line == "results:" {
+                    Semantic::Header
+                } else if line.trim_start().starts_with("- content:") {
                     Semantic::Info
+                } else if line.trim_start().starts_with("- \"") {
+                    // Anchor signal items
+                    Semantic::Success
                 } else if line.contains("importance: critical") || line.contains("importance: high") {
                     Semantic::Warning
-                } else if line.starts_with("  score:") {
-                    Semantic::Success
+                } else if line.contains("score:") {
+                    Semantic::Muted
                 } else {
                     Semantic::Default
                 };
