@@ -147,3 +147,46 @@ impl Panel for SearchResultPanel {
         false
     }
 }
+
+/// Visualizer for search tool results.
+///
+/// Highlights file paths, section headers, importance levels, and tags
+/// in the conversation view.
+pub(crate) fn visualize_search_output(content: &str, width: usize) -> Vec<cp_render::Block> {
+    use cp_render::{Block, Semantic, Span};
+
+    content
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                return Block::empty();
+            }
+
+            // Truncate long lines
+            let display = if line.len() > width {
+                format!("{}...", line.get(..line.floor_char_boundary(width.saturating_sub(3))).unwrap_or(""))
+            } else {
+                line.to_string()
+            };
+
+            let semantic = if line.starts_with("Results for") || line.starts_with("No results") {
+                Semantic::Info
+            } else if line.starts_with("---") && line.ends_with("---") {
+                Semantic::Header
+            } else if line.starts_with("Error") || line.contains("[critical]") {
+                Semantic::Error
+            } else if line.contains("[high]") {
+                Semantic::Warning
+            } else if line.contains("[low]") {
+                Semantic::Muted
+            } else if line.starts_with(|c: char| c.is_ascii_digit()) && line.contains(":[") {
+                // File result line like "1. src/main.rs:15-42 [function: run]"
+                Semantic::Success
+            } else {
+                Semantic::Default
+            };
+
+            Block::Line(vec![Span::styled(display, semantic)])
+        })
+        .collect()
+}

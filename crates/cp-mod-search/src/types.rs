@@ -6,6 +6,34 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use serde::{Deserialize, Serialize};
 
+/// A task context signal from the Think tool, used as a Context Radar query.
+///
+/// Stored in a ring buffer (cap 20) in [`SearchPersistData`].
+/// Each signal describes *what* the AI is working on — used as a semantic
+/// search query against the logs index for automatic recall.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct TaskSignal {
+    /// Unix timestamp (ms) when this signal was created.
+    pub timestamp_ms: u64,
+    /// Short description of the current task (1–2 sentences).
+    pub content: String,
+}
+
+/// Maximum number of task signals to keep in the ring buffer.
+pub(crate) const MAX_TASK_SIGNALS: usize = 20;
+
+/// Cached Context Radar panel content.
+///
+/// Updated by [`crate::radar::refresh`] after Think (with `task_context`)
+/// or log creation.  Read by [`crate::radar::ContextRadarPanel::context_content`].
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RadarCache {
+    /// Pre-computed YAML content for the panel.
+    pub yaml: String,
+    /// Unix timestamp (ms) of last refresh.
+    pub last_refresh_ms: u64,
+}
+
 /// Persisted search state — survives TUI reloads.
 ///
 /// Serialized via `save_module_data` / `load_module_data`.
@@ -36,6 +64,10 @@ pub(crate) struct SearchPersistData {
     /// Persisted so "recently recomputed" survives reloads.
     #[serde(default)]
     pub last_sent_ms: HashMap<String, u64>,
+    /// Task context signals from the Think tool — ring buffer, cap [`MAX_TASK_SIGNALS`].
+    /// Used by Context Radar to query the logs index for automatic recall.
+    #[serde(default)]
+    pub task_signals: Vec<TaskSignal>,
 }
 
 /// Full runtime search state stored in the `State` `TypeMap`.
@@ -54,6 +86,8 @@ pub(crate) struct SearchState {
     /// Indexer metrics, shared with the indexer thread via `Arc`.
     /// Read by the Ctrl+I overlay and overview panel.
     pub metrics: Arc<Mutex<SearchMetrics>>,
+    /// Cached Context Radar panel content.  Updated by [`crate::radar::refresh`].
+    pub radar_cache: RadarCache,
 }
 
 impl std::fmt::Debug for SearchState {
@@ -63,6 +97,7 @@ impl std::fmt::Debug for SearchState {
             .field("indexer_tx", &self.indexer_tx.is_some())
             .field("watcher", &self.watcher.is_some())
             .field("metrics", &self.metrics)
+            .field("radar_cache", &self.radar_cache)
             .finish()
     }
 }

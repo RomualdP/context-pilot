@@ -195,7 +195,7 @@ fn count_ocr_cache_files() -> u64 {
 /// require OCR processing (pdf, png, jpg, etc.).  Returns chunk
 /// count (not file count) — used as a lower bound for OCR activity.
 fn count_ocr_indexed_files(extension_counts: &std::collections::HashMap<String, u64>) -> u64 {
-    extension_counts.iter().filter(|(ext, _)| crate::ocr::is_ocr_extension(ext)).map(|(_, count)| *count).sum()
+    extension_counts.iter().filter(|(ext, _)| crate::meili::ocr::is_ocr_extension(ext)).map(|(_, count)| *count).sum()
 }
 
 // -- Embedder configuration --------------------------------------------------

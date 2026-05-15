@@ -191,8 +191,30 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     // === LOGS → MEILISEARCH SYNC ===
     // Push new log entries to the search index AFTER tool execution.
     // Cannot use on_tool_complete (fires during streaming, before execution).
-    if tools.iter().any(|t| t.name == "log_create" || t.name == "Close_conversation_history") {
+    let logs_changed = tools.iter().any(|t| t.name == "log_create" || t.name == "Close_conversation_history");
+    if logs_changed {
         cp_mod_search::sync_logs_to_meilisearch(&app.state);
+    }
+
+    // === THINK TASK CONTEXT → CONTEXT RADAR ===
+    // When Think is called with a task_context, push a signal into the search
+    // module's ring buffer for Context Radar automatic log recall.
+    let mut radar_needs_refresh = logs_changed;
+    for tool in &tools {
+        if tool.name == "Think"
+            && let Some(ctx) = tool.input.get("task_context").and_then(serde_json::Value::as_str)
+        {
+            let trimmed = ctx.trim();
+            if !trimmed.is_empty() {
+                cp_mod_search::push_task_signal(&mut app.state, trimmed);
+                radar_needs_refresh = true;
+            }
+        }
+    }
+
+    // Refresh Context Radar panel when signals or logs changed
+    if radar_needs_refresh {
+        cp_mod_search::refresh_radar(&mut app.state);
     }
 
     // === REVERIE TRIGGER ===

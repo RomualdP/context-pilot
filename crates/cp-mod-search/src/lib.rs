@@ -11,10 +11,10 @@
 pub mod indexer;
 /// Meilisearch HTTP client, server lifecycle, and binary download.
 pub mod meili;
-/// Datalab OCR API client for converting PDFs/images to text.
-pub mod ocr;
 /// Dynamic search result panel rendering and creation.
 pub mod panel;
+/// Context Radar — automatic log recall from Think task signals.
+pub mod radar;
 /// File content splitter chain (fixed-size fallback, future tree-sitter).
 pub mod splitter;
 /// Search tool dispatch and execution.
@@ -77,20 +77,40 @@ impl Module for SearchModule {
     }
 
     fn context_type_metadata(&self) -> Vec<TypeMeta> {
-        vec![TypeMeta {
-            context_type: "search_result",
-            icon_id: "search",
-            is_fixed: false,
-            needs_cache: false,
-            fixed_order: None,
-            display_name: "search",
-            short_name: "search",
-            needs_async_wait: false,
-        }]
+        vec![
+            TypeMeta {
+                context_type: "search_result",
+                icon_id: "search",
+                is_fixed: false,
+                needs_cache: false,
+                fixed_order: None,
+                display_name: "search",
+                short_name: "search",
+                needs_async_wait: false,
+            },
+            TypeMeta {
+                context_type: radar::RADAR_PANEL_TYPE,
+                icon_id: "radar",
+                is_fixed: true,
+                needs_cache: false,
+                fixed_order: Some(6),
+                display_name: "radar",
+                short_name: "radar",
+                needs_async_wait: false,
+            },
+        ]
     }
 
     fn dynamic_panel_types(&self) -> Vec<Kind> {
         vec![Kind::new("search_result")]
+    }
+
+    fn create_panel(&self, context_type: &Kind) -> Option<Box<dyn Panel>> {
+        match context_type.as_str() {
+            panel::SEARCH_PANEL_TYPE => Some(Box::new(panel::SearchResultPanel)),
+            radar::RADAR_PANEL_TYPE => Some(Box::new(radar::ContextRadarPanel)),
+            _ => None,
+        }
     }
 
     fn tool_definitions(&self) -> Vec<ToolDefinition> {
@@ -115,13 +135,6 @@ impl Module for SearchModule {
 
     fn execute_tool(&self, tool: &ToolUse, state: &mut State) -> Option<ToolResult> {
         tools::dispatch(tool, state)
-    }
-
-    fn create_panel(&self, context_type: &Kind) -> Option<Box<dyn Panel>> {
-        (context_type.as_str() == panel::SEARCH_PANEL_TYPE).then(|| {
-            let p: Box<dyn Panel> = Box::new(panel::SearchResultPanel);
-            p
-        })
     }
 
     fn init_state(&self, state: &mut State) {
@@ -180,7 +193,7 @@ impl Module for SearchModule {
         let persist =
             SearchPersistData { port, master_key, project_hash, index_ready: false, ..SearchPersistData::default() };
 
-        state.set_ext(SearchState { persist, indexer_tx, watcher, metrics });
+        state.set_ext(SearchState { persist, indexer_tx, watcher, metrics, radar_cache: types::RadarCache::default() });
     }
 
     fn reset_state(&self, state: &mut State) {
@@ -283,10 +296,19 @@ impl Module for SearchModule {
                 (None, None)
             };
 
-            state.set_ext(SearchState { persist, indexer_tx, watcher, metrics });
+            state.set_ext(SearchState {
+                persist,
+                indexer_tx,
+                watcher,
+                metrics,
+                radar_cache: types::RadarCache::default(),
+            });
 
             // Backfill: push any existing logs to Meilisearch (idempotent upsert)
             sync_logs_to_meilisearch(state);
+
+            // Pre-populate Context Radar from persisted signals + logs
+            radar::refresh(state);
         }
     }
 
@@ -301,15 +323,15 @@ impl Module for SearchModule {
     }
 
     fn fixed_panel_types(&self) -> Vec<Kind> {
-        vec![]
+        vec![Kind::new(radar::RADAR_PANEL_TYPE)]
     }
 
     fn fixed_panel_defaults(&self) -> Vec<(Kind, &'static str, bool)> {
-        vec![]
+        vec![(Kind::new(radar::RADAR_PANEL_TYPE), "Context Radar", false)]
     }
 
     fn tool_visualizers(&self) -> Vec<(&'static str, cp_base::modules::ToolVisualizer)> {
-        vec![("search", visualize_search_output)]
+        vec![("search", panel::visualize_search_output)]
     }
 
     fn context_display_name(&self, _context_type: &str) -> Option<&'static str> {
@@ -379,6 +401,35 @@ impl Module for SearchModule {
     }
 }
 
+/// Recompute the Context Radar panel content.
+///
+/// Queries the Meilisearch logs index using task context signals from the
+/// Think tool.  Called from the main binary's pipeline after:
+/// - Think (with `task_context`)
+/// - `log_create` / `Close_conversation_history`
+/// - Boot pre-population (via `load_module_data`)
+pub fn refresh_radar(state: &mut State) {
+    radar::refresh(state);
+}
+
+/// Push a task context signal from the Think tool into the ring buffer.
+///
+/// Called from `pipeline.rs` after a Think tool executes with a
+/// `task_context` parameter.  Caps the buffer at [`types::MAX_TASK_SIGNALS`].
+pub fn push_task_signal(state: &mut State, content: &str) {
+    let Some(ss) = state.get_ext_mut::<SearchState>() else { return };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+    ss.persist.task_signals.push(types::TaskSignal { timestamp_ms: now_ms, content: content.to_string() });
+    // Ring buffer: drop oldest signals when over capacity
+    let len = ss.persist.task_signals.len();
+    if len > types::MAX_TASK_SIGNALS {
+        let excess = len.saturating_sub(types::MAX_TASK_SIGNALS);
+        drop(ss.persist.task_signals.drain(..excess));
+    }
+}
+
 /// Push all log entries from the logs module into the Meilisearch logs index.
 ///
 /// Uses upsert semantics — existing documents with the same ID are updated,
@@ -422,47 +473,4 @@ pub fn sync_logs_to_meilisearch(state: &State) {
     if let Ok(task) = client.add_documents(&logs_uid, &serde_json::Value::Array(docs)) {
         let _r = client.wait_for_task(task);
     }
-}
-
-/// Visualizer for search tool results.
-///
-/// Highlights file paths, section headers, importance levels, and tags
-/// in the conversation view.
-fn visualize_search_output(content: &str, width: usize) -> Vec<cp_render::Block> {
-    use cp_render::{Block, Semantic, Span};
-
-    content
-        .lines()
-        .map(|line| {
-            if line.is_empty() {
-                return Block::empty();
-            }
-
-            // Truncate long lines
-            let display = if line.len() > width {
-                format!("{}...", line.get(..line.floor_char_boundary(width.saturating_sub(3))).unwrap_or(""))
-            } else {
-                line.to_string()
-            };
-
-            let semantic = if line.starts_with("Results for") || line.starts_with("No results") {
-                Semantic::Info
-            } else if line.starts_with("---") && line.ends_with("---") {
-                Semantic::Header
-            } else if line.starts_with("Error") || line.contains("[critical]") {
-                Semantic::Error
-            } else if line.contains("[high]") {
-                Semantic::Warning
-            } else if line.contains("[low]") {
-                Semantic::Muted
-            } else if line.starts_with(|c: char| c.is_ascii_digit()) && line.contains(":[") {
-                // File result line like "1. src/main.rs:15-42 [function: run]"
-                Semantic::Success
-            } else {
-                Semantic::Default
-            };
-
-            Block::Line(vec![Span::styled(display, semantic)])
-        })
-        .collect()
 }

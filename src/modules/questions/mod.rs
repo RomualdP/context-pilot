@@ -81,6 +81,7 @@ impl Module for QuestionsModule {
                 .short_desc("Record a structured reasoning step")
                 .category("Context")
                 .param("thought_body", ParamType::String, true)
+                .param("task_context", ParamType::String, false)
                 .build(),
         ]
     }
