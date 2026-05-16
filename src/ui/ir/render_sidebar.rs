@@ -269,7 +269,10 @@ fn render_token_bar_box(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw
     let border_style = Style::default().fg(theme::border_muted());
     let inner_width = cw.saturating_sub(2); // space between │ and │
 
-    let current = format_number(token_bar.used.to_usize());
+    // Get animated values (smooth fill + pulse)
+    let anim = super::bar_animation::tick(token_bar);
+
+    let current = format_number(anim.used_tokens.to_usize());
     let threshold = format_number(token_bar.threshold.to_usize());
     let budget = format_number(token_bar.budget.to_usize());
 
@@ -291,14 +294,22 @@ fn render_token_bar_box(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw
         Span::styled(budget, Style::default().fg(theme::accent())),
     ]));
 
-    // Line 3: gauge bar
+    // Line 3: gauge bar (using animated fractional positions)
     let bar_width = inner_width;
-    let hit_pct = token_bar.segments.first().map_or(0, |s| s.percent);
-    let miss_pct = token_bar.segments.get(1).map_or(0, |s| s.percent);
+    let bar_width_f = bar_width.to_f64();
 
-    let hit_filled = cp_base::panels::time_arith::div_const::<100>(usize::from(hit_pct).saturating_mul(bar_width));
-    let miss_filled = cp_base::panels::time_arith::div_const::<100>(usize::from(miss_pct).saturating_mul(bar_width));
-    let total_filled = hit_filled.saturating_add(miss_filled).min(bar_width);
+    // Fractional fill positions for smooth animation
+    let hit_filled_f = anim.hit_pct * bar_width_f / 100.0;
+    let miss_filled_f = anim.miss_pct * bar_width_f / 100.0;
+    let total_filled_f = (hit_filled_f + miss_filled_f).min(bar_width_f);
+
+    // Integer positions for cell-level decisions
+    let hit_filled = hit_filled_f.floor().to_usize().min(bar_width);
+    let total_filled = total_filled_f.floor().to_usize().min(bar_width);
+
+    // Fractional remainder at boundaries for color crossfade
+    let hit_frac = hit_filled_f.fract();
+    let total_frac = total_filled_f.fract();
 
     let threshold_pos = if token_bar.budget > 0 {
         cp_base::panels::time_arith::div_const::<100>(
@@ -317,25 +328,45 @@ fn render_token_bar_box(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw
         0
     };
 
+    let hit_color = theme::success();
+    let miss_color = theme::warning();
+    let empty_color = theme::bg_elevated();
+
     let mut bar_spans: Vec<Span<'static>> = Vec::new();
     for i in 0..bar_width {
         let is_threshold = i == threshold_pos && threshold_pos < bar_width;
 
-        // Determine the background color this position would have
-        let bg_color = if i < hit_filled {
-            theme::success()
+        // Determine the base fill color for this cell
+        let base_color = if i < hit_filled {
+            hit_color
+        } else if i == hit_filled && hit_frac > 0.01 && total_filled_f > hit_filled_f {
+            // Boundary cell: crossfade from hit → miss
+            super::bar_animation::lerp_color(miss_color, hit_color, hit_frac)
         } else if i < total_filled {
-            theme::warning()
+            miss_color
+        } else if i == total_filled && total_frac > 0.01 {
+            // Boundary cell: crossfade from filled → empty
+            let fill = if hit_filled_f > total_filled_f.floor() { hit_color } else { miss_color };
+            super::bar_animation::lerp_color(empty_color, fill, total_frac)
         } else {
-            theme::bg_elevated()
+            empty_color
         };
 
+        // Apply streaming pulse to filled cells
+        let is_filled_cell = i < total_filled || (i == total_filled && total_frac > 0.01);
+        let color = anim.pulse_brightness.map_or(base_color, |brightness| {
+            if is_filled_cell { super::bar_animation::pulse_color(base_color, brightness) } else { base_color }
+        });
+
         if is_threshold {
-            // Threshold marker: fg=warning, bg=whatever this cell's fill color is
-            bar_spans.push(Span::styled("|", Style::default().fg(theme::warning()).bg(bg_color)));
+            bar_spans.push(Span::styled("|", Style::default().fg(theme::warning()).bg(color)));
         } else {
-            let ch = if i < total_filled { chars::BLOCK_FULL } else { chars::BLOCK_LIGHT };
-            bar_spans.push(Span::styled(ch, Style::default().fg(bg_color)));
+            let ch = if i < total_filled || (i == total_filled && total_frac > 0.5) {
+                chars::BLOCK_FULL
+            } else {
+                chars::BLOCK_LIGHT
+            };
+            bar_spans.push(Span::styled(ch, Style::default().fg(color)));
         }
     }
     content.push(Line::from(bar_spans));

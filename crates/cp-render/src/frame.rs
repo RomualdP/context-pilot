@@ -91,6 +91,8 @@ pub struct TokenBar {
     pub budget: u32,
     /// Cleaning threshold.
     pub threshold: u32,
+    /// Whether the LLM is currently streaming (used for pulse animation).
+    pub streaming: bool,
 }
 
 /// Breakdown of token usage statistics.
