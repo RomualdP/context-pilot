@@ -320,17 +320,9 @@ fn render_token_bar_box(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw
     let mut bar_spans: Vec<Span<'static>> = Vec::new();
     for i in 0..bar_width {
         let is_threshold = i == threshold_pos && threshold_pos < bar_width;
-        let ch = if is_threshold {
-            "|"
-        } else if i < total_filled {
-            chars::BLOCK_FULL
-        } else {
-            chars::BLOCK_LIGHT
-        };
 
-        let color = if is_threshold {
-            theme::warning()
-        } else if i < hit_filled {
+        // Determine the background color this position would have
+        let bg_color = if i < hit_filled {
             theme::success()
         } else if i < total_filled {
             theme::warning()
@@ -338,7 +330,13 @@ fn render_token_bar_box(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw
             theme::bg_elevated()
         };
 
-        bar_spans.push(Span::styled(ch, Style::default().fg(color)));
+        if is_threshold {
+            // Threshold marker: fg=warning, bg=whatever this cell's fill color is
+            bar_spans.push(Span::styled("|", Style::default().fg(theme::warning()).bg(bg_color)));
+        } else {
+            let ch = if i < total_filled { chars::BLOCK_FULL } else { chars::BLOCK_LIGHT };
+            bar_spans.push(Span::styled(ch, Style::default().fg(bg_color)));
+        }
     }
     content.push(Line::from(bar_spans));
 
