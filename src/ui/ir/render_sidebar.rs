@@ -56,14 +56,12 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
         .split(area);
     debug_assert!(sidebar_layout.len() >= 2, "sidebar layout must have at least 2 chunks");
 
-    let mut lines: Vec<Line<'_>> = vec![Line::from("")];
+    let mut lines: Vec<Line<'_>> = Vec::new();
 
     // Token bar in rounded border box (above entries)
     if let Some(ref tb) = sidebar.token_bar {
         render_token_bar_box(&mut lines, tb, cw);
     }
-
-    lines.push(Line::from(""));
 
     // Separate fixed (id is empty for conversation, or is_fixed) from dynamic entries
     let (fixed_entries, dynamic_entries): (Vec<_>, Vec<_>) = sidebar.entries.iter().partition(|e| e.fixed);
