@@ -14,12 +14,12 @@ pub(crate) mod render_conversation;
 pub(crate) mod render_panel;
 /// Sidebar adapter: renders [`cp_render::frame::Sidebar`] → ratatui.
 pub(crate) mod render_sidebar;
+/// Token statistics sub-module for sidebar (rounded-border table).
+mod render_sidebar_stats;
 /// Status bar adapter: renders [`cp_render::frame::StatusBar`] → ratatui.
 pub(crate) mod render_status_bar;
 /// Sidebar region builder.
 mod sidebar;
-/// Status bar region builder.
-mod status_bar;
 
 use cp_render::{Align, Semantic, Span as IrSpan, TreeNode};
 use ratatui::prelude::{Line, Span, Style};
@@ -281,7 +281,7 @@ use cp_base::panels::now_ms;
 #[must_use]
 pub(crate) fn build_frame(state: &State) -> IrFrame {
     let sidebar = sidebar::build_sidebar(state);
-    let status_bar = status_bar::build_status_bar(state);
+    let status_bar = render_status_bar::build_status_bar(state);
     let active_panel = build_active_panel(state);
 
     let conversation = conversation::build_conversation(state);

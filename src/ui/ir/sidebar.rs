@@ -129,7 +129,8 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
         };
 
         let shortcut = if is_fixed {
-            fixed_panel_badge(ctx.context_type.as_str(), state).unwrap_or_default()
+            // Don't show "0" — empty string hides the badge
+            fixed_panel_badge(ctx.context_type.as_str(), state).filter(|s| s != "0").unwrap_or_default()
         } else {
             ctx.id.clone()
         };

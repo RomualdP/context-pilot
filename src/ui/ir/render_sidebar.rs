@@ -26,7 +26,7 @@ const fn content_width(area_width: u16) -> usize {
 
 /// Create a line with structural left-indent (1 space prefix).
 /// Use this for ALL non-entry sidebar lines to enforce consistent padding.
-fn padded(spans: Vec<Span<'static>>) -> Line<'static> {
+pub(super) fn padded(spans: Vec<Span<'static>>) -> Line<'static> {
     let mut all = Vec::with_capacity(spans.len().saturating_add(1));
     all.push(Span::raw(" "));
     all.extend(spans);
@@ -98,9 +98,9 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
         }
     }
 
-    // Separator + token bar
+    // Spacing before token bar (2 empty lines)
     lines.push(Line::from(""));
-    lines.push(padded(vec![Span::styled(chars::HORIZONTAL.repeat(cw), Style::default().fg(theme::border()))]));
+    lines.push(Line::from(""));
 
     if let Some(ref tb) = sidebar.token_bar {
         render_token_bar(&mut lines, tb, cw);
@@ -111,7 +111,10 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
         render_pr_card(&mut lines, pr, cw);
     }
 
-    // Token stats
+    // Blank line before stats table
+    lines.push(Line::from(""));
+
+    // Token stats (rendered with rounded border)
     if let Some(ref stats) = sidebar.token_stats {
         render_token_stats(&mut lines, stats, cw);
     }
@@ -377,102 +380,7 @@ fn render_pr_card(lines: &mut Vec<Line<'static>>, pr: &cp_render::frame::PrCard,
 
 // ── Token stats ──────────────────────────────────────────────────────
 
-/// Render the token statistics table from IR.
+/// Render the token statistics table — delegates to extracted module.
 fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats, cw: usize) {
-    use crate::ui::helpers::{Cell, render_table};
-
-    let format_cost = |cost: Option<f64>| -> String {
-        cost.map_or(String::new(), |c| {
-            if c < 0.01 {
-                format!("${c:.3}")
-            } else if c < 1.0 {
-                format!("${c:.2}")
-            } else {
-                format!("${c:.1}")
-            }
-        })
-    };
-
-    let hit_icon = chars::ARROW_UP.to_string();
-    let miss_icon = chars::CROSS.to_string();
-    let out_icon = chars::ARROW_DOWN.to_string();
-
-    let header_cells = [
-        Cell::new("", Style::default()),
-        Cell::right(format!("{hit_icon} hit"), Style::default().fg(theme::success())),
-        Cell::right(format!("{miss_icon} miss"), Style::default().fg(theme::warning())),
-        Cell::right(format!("{out_icon} out"), Style::default().fg(theme::accent_dim())),
-    ];
-
-    let mut rows: Vec<Vec<Cell>> = Vec::new();
-
-    for row in &stats.rows {
-        // Counts row
-        rows.push(vec![
-            Cell::new(&row.label, Style::default().fg(theme::text_muted())),
-            Cell::right(format_number(row.hit.to_usize()), Style::default().fg(theme::success())),
-            Cell::right(format_number(row.miss.to_usize()), Style::default().fg(theme::warning())),
-            Cell::right(format_number(row.output.to_usize()), Style::default().fg(theme::accent_dim())),
-        ]);
-
-        // Costs row (only if any cost is present)
-        let hit_cost = format_cost(row.hit_cost);
-        let miss_cost = format_cost(row.miss_cost);
-        let out_cost = format_cost(row.output_cost);
-
-        if !hit_cost.is_empty() || !miss_cost.is_empty() || !out_cost.is_empty() {
-            rows.push(vec![
-                Cell::new("", Style::default()),
-                Cell::right(hit_cost, Style::default().fg(theme::text_muted())),
-                Cell::right(miss_cost, Style::default().fg(theme::text_muted())),
-                Cell::right(out_cost, Style::default().fg(theme::text_muted())),
-            ]);
-        }
-    }
-
-    lines.extend(render_table(&header_cells, &rows, None, 1));
-
-    // Uncached input tokens (after last cache breakpoint, billed at base price)
-    if stats.uncached_input > 0 {
-        lines.push(padded(vec![Span::styled(
-            format!("uncached: {}", format_number(stats.uncached_input.to_usize())),
-            Style::default().fg(theme::error()),
-        )]));
-    }
-
-    // Alive cache breakpoints (non-pruned stored BPs at last tick)
-    if stats.alive_breakpoints > 0 {
-        lines.push(padded(vec![Span::styled(
-            format!("alive BPs: {}", stats.alive_breakpoints),
-            Style::default().fg(theme::success()),
-        )]));
-
-        // BP position gauge — shows WHERE in the prompt alive BPs sit
-        if !stats.alive_bp_positions.is_empty() {
-            let gauge_width = cw;
-            let mut gauge_spans = vec![Span::raw(" ")]; // structural 1-char indent
-            for i in 0..gauge_width {
-                // Map gauge column i to permille position: i * 1000 / gauge_width
-                let col_permille_start = i.saturating_mul(1000).checked_div(gauge_width).unwrap_or(0);
-                let col_permille_end = (i.saturating_add(1)).saturating_mul(1000).checked_div(gauge_width).unwrap_or(0);
-                // Check if any alive BP falls in this column's range
-                let has_bp = stats
-                    .alive_bp_positions
-                    .iter()
-                    .any(|&p| usize::from(p) >= col_permille_start && usize::from(p) < col_permille_end);
-                if has_bp {
-                    gauge_spans.push(Span::styled("|", Style::default().fg(theme::success())));
-                } else {
-                    gauge_spans.push(Span::styled(chars::BLOCK_LIGHT, Style::default().fg(theme::bg_elevated())));
-                }
-            }
-            lines.push(Line::from(gauge_spans));
-        }
-    }
-
-    // Total cost
-    if let Some(total) = stats.total_cost {
-        let total_str = if total < 0.01 { format!("${total:.3}") } else { format!("${total:.2}") };
-        lines.push(padded(vec![Span::styled(format!("total: {total_str}"), Style::default().fg(theme::text_muted()))]));
-    }
+    super::render_sidebar_stats::render_token_stats(lines, stats, cw);
 }
