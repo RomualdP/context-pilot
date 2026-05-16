@@ -15,6 +15,24 @@ use crate::infra::constants::SIDEBAR_HELP_HEIGHT;
 /// Maximum dynamic entries per sidebar page.
 const MAX_DYNAMIC_PER_PAGE: usize = 10;
 
+/// Left indent for non-entry content (separators, bars, stats).
+/// Entries handle their own col-0 indicator, but everything else gets this padding.
+const CONTENT_INDENT: usize = 1;
+
+/// Compute available content width given the full area width and the left indent.
+const fn content_width(area_width: u16) -> usize {
+    (area_width as usize).saturating_sub(CONTENT_INDENT)
+}
+
+/// Create a line with structural left-indent (1 space prefix).
+/// Use this for ALL non-entry sidebar lines to enforce consistent padding.
+fn padded(spans: Vec<Span<'static>>) -> Line<'static> {
+    let mut all = Vec::with_capacity(spans.len().saturating_add(1));
+    all.push(Span::raw(" "));
+    all.extend(spans);
+    Line::from(all)
+}
+
 /// Render the sidebar region from its IR snapshot.
 pub(crate) fn render_sidebar_from_ir(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
     match sidebar.mode {
@@ -30,6 +48,7 @@ pub(crate) fn render_sidebar_from_ir(frame: &mut Frame<'_>, sidebar: &Sidebar, a
 fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
     let _guard = crate::profile!("ir::sidebar_normal");
     let base_style = Style::default().bg(theme::bg_base());
+    let cw = content_width(area.width);
 
     let sidebar_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -44,13 +63,16 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
 
     // Render fixed entries (conversation first, then P1-P9)
     for entry in &fixed_entries {
-        render_normal_entry(&mut lines, entry, base_style);
+        render_normal_entry(&mut lines, entry, cw);
     }
 
     // Dynamic entries with pagination
     let total_dynamic = dynamic_entries.len();
     if total_dynamic > 0 {
-        lines.push(Line::from(vec![Span::styled(format!(" {:─<32}", ""), Style::default().fg(theme::border_muted()))]));
+        lines.push(padded(vec![Span::styled(
+            "─".repeat(cw.saturating_sub(1)),
+            Style::default().fg(theme::border_muted()),
+        )]));
 
         // Find which page the selected entry is on
         let total_pages = if total_dynamic == 0 { 1 } else { total_dynamic.div_ceil(MAX_DYNAMIC_PER_PAGE) };
@@ -63,12 +85,12 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
         let page_end = page_start.saturating_add(MAX_DYNAMIC_PER_PAGE).min(total_dynamic);
 
         for entry in dynamic_entries.get(page_start..page_end).unwrap_or(&[]) {
-            render_normal_entry(&mut lines, entry, base_style);
+            render_normal_entry(&mut lines, entry, cw);
         }
 
         if total_pages > 1 {
-            lines.push(Line::from(vec![Span::styled(
-                format!("  page {}/{}", current_page.saturating_add(1), total_pages),
+            lines.push(padded(vec![Span::styled(
+                format!("page {}/{}", current_page.saturating_add(1), total_pages),
                 Style::default().fg(theme::text_muted()),
             )]));
         }
@@ -76,20 +98,23 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
 
     // Separator + token bar
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![Span::styled(chars::HORIZONTAL.repeat(34), Style::default().fg(theme::border()))]));
+    lines.push(padded(vec![Span::styled(
+        chars::HORIZONTAL.repeat(cw.saturating_sub(1)),
+        Style::default().fg(theme::border()),
+    )]));
 
     if let Some(ref tb) = sidebar.token_bar {
-        render_token_bar(&mut lines, tb, base_style);
+        render_token_bar(&mut lines, tb, cw);
     }
 
     // PR card
     if let Some(ref pr) = sidebar.pr_card {
-        render_pr_card(&mut lines, pr, base_style);
+        render_pr_card(&mut lines, pr, cw);
     }
 
     // Token stats
     if let Some(ref stats) = sidebar.token_stats {
-        render_token_stats(&mut lines, stats);
+        render_token_stats(&mut lines, stats, cw);
     }
 
     let paragraph = Paragraph::new(lines).style(base_style);
@@ -101,8 +126,7 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
         .help_hints
         .iter()
         .map(|hint| {
-            Line::from(vec![
-                Span::styled(" ", base_style),
+            padded(vec![
                 Span::styled(hint.key.clone(), Style::default().fg(theme::accent())),
                 Span::styled(format!(" {}", hint.description), Style::default().fg(theme::text_muted())),
             ])
@@ -115,7 +139,7 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
 }
 
 /// Render a single entry line in the full sidebar.
-fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, _base_style: Style) {
+fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, _cw: usize) {
     let indicator = if entry.active { chars::ARROW_RIGHT } else { " " };
     let indicator_color = if entry.active { theme::accent() } else { theme::bg_base() };
     let name_color = if entry.active { theme::accent() } else { theme::text_secondary() };
@@ -234,15 +258,15 @@ fn render_collapsed_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, 
 // ── Token bar ────────────────────────────────────────────────────────
 
 /// Render the token usage gauge bar with hit/miss coloring.
-fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, _base_style: Style) {
-    let bar_width = 34usize;
+fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw: usize) {
+    let bar_width = cw;
 
     let current = format_number(token_bar.used.to_usize());
     let threshold = format_number(token_bar.threshold.to_usize());
     let budget = format_number(token_bar.budget.to_usize());
 
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
+    lines.push(padded(vec![
         Span::styled(current, Style::default().fg(theme::text()).bold()),
         Span::styled(" / ", Style::default().fg(theme::text_muted())),
         Span::styled(threshold, Style::default().fg(theme::warning())),
@@ -277,6 +301,7 @@ fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, _base_
     };
 
     let mut bar_spans = Vec::new();
+    bar_spans.push(Span::raw(" "));
     for i in 0..bar_width {
         let is_threshold = i == threshold_pos && threshold_pos < bar_width;
         let ch = if is_threshold {
@@ -305,14 +330,13 @@ fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, _base_
 // ── PR card ──────────────────────────────────────────────────────────
 
 /// Render the PR summary card.
-fn render_pr_card(lines: &mut Vec<Line<'static>>, pr: &cp_render::frame::PrCard, _base_style: Style) {
+fn render_pr_card(lines: &mut Vec<Line<'static>>, pr: &cp_render::frame::PrCard, cw: usize) {
     // PR number + state (infer state from review_status presence)
-    lines
-        .push(Line::from(vec![Span::styled(format!("PR#{}", pr.number), Style::default().fg(theme::accent()).bold())]));
+    lines.push(padded(vec![Span::styled(format!("PR#{}", pr.number), Style::default().fg(theme::accent()).bold())]));
 
     // Title (truncated)
-    let title = crate::ui::helpers::truncate_string(&pr.title, 32);
-    lines.push(Line::from(vec![Span::styled(title, Style::default().fg(theme::text_secondary()))]));
+    let title = crate::ui::helpers::truncate_string(&pr.title, cw.saturating_sub(2));
+    lines.push(padded(vec![Span::styled(title, Style::default().fg(theme::text_secondary()))]));
 
     // +/- stats and review/checks
     let mut detail_spans = Vec::new();
@@ -339,17 +363,20 @@ fn render_pr_card(lines: &mut Vec<Line<'static>>, pr: &cp_render::frame::PrCard,
         detail_spans.push(Span::styled(icon, Style::default().fg(color)));
     }
     if !detail_spans.is_empty() {
-        lines.push(Line::from(detail_spans));
+        lines.push(padded(detail_spans));
     }
 
-    lines.push(Line::from(vec![Span::styled(chars::HORIZONTAL.repeat(34), Style::default().fg(theme::border()))]));
+    lines.push(padded(vec![Span::styled(
+        chars::HORIZONTAL.repeat(cw.saturating_sub(1)),
+        Style::default().fg(theme::border()),
+    )]));
     lines.push(Line::from(""));
 }
 
 // ── Token stats ──────────────────────────────────────────────────────
 
 /// Render the token statistics table from IR.
-fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats) {
+fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats, cw: usize) {
     use crate::ui::helpers::{Cell, render_table};
 
     let format_cost = |cost: Option<f64>| -> String {
@@ -405,7 +432,7 @@ fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats) {
 
     // Uncached input tokens (after last cache breakpoint, billed at base price)
     if stats.uncached_input > 0 {
-        lines.push(Line::from(vec![Span::styled(
+        lines.push(padded(vec![Span::styled(
             format!("uncached: {}", format_number(stats.uncached_input.to_usize())),
             Style::default().fg(theme::error()),
         )]));
@@ -413,15 +440,15 @@ fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats) {
 
     // Alive cache breakpoints (non-pruned stored BPs at last tick)
     if stats.alive_breakpoints > 0 {
-        lines.push(Line::from(vec![Span::styled(
+        lines.push(padded(vec![Span::styled(
             format!("alive BPs: {}", stats.alive_breakpoints),
             Style::default().fg(theme::success()),
         )]));
 
         // BP position gauge — shows WHERE in the prompt alive BPs sit
         if !stats.alive_bp_positions.is_empty() {
-            let gauge_width = 34usize;
-            let mut gauge_spans = Vec::new();
+            let gauge_width = cw;
+            let mut gauge_spans = vec![Span::raw(" ")]; // structural 1-char indent
             for i in 0..gauge_width {
                 // Map gauge column i to permille position: i * 1000 / gauge_width
                 let col_permille_start = i.saturating_mul(1000).checked_div(gauge_width).unwrap_or(0);
@@ -444,9 +471,6 @@ fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats) {
     // Total cost
     if let Some(total) = stats.total_cost {
         let total_str = if total < 0.01 { format!("${total:.3}") } else { format!("${total:.2}") };
-        lines.push(Line::from(vec![Span::styled(
-            format!("total: {total_str}"),
-            Style::default().fg(theme::text_muted()),
-        )]));
+        lines.push(padded(vec![Span::styled(format!("total: {total_str}"), Style::default().fg(theme::text_muted()))]));
     }
 }
