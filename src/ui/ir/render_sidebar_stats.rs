@@ -15,8 +15,6 @@ use super::render_sidebar::padded;
 
 /// Render the token statistics table from IR, wrapped in rounded borders.
 pub(super) fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenStats, cw: usize) {
-    use crate::ui::helpers::{Cell, render_table};
-
     let border_style = Style::default().fg(theme::border_muted());
     let inner_width = cw.saturating_sub(2); // space between │ and │
 
@@ -40,38 +38,73 @@ pub(super) fn render_token_stats(lines: &mut Vec<Line<'static>>, stats: &TokenSt
     let miss_icon = chars::CROSS.to_string();
     let out_icon = chars::ARROW_DOWN.to_string();
 
-    let header_cells = [
-        Cell::new("", Style::default()),
-        Cell::right(format!("{hit_icon} hit"), Style::default().fg(theme::success())),
-        Cell::right(format!("{miss_icon} miss"), Style::default().fg(theme::warning())),
-        Cell::right(format!("{out_icon} out"), Style::default().fg(theme::accent_dim())),
-    ];
+    // Render table manually with border_muted separators
+    // Column widths: label(4), hit(6), miss(6), out(6)
+    let col_label_w = 4usize;
+    let col_hit_w = 6usize;
+    let col_miss_w = 6usize;
+    let col_out_w = 6usize;
 
-    let mut rows: Vec<Vec<Cell>> = Vec::new();
+    // Header row
+    content.push(Line::from(vec![
+        Span::styled(format!("{:<col_label_w$}", ""), Style::default()),
+        Span::styled(" │ ", border_style),
+        Span::styled(format!("{:>col_hit_w$}", format!("{hit_icon} hit")), Style::default().fg(theme::success())),
+        Span::styled(" │ ", border_style),
+        Span::styled(format!("{:>col_miss_w$}", format!("{miss_icon} miss")), Style::default().fg(theme::warning())),
+        Span::styled(" │ ", border_style),
+        Span::styled(format!("{:>col_out_w$}", format!("{out_icon} out")), Style::default().fg(theme::accent_dim())),
+    ]));
+
+    // Header separator
+    content.push(Line::from(vec![
+        Span::styled("─".repeat(col_label_w), border_style),
+        Span::styled("─┼─", border_style),
+        Span::styled("─".repeat(col_hit_w), border_style),
+        Span::styled("─┼─", border_style),
+        Span::styled("─".repeat(col_miss_w), border_style),
+        Span::styled("─┼─", border_style),
+        Span::styled("─".repeat(col_out_w), border_style),
+    ]));
 
     for row in &stats.rows {
-        rows.push(vec![
-            Cell::new(&row.label, Style::default().fg(theme::text_muted())),
-            Cell::right(format_number(row.hit.to_usize()), Style::default().fg(theme::success())),
-            Cell::right(format_number(row.miss.to_usize()), Style::default().fg(theme::warning())),
-            Cell::right(format_number(row.output.to_usize()), Style::default().fg(theme::accent_dim())),
-        ]);
+        // Data row
+        content.push(Line::from(vec![
+            Span::styled(format!("{:<col_label_w$}", row.label), Style::default().fg(theme::text_muted())),
+            Span::styled(" │ ", border_style),
+            Span::styled(
+                format!("{:>col_hit_w$}", format_number(row.hit.to_usize())),
+                Style::default().fg(theme::success()),
+            ),
+            Span::styled(" │ ", border_style),
+            Span::styled(
+                format!("{:>col_miss_w$}", format_number(row.miss.to_usize())),
+                Style::default().fg(theme::warning()),
+            ),
+            Span::styled(" │ ", border_style),
+            Span::styled(
+                format!("{:>col_out_w$}", format_number(row.output.to_usize())),
+                Style::default().fg(theme::accent_dim()),
+            ),
+        ]));
 
+        // Cost row (if any cost is non-empty)
         let hit_cost = format_cost(row.hit_cost);
         let miss_cost = format_cost(row.miss_cost);
         let out_cost = format_cost(row.output_cost);
 
         if !hit_cost.is_empty() || !miss_cost.is_empty() || !out_cost.is_empty() {
-            rows.push(vec![
-                Cell::new("", Style::default()),
-                Cell::right(hit_cost, Style::default().fg(theme::text_muted())),
-                Cell::right(miss_cost, Style::default().fg(theme::text_muted())),
-                Cell::right(out_cost, Style::default().fg(theme::text_muted())),
-            ]);
+            content.push(Line::from(vec![
+                Span::styled(format!("{:<col_label_w$}", ""), Style::default()),
+                Span::styled(" │ ", border_style),
+                Span::styled(format!("{hit_cost:>col_hit_w$}"), Style::default().fg(theme::text_muted())),
+                Span::styled(" │ ", border_style),
+                Span::styled(format!("{miss_cost:>col_miss_w$}"), Style::default().fg(theme::text_muted())),
+                Span::styled(" │ ", border_style),
+                Span::styled(format!("{out_cost:>col_out_w$}"), Style::default().fg(theme::text_muted())),
+            ]));
         }
     }
-
-    content.extend(render_table(&header_cells, &rows, None, 0));
 
     // Uncached input tokens
     if stats.uncached_input > 0 {

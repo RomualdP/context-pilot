@@ -58,6 +58,13 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
 
     let mut lines: Vec<Line<'_>> = vec![Line::from("")];
 
+    // Token bar in rounded border box (above entries)
+    if let Some(ref tb) = sidebar.token_bar {
+        render_token_bar_box(&mut lines, tb, cw);
+    }
+
+    lines.push(Line::from(""));
+
     // Separate fixed (id is empty for conversation, or is_fixed) from dynamic entries
     let (fixed_entries, dynamic_entries): (Vec<_>, Vec<_>) = sidebar.entries.iter().partition(|e| e.fixed);
 
@@ -98,24 +105,15 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
         }
     }
 
-    // Spacing before token bar (2 empty lines)
-    lines.push(Line::from(""));
-    lines.push(Line::from(""));
-
-    if let Some(ref tb) = sidebar.token_bar {
-        render_token_bar(&mut lines, tb, cw);
-    }
-
     // PR card
     if let Some(ref pr) = sidebar.pr_card {
+        lines.push(Line::from(""));
         render_pr_card(&mut lines, pr, cw);
     }
 
-    // Blank line before stats table
-    lines.push(Line::from(""));
-
     // Token stats (rendered with rounded border)
     if let Some(ref stats) = sidebar.token_stats {
+        lines.push(Line::from(""));
         render_token_stats(&mut lines, stats, cw);
     }
 
@@ -265,24 +263,38 @@ fn render_collapsed_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, 
 
 // ── Token bar ────────────────────────────────────────────────────────
 
-/// Render the token usage gauge bar with hit/miss coloring.
-fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw: usize) {
-    let bar_width = cw;
+/// Render the token usage section wrapped in a rounded border box.
+/// Line 1: ⚓ Context Pilot
+/// Line 2: used / threshold / budget (styled)
+/// Line 3: gauge bar
+fn render_token_bar_box(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw: usize) {
+    let border_style = Style::default().fg(theme::border_muted());
+    let inner_width = cw.saturating_sub(2); // space between │ and │
 
     let current = format_number(token_bar.used.to_usize());
     let threshold = format_number(token_bar.threshold.to_usize());
     let budget = format_number(token_bar.budget.to_usize());
 
-    lines.push(Line::from(""));
-    lines.push(padded(vec![
+    // Build content lines
+    let mut content: Vec<Line<'static>> = Vec::new();
+
+    // Line 1: ⚓ Context Pilot
+    content.push(Line::from(vec![
+        Span::styled("⚓ ", Style::default().fg(theme::accent())),
+        Span::styled("Context Pilot", Style::default().fg(theme::text()).bold()),
+    ]));
+
+    // Line 2: used / threshold / budget
+    content.push(Line::from(vec![
         Span::styled(current, Style::default().fg(theme::text()).bold()),
-        Span::styled(" / ", Style::default().fg(theme::text_muted())),
+        Span::styled(" / ", Style::default().fg(theme::border_muted())),
         Span::styled(threshold, Style::default().fg(theme::warning())),
-        Span::styled(" / ", Style::default().fg(theme::text_muted())),
+        Span::styled(" / ", Style::default().fg(theme::border_muted())),
         Span::styled(budget, Style::default().fg(theme::accent())),
     ]));
 
-    // Build the gauge bar from IR segments
+    // Line 3: gauge bar
+    let bar_width = inner_width;
     let hit_pct = token_bar.segments.first().map_or(0, |s| s.percent);
     let miss_pct = token_bar.segments.get(1).map_or(0, |s| s.percent);
 
@@ -290,7 +302,6 @@ fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw: us
     let miss_filled = cp_base::panels::time_arith::div_const::<100>(usize::from(miss_pct).saturating_mul(bar_width));
     let total_filled = hit_filled.saturating_add(miss_filled).min(bar_width);
 
-    // Threshold marker position
     let threshold_pos = if token_bar.budget > 0 {
         cp_base::panels::time_arith::div_const::<100>(
             token_bar
@@ -308,8 +319,7 @@ fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw: us
         0
     };
 
-    let mut bar_spans = Vec::new();
-    bar_spans.push(Span::raw(" "));
+    let mut bar_spans: Vec<Span<'static>> = Vec::new();
     for i in 0..bar_width {
         let is_threshold = i == threshold_pos && threshold_pos < bar_width;
         let ch = if is_threshold {
@@ -332,7 +342,36 @@ fn render_token_bar(lines: &mut Vec<Line<'static>>, token_bar: &TokenBar, cw: us
 
         bar_spans.push(Span::styled(ch, Style::default().fg(color)));
     }
-    lines.push(Line::from(bar_spans));
+    content.push(Line::from(bar_spans));
+
+    // Wrap in rounded border
+    // Top: ╭───...───╮
+    lines.push(padded(vec![
+        Span::styled("╭", border_style),
+        Span::styled("─".repeat(inner_width), border_style),
+        Span::styled("╮", border_style),
+    ]));
+
+    // Content lines: │ content ... │
+    for content_line in content {
+        let line_width: usize =
+            content_line.spans.iter().map(|s| unicode_width::UnicodeWidthStr::width(s.content.as_ref())).sum();
+        let pad = inner_width.saturating_sub(line_width);
+        let mut spans = Vec::with_capacity(content_line.spans.len().saturating_add(4));
+        spans.push(Span::raw(" ")); // structural indent
+        spans.push(Span::styled("│", border_style));
+        spans.extend(content_line.spans);
+        spans.push(Span::raw(" ".repeat(pad)));
+        spans.push(Span::styled("│", border_style));
+        lines.push(Line::from(spans));
+    }
+
+    // Bottom: ╰───...───╯
+    lines.push(padded(vec![
+        Span::styled("╰", border_style),
+        Span::styled("─".repeat(inner_width), border_style),
+        Span::styled("╯", border_style),
+    ]));
 }
 
 // ── PR card ──────────────────────────────────────────────────────────
