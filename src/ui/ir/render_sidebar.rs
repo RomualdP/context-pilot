@@ -69,8 +69,6 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
     // Dynamic entries with pagination
     let total_dynamic = dynamic_entries.len();
     if total_dynamic > 0 {
-        lines.push(padded(vec![Span::styled("─".repeat(cw), Style::default().fg(theme::border_muted()))]));
-
         // Find which page the selected entry is on
         let total_pages = if total_dynamic == 0 { 1 } else { total_dynamic.div_ceil(MAX_DYNAMIC_PER_PAGE) };
         let current_page = dynamic_entries
@@ -78,18 +76,25 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
             .position(|e| e.active)
             .map_or(0, |pos| pos.checked_div(MAX_DYNAMIC_PER_PAGE).unwrap_or(0));
 
+        // Separator with embedded page indicator: ──────── 1/2 ─
+        if total_pages > 1 {
+            let page_text = format!("{}/{}", current_page.saturating_add(1), total_pages);
+            let suffix_len = page_text.len().saturating_add(3); // space + text + space + trailing ─
+            let fill = cw.saturating_sub(suffix_len);
+            lines.push(padded(vec![
+                Span::styled("─".repeat(fill), Style::default().fg(theme::border_muted())),
+                Span::styled(format!(" {page_text} "), Style::default().fg(theme::text_muted())),
+                Span::styled("─", Style::default().fg(theme::border_muted())),
+            ]));
+        } else {
+            lines.push(padded(vec![Span::styled("─".repeat(cw), Style::default().fg(theme::border_muted()))]));
+        }
+
         let page_start = current_page.saturating_mul(MAX_DYNAMIC_PER_PAGE);
         let page_end = page_start.saturating_add(MAX_DYNAMIC_PER_PAGE).min(total_dynamic);
 
         for entry in dynamic_entries.get(page_start..page_end).unwrap_or(&[]) {
             render_normal_entry(&mut lines, entry, cw);
-        }
-
-        if total_pages > 1 {
-            lines.push(padded(vec![Span::styled(
-                format!("page {}/{}", current_page.saturating_add(1), total_pages),
-                Style::default().fg(theme::text_muted()),
-            )]));
         }
     }
 
