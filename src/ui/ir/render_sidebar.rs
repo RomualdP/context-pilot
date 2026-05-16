@@ -69,10 +69,7 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
     // Dynamic entries with pagination
     let total_dynamic = dynamic_entries.len();
     if total_dynamic > 0 {
-        lines.push(padded(vec![Span::styled(
-            "─".repeat(cw.saturating_sub(1)),
-            Style::default().fg(theme::border_muted()),
-        )]));
+        lines.push(padded(vec![Span::styled("─".repeat(cw), Style::default().fg(theme::border_muted()))]));
 
         // Find which page the selected entry is on
         let total_pages = if total_dynamic == 0 { 1 } else { total_dynamic.div_ceil(MAX_DYNAMIC_PER_PAGE) };
@@ -98,10 +95,7 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
 
     // Separator + token bar
     lines.push(Line::from(""));
-    lines.push(padded(vec![Span::styled(
-        chars::HORIZONTAL.repeat(cw.saturating_sub(1)),
-        Style::default().fg(theme::border()),
-    )]));
+    lines.push(padded(vec![Span::styled(chars::HORIZONTAL.repeat(cw), Style::default().fg(theme::border()))]));
 
     if let Some(ref tb) = sidebar.token_bar {
         render_token_bar(&mut lines, tb, cw);
@@ -139,7 +133,7 @@ fn render_normal(frame: &mut Frame<'_>, sidebar: &Sidebar, area: Rect) {
 }
 
 /// Render a single entry line in the full sidebar.
-fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, _cw: usize) {
+fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, cw: usize) {
     let indicator = if entry.active { chars::ARROW_RIGHT } else { " " };
     let indicator_color = if entry.active { theme::accent() } else { theme::bg_base() };
     let name_color = if entry.active { theme::accent() } else { theme::text_secondary() };
@@ -150,6 +144,12 @@ fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, _cw
     // Shortcut width for alignment (enough for "P99" or 3-digit badge counts)
     let shortcut_width = 3;
 
+    // Dynamic label width: fill remaining space after fixed-width columns
+    // indicator(1) + icon(2 display cols) + shortcut(3) + space(1) + tokens(6) = 13 fixed cols
+    let entry_width = cw.saturating_add(CONTENT_INDENT); // = area.width
+    let fixed_cols = 13usize;
+    let label_width = entry_width.saturating_sub(fixed_cols);
+
     lines.push(Line::from(vec![
         Span::styled(indicator, Style::default().fg(indicator_color)),
         Span::styled(entry.icon.clone(), Style::default().fg(icon_color)),
@@ -157,7 +157,7 @@ fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, _cw
             format!("{:>width$} ", entry.shortcut, width = shortcut_width),
             Style::default().fg(shortcut_color),
         ),
-        Span::styled(entry.label.clone(), Style::default().fg(name_color)),
+        Span::styled(format!("{:<width$}", entry.label, width = label_width), Style::default().fg(name_color)),
         Span::styled(format!("{:>6}", format_number(entry.tokens.to_usize())), Style::default().fg(tokens_color)),
     ]));
 }
@@ -366,10 +366,7 @@ fn render_pr_card(lines: &mut Vec<Line<'static>>, pr: &cp_render::frame::PrCard,
         lines.push(padded(detail_spans));
     }
 
-    lines.push(padded(vec![Span::styled(
-        chars::HORIZONTAL.repeat(cw.saturating_sub(1)),
-        Style::default().fg(theme::border()),
-    )]));
+    lines.push(padded(vec![Span::styled(chars::HORIZONTAL.repeat(cw), Style::default().fg(theme::border()))]));
     lines.push(Line::from(""));
 }
 

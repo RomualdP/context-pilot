@@ -100,7 +100,7 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
             id: String::new(),
             icon: ctx.context_type.icon(),
             shortcut: String::new(),
-            label: format!("{:<18}", "Conversation"),
+            label: "Conversation".to_owned(),
             tokens: ctx.token_count.to_u32(),
             active: conv_idx == state.selected_context,
             frozen: false,
@@ -138,11 +138,7 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
             String::new()
         } else {
             let name = crate::ui::helpers::truncate_string(&ctx.name, 18);
-            if is_loading {
-                format!("{name:<18}{spin:>6}", spin = spinner(state.spinner_frame))
-            } else {
-                format!("{name:<18}")
-            }
+            if is_loading { format!("{name} {spin}", spin = spinner(state.spinner_frame)) } else { name }
         };
 
         entries.push(SidebarEntry {
