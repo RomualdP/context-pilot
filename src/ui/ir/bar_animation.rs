@@ -16,7 +16,7 @@ use ratatui::style::Color;
 use cp_base::cast::Safe as _;
 
 /// Default transition duration (ease-out cubic).
-const TRANSITION_DURATION: Duration = Duration::from_millis(500);
+const TRANSITION_DURATION: Duration = Duration::from_millis(1000);
 
 /// Pulse period during streaming (one full sine cycle).
 const PULSE_PERIOD: Duration = Duration::from_millis(2000);

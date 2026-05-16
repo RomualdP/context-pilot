@@ -293,7 +293,10 @@ fn build_pr_card(state: &State) -> Option<PrCard> {
 fn build_help_hints() -> Vec<HelpHint> {
     [
         ("Tab", "next panel"),
+        ("S+↑↓", "switch panel"),
+        ("S+←→", "page dynamic"),
         ("↑↓", "scroll"),
+        ("Ctrl+I", "search index"),
         ("Ctrl+P", "commands"),
         ("Ctrl+H", "config"),
         ("Ctrl+V", "view"),

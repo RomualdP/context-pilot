@@ -133,6 +133,11 @@ pub enum Action {
     ConfigToggleSecondaryMode,
 
     // === UI ===
+    /// Jump to first dynamic panel on the next page (Shift+Right).
+    PageDynamicNext,
+    /// Jump to first dynamic panel on the previous page (Shift+Left).
+    PageDynamicPrev,
+
     /// Cycle sidebar display mode (Full → Collapsed → Hidden).
     CycleSidebarMode,
     /// Open the Ctrl+P command palette.
