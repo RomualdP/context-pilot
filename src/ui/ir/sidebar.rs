@@ -9,7 +9,7 @@ use cp_render::frame::{HelpHint, PrCard, Sidebar, SidebarEntry, SidebarMode, Tok
 use cp_render::{ProgressSegment, Semantic};
 
 use crate::state::{Kind, State};
-use crate::ui::helpers::{format_number, spinner};
+use crate::ui::helpers::spinner;
 use cp_base::cast::Safe as _;
 
 /// Returns a count badge for fixed panels, replacing the panel ID (P1, P2, etc.)
@@ -72,9 +72,6 @@ pub(crate) fn build_sidebar(state: &State) -> Sidebar {
 
 /// Build the context element entries list for the sidebar.
 fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
-    let id_width = state.context.iter().map(|c| c.id.len()).max().unwrap_or(2);
-    let spin = spinner(state.spinner_frame);
-
     // Sort by panel ID numerically
     let mut sorted_indices: Vec<usize> = (0..state.context.len()).collect();
     sorted_indices.sort_by(|&a, &b| {
@@ -102,7 +99,8 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
         entries.push(SidebarEntry {
             id: String::new(),
             icon: ctx.context_type.icon(),
-            label: "Conversation".into(),
+            shortcut: String::new(),
+            label: format!("{:<18}", "Conversation"),
             tokens: ctx.token_count.to_u32(),
             active: conv_idx == state.selected_context,
             frozen: false,
@@ -110,8 +108,6 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
             fixed: true,
         });
     }
-
-    let lctx = EntryLabelCtx { state, id_width, spin };
 
     // Fixed + dynamic entries
     for &i in &sorted_indices {
@@ -132,11 +128,27 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
             None
         };
 
-        let label = if collapsed { String::new() } else { build_entry_label(ctx, &lctx, is_loading) };
+        let shortcut = if is_fixed {
+            fixed_panel_badge(ctx.context_type.as_str(), state).unwrap_or_default()
+        } else {
+            ctx.id.clone()
+        };
+
+        let label = if collapsed {
+            String::new()
+        } else {
+            let name = crate::ui::helpers::truncate_string(&ctx.name, 18);
+            if is_loading {
+                format!("{name:<18}{spin:>6}", spin = spinner(state.spinner_frame))
+            } else {
+                format!("{name:<18}")
+            }
+        };
 
         entries.push(SidebarEntry {
             id: ctx.id.clone(),
             icon: ctx.context_type.icon(),
+            shortcut,
             label,
             tokens: ctx.token_count.to_u32(),
             active: i == state.selected_context,
@@ -147,37 +159,6 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
     }
 
     entries
-}
-
-/// Context for building sidebar entry labels.
-struct EntryLabelCtx<'ctx> {
-    /// Application state.
-    state: &'ctx State,
-    /// Alignment width for panel IDs.
-    id_width: usize,
-    /// Current spinner character.
-    spin: &'ctx str,
-}
-
-/// Build the display label for a sidebar entry (full mode only).
-fn build_entry_label(ctx: &cp_base::state::context::Entry, lctx: &EntryLabelCtx<'_>, is_loading: bool) -> String {
-    let name = crate::ui::helpers::truncate_string(&ctx.name, 18);
-    let shortcut = if ctx.context_type.is_fixed() {
-        let badge = fixed_panel_badge(ctx.context_type.as_str(), lctx.state).unwrap_or_default();
-        format!("{badge:>id_width$}", id_width = lctx.id_width)
-    } else {
-        format!("{:>width$}", &ctx.id, width = lctx.id_width)
-    };
-
-    let tokens_or_spinner = if is_loading {
-        format!("{spin:>6}", spin = lctx.spin)
-    } else if ctx.total_pages > 1 {
-        format!("{}/{}", ctx.current_page.saturating_add(1), ctx.total_pages)
-    } else {
-        format_number(ctx.token_count)
-    };
-
-    format!("{shortcut} {name:<18}{tokens_or_spinner:>6}")
 }
 
 // ── Token bar ────────────────────────────────────────────────────────

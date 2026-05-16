@@ -64,7 +64,9 @@ pub struct SidebarEntry {
     pub id: String,
     /// Icon character.
     pub icon: String,
-    /// Short label (e.g. "wip", "tree", "file (main.rs)").
+    /// Shortcut / badge text shown before the name (e.g. "5", "P7").
+    pub shortcut: String,
+    /// Short label (e.g. "Conversation", "tree", "file (main.rs)").
     pub label: String,
     /// Token count for this element.
     pub tokens: u32,
