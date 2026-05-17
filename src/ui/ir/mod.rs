@@ -10,41 +10,72 @@
 mod conversation;
 /// Conversation adapter: renders conversation → ratatui with scrollbar + caching.
 pub(crate) mod render_conversation;
-/// Panel IR adapter: renders [`PanelContent`] → bordered scrollable widget.
+/// Panel IR adapter: renders [`PanelContent`] as a header bar + scrollable content.
 /// (Merged from `render_panel.rs` — too small for its own file.)
 pub(crate) mod render_panel {
     use cp_render::frame::PanelContent;
-    use ratatui::prelude::{Frame, Line, Rect, Span, Style};
-    use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
+    use ratatui::prelude::{Constraint, Direction, Frame, Layout, Line, Rect, Span, Style};
+    use ratatui::widgets::{Paragraph, Wrap};
 
     use crate::state::State;
     use crate::ui::{helpers::count_wrapped_lines, theme};
     use cp_base::cast::Safe as _;
 
     /// Render the active panel from its IR snapshot.
+    ///
+    /// Layout: 1-line header bar (sidebar bg) + content area (1-char horizontal padding).
     pub(crate) fn render_panel_from_ir(
         frame: &mut Frame<'_>,
         state: &mut State,
         area: Rect,
         panel_content: &PanelContent,
     ) {
-        let base_style = Style::default().bg(theme::bg_surface());
+        let header_style = Style::default().bg(theme::bg_base());
+        let content_style = Style::default().bg(theme::bg_surface());
 
-        let inner_area = Rect::new(area.x.saturating_add(1), area.y, area.width.saturating_sub(2), area.height);
+        // Split: 1-line header + remaining content
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(area);
+        debug_assert!(layout.len() >= 2, "panel layout must have at least 2 chunks");
+        let Some(&header_area) = layout.first() else { return };
+        let Some(&body_area) = layout.get(1) else { return };
 
-        let mut block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme::border()))
-            .style(base_style)
-            .title(Span::styled(format!(" {} ", panel_content.title), Style::default().fg(theme::accent()).bold()));
+        // ── Header bar ───────────────────────────────────────────────
+        // Title on the left, refreshed_ago on the right, sidebar bg color.
+        let title_span = Span::styled(
+            format!(" {} ", panel_content.title),
+            Style::default().fg(theme::accent()).bold().bg(theme::bg_base()),
+        );
+        let right_span = panel_content
+            .refreshed_ago
+            .as_ref()
+            .map(|ago| Span::styled(format!(" {ago} "), Style::default().fg(theme::text_muted()).bg(theme::bg_base())));
 
-        if let Some(ref bottom) = panel_content.refreshed_ago {
-            block = block.title_bottom(Span::styled(format!(" {bottom} "), Style::default().fg(theme::text_muted())));
+        // Fill header with bg_base background
+        let header_width = header_area.width.to_usize();
+        let title_len = panel_content.title.len().saturating_add(2); // " title "
+        let right_len = panel_content.refreshed_ago.as_ref().map_or(0, |a| a.len().saturating_add(2));
+        let fill_len = header_width.saturating_sub(title_len).saturating_sub(right_len);
+
+        let mut header_spans = vec![title_span, Span::styled(" ".repeat(fill_len), header_style)];
+        if let Some(rs) = right_span {
+            header_spans.push(rs);
         }
 
-        let content_area = block.inner(inner_area);
-        frame.render_widget(block, inner_area);
+        let header_line = Line::from(header_spans);
+        let header_paragraph = Paragraph::new(vec![header_line]).style(header_style);
+        frame.render_widget(header_paragraph, header_area);
+
+        // ── Content area ─────────────────────────────────────────────
+        // 1-char horizontal padding on each side.
+        let content_area =
+            Rect::new(body_area.x.saturating_add(1), body_area.y, body_area.width.saturating_sub(2), body_area.height);
+
+        // Fill the body area background (including the padding columns)
+        let bg_fill = Paragraph::new(Vec::<Line<'static>>::new()).style(content_style);
+        frame.render_widget(bg_fill, body_area);
 
         // Resolve content from IR blocks
         let text: Vec<Line<'static>> =
@@ -64,7 +95,7 @@ pub(crate) mod render_panel {
         let paragraph = {
             let _guard = crate::profile!("panel::paragraph_new");
             Paragraph::new(text)
-                .style(base_style)
+                .style(content_style)
                 .wrap(Wrap { trim: false })
                 .scroll((state.scroll_offset.round().to_u16(), 0))
         };
