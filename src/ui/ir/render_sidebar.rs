@@ -147,9 +147,9 @@ fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, cw:
     let shortcut_width = 3;
 
     // Dynamic label width: fill remaining space after fixed-width columns
-    // indicator(1) + icon(2 display cols) + shortcut(3) + space(1) + tokens(6) = 13 fixed cols
+    // indicator(1) + icon(3 display cols: emoji+space) + shortcut(3) + space(1) + tokens(6) = 14 fixed cols
     let entry_width = cw.saturating_add(CONTENT_INDENT); // = area.width
-    let fixed_cols = 13usize;
+    let fixed_cols = 14usize;
     let label_width = entry_width.saturating_sub(fixed_cols);
 
     lines.push(Line::from(vec![
