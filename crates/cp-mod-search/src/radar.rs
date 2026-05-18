@@ -305,6 +305,10 @@ pub(crate) fn refresh(state: &mut State) {
     ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     ranked.truncate(MAX_FINAL_RESULTS);
 
+    // Re-sort by datetime for display (newest first).
+    // Selection was score-based; display is chronological.
+    ranked.sort_by(|a, b| b.datetime.cmp(&a.datetime));
+
     // Compute span for header
     let span_ms = if signals.len() >= 2 {
         signals.last().map_or(0, |s| s.timestamp_ms).saturating_sub(signals.first().map_or(0, |s| s.timestamp_ms))
