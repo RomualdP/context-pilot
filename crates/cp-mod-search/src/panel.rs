@@ -1,8 +1,13 @@
-//! Dynamic search result panel.
+//! Dynamic search result panel + YAML result formatting.
 //!
 //! Displays formatted Meilisearch results (file chunks + log entries)
 //! in a scrollable panel.  Content is persisted in metadata so it
 //! survives TUI reloads.
+//!
+//! The `format_results` function builds the YAML string consumed by
+//! both the panel and the tool result when `hide_contents` is true.
+
+use std::collections::BTreeMap;
 
 use crossterm::event::KeyEvent;
 
@@ -12,6 +17,8 @@ use cp_base::panels::{
 use cp_base::state::actions::Action;
 use cp_base::state::context::{Entry, Kind, compute_total_pages, estimate_tokens};
 use cp_base::state::runtime::State;
+
+use crate::types::SearchResult;
 
 /// Context type identifier for search result panels.
 pub(crate) const SEARCH_PANEL_TYPE: &str = "search_result";
@@ -189,4 +196,112 @@ pub(crate) fn visualize_search_output(content: &str, width: usize) -> Vec<cp_ren
             Block::Line(vec![Span::styled(display, semantic)])
         })
         .collect()
+}
+
+// ─── Result formatting ──────────────────────────────────────────────────────
+
+/// Format search results as YAML for panel display.
+///
+/// File results are grouped by path. All metadata is included.
+/// Uses `serde_yaml` for consistent formatting matching the brave module style.
+pub(crate) fn format_results(
+    query: &str,
+    file_results: &[SearchResult],
+    log_results: &[SearchResult],
+    hide_contents: bool,
+) -> String {
+    let total = file_results.len().saturating_add(log_results.len());
+
+    let mut root = serde_json::Map::new();
+    drop(root.insert("query".into(), serde_json::Value::String(query.to_string())));
+    drop(root.insert("total_results".into(), serde_json::json!(total)));
+
+    // -- File results, grouped by path ---------------------------------------
+
+    if !file_results.is_empty() {
+        let mut by_path: BTreeMap<String, Vec<&SearchResult>> = BTreeMap::new();
+        for r in file_results {
+            let path = r.file_path.as_deref().unwrap_or("unknown").to_string();
+            by_path.entry(path).or_default().push(r);
+        }
+
+        let mut files_arr: Vec<serde_json::Value> = Vec::new();
+        for (path, chunks) in &by_path {
+            let ext = chunks.first().and_then(|c| c.extension.as_deref()).unwrap_or("");
+            let mut file_obj = serde_json::Map::new();
+            drop(file_obj.insert("path".into(), serde_json::Value::String(path.clone())));
+            drop(file_obj.insert("extension".into(), serde_json::Value::String(ext.to_string())));
+
+            let chunks_arr: Vec<serde_json::Value> =
+                chunks.iter().map(|chunk| build_chunk_value(chunk, hide_contents)).collect();
+
+            drop(file_obj.insert("chunks".into(), serde_json::Value::Array(chunks_arr)));
+            files_arr.push(serde_json::Value::Object(file_obj));
+        }
+        drop(root.insert("files".into(), serde_json::Value::Array(files_arr)));
+    }
+
+    // -- Log results ---------------------------------------------------------
+
+    if !log_results.is_empty() {
+        let logs_arr: Vec<serde_json::Value> = log_results.iter().map(|r| build_log_value(r, hide_contents)).collect();
+        drop(root.insert("logs".into(), serde_json::Value::Array(logs_arr)));
+    }
+
+    // -- Serialize to YAML ---------------------------------------------------
+
+    serde_yaml::to_string(&serde_json::Value::Object(root)).unwrap_or_else(|_| "# Failed to serialize results\n".into())
+}
+
+/// Build a JSON value for a single file chunk.
+fn build_chunk_value(chunk: &SearchResult, hide_contents: bool) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    drop(
+        obj.insert("type".into(), serde_json::Value::String(chunk.chunk_type.as_deref().unwrap_or("raw").to_string())),
+    );
+    if let Some(ref name) = chunk.chunk_name
+        && !name.is_empty()
+    {
+        drop(obj.insert("name".into(), serde_json::Value::String(name.clone())));
+    }
+    if let Some(start) = chunk.line_start {
+        drop(obj.insert("line_start".into(), serde_json::json!(start)));
+    }
+    if let Some(end) = chunk.line_end {
+        drop(obj.insert("line_end".into(), serde_json::json!(end)));
+    }
+    if let Some(score) = chunk.ranking_score {
+        drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
+    }
+    if !chunk.content.is_empty() && !hide_contents {
+        drop(obj.insert("content".into(), serde_json::Value::String(chunk.content.clone())));
+    }
+    serde_json::Value::Object(obj)
+}
+
+/// Build a JSON value for a single log result.
+fn build_log_value(r: &SearchResult, hide_contents: bool) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+    if let Some(ref id) = r.log_id {
+        drop(obj.insert("id".into(), serde_json::Value::String(id.clone())));
+    }
+    if let Some(ref dt) = r.datetime {
+        drop(obj.insert("datetime".into(), serde_json::Value::String(dt.clone())));
+    }
+    if let Some(ref imp) = r.importance {
+        drop(obj.insert("importance".into(), serde_json::Value::String(imp.clone())));
+    }
+    if let Some(ref tags) = r.tags {
+        drop(obj.insert(
+            "tags".into(),
+            serde_json::Value::Array(tags.iter().map(|t| serde_json::Value::String(t.clone())).collect()),
+        ));
+    }
+    if let Some(score) = r.ranking_score {
+        drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
+    }
+    if !r.content.is_empty() && !hide_contents {
+        drop(obj.insert("content".into(), serde_json::Value::String(r.content.clone())));
+    }
+    serde_json::Value::Object(obj)
 }

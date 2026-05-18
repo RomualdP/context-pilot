@@ -16,3 +16,5 @@ pub(crate) mod ocr;
 pub(crate) mod overlay;
 /// Server lifecycle: start, stop, health check, reconnect.
 pub(crate) mod server;
+/// Task polling and UID extraction — split `impl MeiliClient` block.
+pub(crate) mod tasks;

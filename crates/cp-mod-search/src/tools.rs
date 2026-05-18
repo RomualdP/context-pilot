@@ -7,6 +7,7 @@ use cp_base::state::runtime::State;
 use cp_base::tools::{ToolResult, ToolUse};
 
 use crate::meili::client::MeiliClient;
+use crate::panel::format_results;
 use crate::types::{SearchResult, SearchState};
 
 /// Dispatch search tool calls.
@@ -125,6 +126,45 @@ fn log_sort_string(sort: &str) -> Option<&'static str> {
     }
 }
 
+/// Deduplicate search results by content identity, keeping the highest score.
+///
+/// Used when multi-search returns overlapping results from keyword and semantic
+/// queries.  After dedup, results are sorted by score descending and truncated
+/// to `limit`.
+fn dedup_by_score(results: &mut Vec<SearchResult>, limit: u32) {
+    use std::collections::HashMap;
+
+    // Collect best result per dedup key into a HashMap.
+    let mut best: HashMap<String, SearchResult> = HashMap::new();
+
+    for r in results.drain(..) {
+        let key = r
+            .log_id
+            .as_deref()
+            .map(String::from)
+            .or_else(|| r.file_path.as_deref().map(|p| format!("{p}:{}", r.line_start.unwrap_or(0))))
+            .unwrap_or_else(|| format!("__content_{}", best.len()));
+
+        match best.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                if r.ranking_score.unwrap_or(0.0) > e.get().ranking_score.unwrap_or(0.0) {
+                    let _prev = e.insert(r);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let _ref = e.insert(r);
+            }
+        }
+    }
+
+    // Collect, sort by score descending, truncate
+    *results = best.into_values().collect();
+    results.sort_by(|a, b| {
+        b.ranking_score.unwrap_or(0.0).partial_cmp(&a.ranking_score.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results.truncate(limit as usize);
+}
+
 /// Parse a single Meilisearch hit from the files index.
 fn parse_file_hit(hit: &serde_json::Value) -> SearchResult {
     let content = hit.get("content").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
@@ -168,115 +208,6 @@ fn parse_log_hit(hit: &serde_json::Value) -> SearchResult {
     }
 }
 
-/// Format search results as YAML for panel display.
-///
-/// File results are grouped by path. All metadata is included.
-/// Uses `serde_yaml` for consistent formatting matching the brave module style.
-fn format_results(
-    query: &str,
-    file_results: &[SearchResult],
-    log_results: &[SearchResult],
-    hide_contents: bool,
-) -> String {
-    use std::collections::BTreeMap;
-
-    let total = file_results.len().saturating_add(log_results.len());
-
-    let mut root = serde_json::Map::new();
-    drop(root.insert("query".into(), serde_json::Value::String(query.to_string())));
-    drop(root.insert("total_results".into(), serde_json::json!(total)));
-
-    // -- File results, grouped by path ---------------------------------------
-
-    if !file_results.is_empty() {
-        // Group chunks by file path, preserving insertion order via BTreeMap
-        let mut by_path: BTreeMap<String, Vec<&SearchResult>> = BTreeMap::new();
-        for r in file_results {
-            let path = r.file_path.as_deref().unwrap_or("unknown").to_string();
-            by_path.entry(path).or_default().push(r);
-        }
-
-        let mut files_arr: Vec<serde_json::Value> = Vec::new();
-        for (path, chunks) in &by_path {
-            let ext = chunks.first().and_then(|c| c.extension.as_deref()).unwrap_or("");
-            let mut file_obj = serde_json::Map::new();
-            drop(file_obj.insert("path".into(), serde_json::Value::String(path.clone())));
-            drop(file_obj.insert("extension".into(), serde_json::Value::String(ext.to_string())));
-
-            let chunks_arr: Vec<serde_json::Value> =
-                chunks.iter().map(|chunk| build_chunk_value(chunk, hide_contents)).collect();
-
-            drop(file_obj.insert("chunks".into(), serde_json::Value::Array(chunks_arr)));
-            files_arr.push(serde_json::Value::Object(file_obj));
-        }
-        drop(root.insert("files".into(), serde_json::Value::Array(files_arr)));
-    }
-
-    // -- Log results ---------------------------------------------------------
-
-    if !log_results.is_empty() {
-        let logs_arr: Vec<serde_json::Value> = log_results.iter().map(|r| build_log_value(r, hide_contents)).collect();
-        drop(root.insert("logs".into(), serde_json::Value::Array(logs_arr)));
-    }
-
-    // -- Serialize to YAML ---------------------------------------------------
-
-    serde_yaml::to_string(&serde_json::Value::Object(root)).unwrap_or_else(|_| "# Failed to serialize results\n".into())
-}
-
-/// Build a JSON value for a single file chunk.
-fn build_chunk_value(chunk: &SearchResult, hide_contents: bool) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    drop(
-        obj.insert("type".into(), serde_json::Value::String(chunk.chunk_type.as_deref().unwrap_or("raw").to_string())),
-    );
-    if let Some(ref name) = chunk.chunk_name
-        && !name.is_empty()
-    {
-        drop(obj.insert("name".into(), serde_json::Value::String(name.clone())));
-    }
-    if let Some(start) = chunk.line_start {
-        drop(obj.insert("line_start".into(), serde_json::json!(start)));
-    }
-    if let Some(end) = chunk.line_end {
-        drop(obj.insert("line_end".into(), serde_json::json!(end)));
-    }
-    if let Some(score) = chunk.ranking_score {
-        drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
-    }
-    if !chunk.content.is_empty() && !hide_contents {
-        drop(obj.insert("content".into(), serde_json::Value::String(chunk.content.clone())));
-    }
-    serde_json::Value::Object(obj)
-}
-
-/// Build a JSON value for a single log result.
-fn build_log_value(r: &SearchResult, hide_contents: bool) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    if let Some(ref id) = r.log_id {
-        drop(obj.insert("id".into(), serde_json::Value::String(id.clone())));
-    }
-    if let Some(ref dt) = r.datetime {
-        drop(obj.insert("datetime".into(), serde_json::Value::String(dt.clone())));
-    }
-    if let Some(ref imp) = r.importance {
-        drop(obj.insert("importance".into(), serde_json::Value::String(imp.clone())));
-    }
-    if let Some(ref tags) = r.tags {
-        drop(obj.insert(
-            "tags".into(),
-            serde_json::Value::Array(tags.iter().map(|t| serde_json::Value::String(t.clone())).collect()),
-        ));
-    }
-    if let Some(score) = r.ranking_score {
-        drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
-    }
-    if !r.content.is_empty() && !hide_contents {
-        drop(obj.insert("content".into(), serde_json::Value::String(r.content.clone())));
-    }
-    serde_json::Value::Object(obj)
-}
-
 /// Execute the `search` tool.
 fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
     let client = match get_client(state) {
@@ -302,7 +233,12 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         .and_then(serde_json::Value::as_u64)
         .map_or(20_u32, |n| u32::try_from(n.min(50)).unwrap_or(50));
     let semantic_ratio = tool.input.get("semantic_ratio").and_then(serde_json::Value::as_f64);
+    let semantic_query = tool.input.get("semantic_query").and_then(serde_json::Value::as_str);
     let hide_contents = tool.input.get("hide_contents").and_then(serde_json::Value::as_bool).unwrap_or(false);
+
+    // Default hybrid ratio: 0.5 (balanced keyword + semantic).
+    // Ignored when semantic_query is provided (split into two searches).
+    let effective_ratio = Some(semantic_ratio.unwrap_or(0.5));
 
     // --- Resolve index UIDs --------------------------------------------------
 
@@ -326,22 +262,56 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         let file_filter = build_file_filter(extension, from_date, to_date);
         let file_sort = file_sort_string(sort);
 
-        match client.search(&crate::meili::client::SearchParams {
-            uid: &files_uid,
-            query: &effective_query,
-            filter: file_filter.as_deref(),
-            sort: file_sort,
-            limit,
-            semantic_ratio,
-        }) {
-            Ok(resp) => {
-                if let Some(hits) = resp.get("hits").and_then(|h| h.as_array()) {
-                    for hit in hits {
-                        file_results.push(parse_file_hit(hit));
+        if let Some(sem_q) = semantic_query {
+            // Split search: keyword with `query`, semantic with `semantic_query`
+            let keyword_params = crate::meili::client::SearchParams {
+                uid: &files_uid,
+                query: &effective_query,
+                filter: file_filter.as_deref(),
+                sort: file_sort,
+                limit,
+                semantic_ratio: Some(0.0), // pure keyword
+            };
+            let semantic_params = crate::meili::client::SearchParams {
+                uid: &files_uid,
+                query: sem_q,
+                filter: file_filter.as_deref(),
+                sort: file_sort,
+                limit,
+                semantic_ratio: Some(1.0), // pure semantic
+            };
+            match client.multi_search(&[keyword_params, semantic_params]) {
+                Ok(results) => {
+                    for result_set in &results {
+                        if let Some(hits) = result_set.get("hits").and_then(|h| h.as_array()) {
+                            for hit in hits {
+                                file_results.push(parse_file_hit(hit));
+                            }
+                        }
+                    }
+                    dedup_by_score(&mut file_results, limit);
+                }
+                Err(e) => log::warn!("File multi-search failed: {e}"),
+            }
+        } else {
+            // Single hybrid search with balanced ratio
+            match client.search(&crate::meili::client::SearchParams {
+                uid: &files_uid,
+                query: &effective_query,
+                filter: file_filter.as_deref(),
+                sort: file_sort,
+                limit,
+                semantic_ratio: effective_ratio,
+            }) {
+                Ok(resp) => {
+                    if let Some(hits) = resp.get("hits").and_then(|h| h.as_array()) {
+                        for hit in hits {
+                            file_results.push(parse_file_hit(hit));
+                        }
                     }
                 }
+                Err(e) => log::warn!("File search failed: {e}"),
             }
-            Err(e) => log::warn!("File search failed: {e}"),
         }
     }
 
@@ -351,22 +321,56 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         let log_filter = build_log_filter(from_date, to_date);
         let log_sort = log_sort_string(sort);
 
-        match client.search(&crate::meili::client::SearchParams {
-            uid: &logs_uid,
-            query,
-            filter: log_filter.as_deref(),
-            sort: log_sort,
-            limit,
-            semantic_ratio,
-        }) {
-            Ok(resp) => {
-                if let Some(hits) = resp.get("hits").and_then(|h| h.as_array()) {
-                    for hit in hits {
-                        log_results.push(parse_log_hit(hit));
+        if let Some(sem_q) = semantic_query {
+            // Split search: keyword with `query`, semantic with `semantic_query`
+            let keyword_params = crate::meili::client::SearchParams {
+                uid: &logs_uid,
+                query,
+                filter: log_filter.as_deref(),
+                sort: log_sort,
+                limit,
+                semantic_ratio: Some(0.0),
+            };
+            let semantic_params = crate::meili::client::SearchParams {
+                uid: &logs_uid,
+                query: sem_q,
+                filter: log_filter.as_deref(),
+                sort: log_sort,
+                limit,
+                semantic_ratio: Some(1.0),
+            };
+            match client.multi_search(&[keyword_params, semantic_params]) {
+                Ok(results) => {
+                    for result_set in &results {
+                        if let Some(hits) = result_set.get("hits").and_then(|h| h.as_array()) {
+                            for hit in hits {
+                                log_results.push(parse_log_hit(hit));
+                            }
+                        }
+                    }
+                    dedup_by_score(&mut log_results, limit);
+                }
+                Err(e) => log::warn!("Log multi-search failed: {e}"),
+            }
+        } else {
+            // Single hybrid search with balanced ratio
+            match client.search(&crate::meili::client::SearchParams {
+                uid: &logs_uid,
+                query,
+                filter: log_filter.as_deref(),
+                sort: log_sort,
+                limit,
+                semantic_ratio: effective_ratio,
+            }) {
+                Ok(resp) => {
+                    if let Some(hits) = resp.get("hits").and_then(|h| h.as_array()) {
+                        for hit in hits {
+                            log_results.push(parse_log_hit(hit));
+                        }
                     }
                 }
+                Err(e) => log::warn!("Log search failed: {e}"),
             }
-            Err(e) => log::warn!("Log search failed: {e}"),
         }
     }
 

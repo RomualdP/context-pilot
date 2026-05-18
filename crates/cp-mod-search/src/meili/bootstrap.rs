@@ -41,18 +41,18 @@ pub(crate) fn ensure_indexes(port: u16, master_key: &str, project_hash: &str) ->
     // Files index
     if !meili.index_exists(&files_uid)? {
         let create_task = meili.create_index(&files_uid, "id")?;
-        meili.wait_for_task(create_task)?;
+        super::tasks::wait_for_task(&meili, create_task)?;
         let settings_task = meili.update_settings(&files_uid, &types::files_index_settings())?;
-        meili.wait_for_task(settings_task)?;
+        super::tasks::wait_for_task(&meili, settings_task)?;
         log::info!("Created files index: {files_uid}");
     }
 
     // Logs index
     if !meili.index_exists(&logs_uid)? {
         let create_task = meili.create_index(&logs_uid, "id")?;
-        meili.wait_for_task(create_task)?;
+        super::tasks::wait_for_task(&meili, create_task)?;
         let settings_task = meili.update_settings(&logs_uid, &types::logs_index_settings())?;
-        meili.wait_for_task(settings_task)?;
+        super::tasks::wait_for_task(&meili, settings_task)?;
         log::info!("Created logs index: {logs_uid}");
     }
 

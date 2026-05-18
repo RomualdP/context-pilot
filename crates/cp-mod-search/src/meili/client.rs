@@ -4,7 +4,7 @@
 //! for index management, document operations, and search queries.
 //! Methods are added incrementally as each implementation phase lands.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// HTTP client for a running Meilisearch server.
 ///
@@ -54,6 +54,21 @@ impl MeiliClient {
         Ok(Self { base_url: format!("http://127.0.0.1:{port}"), api_key: api_key.to_string(), http })
     }
 
+    /// Base URL for the Meilisearch server.
+    pub(super) fn url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Bearer token for authentication.
+    pub(super) fn key(&self) -> &str {
+        &self.api_key
+    }
+
+    /// Reusable HTTP client reference.
+    pub(super) const fn client(&self) -> &reqwest::blocking::Client {
+        &self.http
+    }
+
     // -- Index operations ----------------------------------------------------
 
     /// Configure embedder settings for an index.
@@ -79,7 +94,7 @@ impl MeiliClient {
             .send()
             .map_err(|e| format!("update_embedder_settings request failed: {e}"))?;
 
-        Self::extract_task_uid(resp, "update_embedder_settings")
+        super::tasks::extract_task_uid(resp, "update_embedder_settings")
     }
 
     /// Read the current embedder settings for an index.
@@ -134,7 +149,7 @@ impl MeiliClient {
 
     /// Create a new index with the given primary key.
     ///
-    /// Returns the task UID for polling via [`Self::wait_for_task`].
+    /// Returns the task UID for polling via [`super::tasks::wait_for_task`].
     /// Meilisearch index creation is asynchronous.
     ///
     /// # Errors
@@ -156,12 +171,12 @@ impl MeiliClient {
             .send()
             .map_err(|e| format!("create_index request failed: {e}"))?;
 
-        Self::extract_task_uid(resp, "create_index")
+        super::tasks::extract_task_uid(resp, "create_index")
     }
 
     /// Update index settings (searchable, filterable, sortable attributes, etc.).
     ///
-    /// Returns the task UID for polling via [`Self::wait_for_task`].
+    /// Returns the task UID for polling via [`super::tasks::wait_for_task`].
     ///
     /// # Errors
     ///
@@ -178,7 +193,7 @@ impl MeiliClient {
             .send()
             .map_err(|e| format!("update_settings request failed: {e}"))?;
 
-        Self::extract_task_uid(resp, "update_settings")
+        super::tasks::extract_task_uid(resp, "update_settings")
     }
 
     /// Delete an index.
@@ -205,7 +220,7 @@ impl MeiliClient {
             return Ok(0);
         }
 
-        Self::extract_task_uid(resp, "delete_index")
+        super::tasks::extract_task_uid(resp, "delete_index")
     }
 
     // -- Document operations -------------------------------------------------
@@ -230,7 +245,7 @@ impl MeiliClient {
             .send()
             .map_err(|e| format!("add_documents request failed: {e}"))?;
 
-        Self::extract_task_uid(resp, "add_documents")
+        super::tasks::extract_task_uid(resp, "add_documents")
     }
 
     /// Delete documents matching a filter expression.
@@ -254,7 +269,7 @@ impl MeiliClient {
             .send()
             .map_err(|e| format!("delete_documents_by_filter request failed: {e}"))?;
 
-        Self::extract_task_uid(resp, "delete_documents_by_filter")
+        super::tasks::extract_task_uid(resp, "delete_documents_by_filter")
     }
 
     // -- Stats ----------------------------------------------------------------
@@ -329,15 +344,8 @@ impl MeiliClient {
 
     // -- Search ---------------------------------------------------------------
 
-    /// Query a single index and return raw Meilisearch results.
-    ///
-    /// See [Meilisearch search API](https://docs.meilisearch.com/reference/api/search.html).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the API call fails or the response cannot be parsed.
-    pub(crate) fn search(&self, params: &SearchParams<'_>) -> Result<serde_json::Value, String> {
-        let url = format!("{}/indexes/{}/search", self.base_url, params.uid);
+    /// Build the JSON body for a single search query (shared by `search` and `multi_search`).
+    fn build_search_body(params: &SearchParams<'_>) -> serde_json::Value {
         let mut body = serde_json::json!({
             "q": params.query,
             "limit": params.limit,
@@ -368,6 +376,20 @@ impl MeiliClient {
             );
         }
 
+        body
+    }
+
+    /// Query a single index and return raw Meilisearch results.
+    ///
+    /// See [Meilisearch search API](https://docs.meilisearch.com/reference/api/search.html).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails or the response cannot be parsed.
+    pub(crate) fn search(&self, params: &SearchParams<'_>) -> Result<serde_json::Value, String> {
+        let url = format!("{}/indexes/{}/search", self.base_url, params.uid);
+        let body = Self::build_search_body(params);
+
         let resp = self
             .http
             .post(&url)
@@ -380,6 +402,49 @@ impl MeiliClient {
         let json: serde_json::Value = resp.json().map_err(|e| format!("search response parse failed: {e}"))?;
 
         Ok(json)
+    }
+
+    /// Run multiple search queries in a single request (`/multi-search`).
+    ///
+    /// Each query targets a specific index.  Returns one result set per query
+    /// in the same order they were submitted.
+    ///
+    /// Used when `semantic_query` is provided: one pure-keyword query with the
+    /// user's `query`, one pure-semantic query with the `semantic_query`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API call fails or the response cannot be parsed.
+    pub(crate) fn multi_search(&self, queries: &[SearchParams<'_>]) -> Result<Vec<serde_json::Value>, String> {
+        let url = format!("{}/multi-search", self.base_url);
+
+        let query_bodies: Vec<serde_json::Value> = queries
+            .iter()
+            .map(|params| {
+                let mut body = Self::build_search_body(params);
+                if let Some(obj) = body.as_object_mut() {
+                    let _prev = obj.insert("indexUid".to_string(), serde_json::Value::String(params.uid.to_string()));
+                }
+                body
+            })
+            .collect();
+
+        let envelope = serde_json::json!({ "queries": query_bodies });
+
+        let resp = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .body(envelope.to_string())
+            .send()
+            .map_err(|e| format!("multi_search request failed: {e}"))?;
+
+        let json: serde_json::Value = resp.json().map_err(|e| format!("multi_search response parse failed: {e}"))?;
+
+        let results = json.get("results").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+
+        Ok(results)
     }
 
     /// Query facet distribution for one or more attributes.
@@ -419,75 +484,7 @@ impl MeiliClient {
         Ok(json.get("facetDistribution").cloned().unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new())))
     }
 
-    // -- Task management -----------------------------------------------------
-
-    /// Poll a task until it reaches a terminal state (`succeeded` or `failed`).
-    ///
-    /// Polls every 200ms for up to 30 seconds.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the task fails, times out, or the API is unreachable.
-    pub(crate) fn wait_for_task(&self, task_uid: u64) -> Result<(), String> {
-        let timeout = Duration::from_secs(30);
-        let interval = Duration::from_millis(200);
-        let deadline = Instant::now().checked_add(timeout);
-
-        loop {
-            let url = format!("{}/tasks/{task_uid}", self.base_url);
-            let resp = self
-                .http
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", self.api_key))
-                .send()
-                .map_err(|e| format!("task poll failed: {e}"))?;
-
-            let json: serde_json::Value = resp.json().map_err(|e| format!("task poll: cannot parse response: {e}"))?;
-
-            let status = json.get("status").and_then(serde_json::Value::as_str).unwrap_or("unknown");
-
-            match status {
-                "succeeded" => return Ok(()),
-                "failed" => {
-                    let err = json
-                        .get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown error");
-                    return Err(format!("Meilisearch task {task_uid} failed: {err}"));
-                }
-                "canceled" => {
-                    return Err(format!("Meilisearch task {task_uid} was canceled"));
-                }
-                // "enqueued" | "processing" → keep polling
-                _ => {}
-            }
-
-            if deadline.is_some_and(|d| Instant::now() >= d) {
-                return Err(format!("Meilisearch task {task_uid} did not complete within {timeout:?}"));
-            }
-
-            std::thread::sleep(interval);
-        }
-    }
-
     // -- Helpers -------------------------------------------------------------
-
-    /// Extract `taskUid` from an API response that returns a task.
-    ///
-    /// Meilisearch returns `202 Accepted` with `{ "taskUid": N, ... }` for
-    /// asynchronous operations.
-    fn extract_task_uid(resp: reqwest::blocking::Response, operation: &str) -> Result<u64, String> {
-        let status = resp.status().as_u16();
-        let json: serde_json::Value = resp.json().map_err(|e| format!("{operation}: cannot parse response: {e}"))?;
-
-        if status == 202 {
-            json.get("taskUid")
-                .and_then(serde_json::Value::as_u64)
-                .ok_or_else(|| format!("{operation}: response missing 'taskUid'"))
-        } else {
-            let msg = json.get("message").and_then(serde_json::Value::as_str).unwrap_or("unknown error");
-            Err(format!("{operation} returned HTTP {status}: {msg}"))
-        }
-    }
+    // NOTE: `wait_for_task` and `extract_task_uid` live in `tasks.rs`
+    // as free functions to avoid the `multiple_inherent_impl` lint.
 }

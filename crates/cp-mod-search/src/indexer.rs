@@ -358,7 +358,7 @@ fn index_one_file(ctx: &mut IndexerCtx, abs_path: &Path) {
     let escaped = rel_str.replace('\'', "\\'");
     let filter = format!("file_path = '{escaped}'");
     if let Ok(task) = ctx.client.delete_documents_by_filter(&ctx.files_uid, &filter) {
-        let _r = ctx.client.wait_for_task(task);
+        let _r = crate::meili::tasks::wait_for_task(&ctx.client, task);
     }
 
     // Split into chunks
@@ -395,7 +395,7 @@ fn index_one_file(ctx: &mut IndexerCtx, abs_path: &Path) {
 
     // Send to Meilisearch
     if let Ok(task) = ctx.client.add_documents(&ctx.files_uid, &serde_json::Value::Array(docs)) {
-        let _r = ctx.client.wait_for_task(task);
+        let _r = crate::meili::tasks::wait_for_task(&ctx.client, task);
     }
 
     // Update metrics
@@ -436,7 +436,7 @@ fn delete_one_file(ctx: &mut IndexerCtx, abs_path: &Path) {
     let filter = format!("file_path = '{escaped}'");
 
     if let Ok(task) = ctx.client.delete_documents_by_filter(&ctx.files_uid, &filter) {
-        let _r = ctx.client.wait_for_task(task);
+        let _r = crate::meili::tasks::wait_for_task(&ctx.client, task);
     }
 
     // Clear cached mtime so the file gets re-indexed if recreated

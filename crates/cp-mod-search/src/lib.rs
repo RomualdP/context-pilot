@@ -128,6 +128,7 @@ impl Module for SearchModule {
                 .param("to_date", ParamType::String, false)
                 .param("limit", ParamType::Integer, false)
                 .param("semantic_ratio", ParamType::Number, false)
+                .param("semantic_query", ParamType::String, false)
                 .param("hide_contents", ParamType::Boolean, false)
                 .build(),
         ]
@@ -467,6 +468,6 @@ pub fn sync_logs_to_meilisearch(state: &State) {
 
     let Ok(client) = meili::client::MeiliClient::new(port, &master_key) else { return };
     if let Ok(task) = client.add_documents(&logs_uid, &serde_json::Value::Array(docs)) {
-        let _r = client.wait_for_task(task);
+        let _r = meili::tasks::wait_for_task(&client, task);
     }
 }
