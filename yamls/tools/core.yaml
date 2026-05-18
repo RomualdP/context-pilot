@@ -52,7 +52,7 @@ tools:
 
       The thought body should be your real reasoning — uncensored, rigorous, structured.
 
-      CONTEXT RADAR: Use the optional task_context parameter to describe what you're currently working on (1-2 sentences). This feeds the Context Radar panel, which automatically recalls related past decisions and context from logs. Describe *what* you're working on, not *how*. The panel refreshes whenever you provide a new task_context.
+      CONTEXT RADAR: Use the task_context parameter to describe what you're currently working on (1-2 sentences). This feeds the Context Radar panel, which automatically recalls related past decisions and context from logs. Describe *what* you're working on, not *how*. The panel refreshes whenever you provide a new task_context.
     parameters:
       thought_body: "The full reasoning. Be thorough — this is your scratch space to think clearly. Markdown is supported. Stays in active context until the turn is detached into history."
       task_context: "Short (1-2 sentences) description of what you're currently working on. Feeds the Context Radar panel — automatically recalls related past decisions and context from logs. Describe *what* you're working on, not *how*. Example: 'Investigating port reconnection failure on TUI reload'"

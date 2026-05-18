@@ -54,6 +54,16 @@ pub(super) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         return ToolResult::new(tool.id.clone(), "Missing or empty 'thought_body' parameter".to_string(), true);
     }
 
+    if tool.input.get("task_context").and_then(serde_json::Value::as_str).is_none_or(|s| s.trim().is_empty()) {
+        return ToolResult::new(
+            tool.id.clone(),
+            "Missing or empty 'task_context' parameter. You MUST provide a short (1-2 sentence) \
+             description of what you're currently working on. This feeds the Context Radar panel."
+                .to_string(),
+            true,
+        );
+    }
+
     // Bring counter to at least 1, then increment from there
     let count = {
         let ts = state.ext_mut::<ThinkState>();
