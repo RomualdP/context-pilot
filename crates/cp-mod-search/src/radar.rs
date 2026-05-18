@@ -37,8 +37,12 @@ const SEMANTIC_RATIO: f64 = 0.7;
 /// Maximum number of results after dedup + ranking.
 const MAX_FINAL_RESULTS: usize = 30;
 
-/// Floor for the adaptive half-life (5 minutes in ms).
-const HALF_LIFE_FLOOR_MS: f64 = 5.0 * 60.0 * 1000.0;
+/// Half-life for log-count-based exponential decay (in number of logs).
+///
+/// A log that is 100 entries behind the current log count has half the
+/// weight of the newest log.  This makes decay independent of wall-clock
+/// time — vacations, breaks, and coding intensity don't affect scoring.
+const HALF_LIFE_LOGS: f64 = 100.0;
 
 // ─── Scoring ────────────────────────────────────────────────────────────────
 
@@ -58,21 +62,6 @@ struct ScoredResult {
     score: f64,
 }
 
-/// Compute the adaptive half-life from a set of task signals.
-///
-/// `half_life = max(span / 2, 5 minutes)`
-/// where `span = newest_signal.timestamp - oldest_signal.timestamp`.
-fn adaptive_half_life_ms(signals: &[crate::types::TaskSignal]) -> f64 {
-    if signals.len() < 2 {
-        return HALF_LIFE_FLOOR_MS;
-    }
-    let oldest = signals.first().map_or(0, |s| s.timestamp_ms);
-    let newest = signals.last().map_or(0, |s| s.timestamp_ms);
-    #[expect(clippy::cast_precision_loss, reason = "timestamp-diff ms fits in f64 mantissa for centuries")]
-    let span = newest.saturating_sub(oldest) as f64;
-    f64::max(span / 2.0, HALF_LIFE_FLOOR_MS)
-}
-
 /// Exponential decay factor: `exp(-ln(2) × age / half_life)`.
 fn decay(age_ms: f64, half_life_ms: f64) -> f64 {
     if half_life_ms <= 0.0 {
@@ -90,28 +79,6 @@ fn write_entry(yaml: &mut String, entry: &ScoredResult) {
         let _w3 = writeln!(yaml, "    tags: [{}]", entry.tags.join(", "));
     }
     let _w4 = writeln!(yaml, "    score: {:.3}", entry.score);
-}
-
-/// Format milliseconds as a human-readable duration (e.g. "42m", "1h24m", "3d2h").
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::integer_division_remainder_used,
-    reason = "display-only duration formatting — negative/huge values are impossible from timestamps"
-)]
-fn format_duration_ms(ms: f64) -> String {
-    let secs = ms as u64 / 1000;
-    let mins = secs / 60;
-    let hours = mins / 60;
-    let days = hours / 24;
-
-    if days > 0 {
-        format!("{days}d{}h", hours % 24)
-    } else if hours > 0 {
-        format!("{hours}h{}m", mins % 60)
-    } else {
-        format!("{mins}m")
-    }
 }
 
 /// Format a millisecond timestamp as an ISO 8601 datetime string.
@@ -178,12 +145,16 @@ pub(crate) fn sanitize_signal(raw: &str) -> String {
 /// Called from `pipeline.rs` after a Think tool executes with a
 /// `task_context` parameter.  Caps the buffer at [`crate::types::MAX_TASK_SIGNALS`].
 pub(crate) fn push_signal(state: &mut State, content: &str) {
-    let Some(ss) = state.get_ext_mut::<SearchState>() else { return };
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
     let safe = sanitize_signal(content);
-    ss.persist.task_signals.push(crate::types::TaskSignal { timestamp_ms: now_ms, content: safe });
+
+    // Read log count BEFORE borrowing SearchState (avoids double-borrow).
+    let log_count = u64::try_from(cp_mod_logs::types::LogsState::get(state).logs.len()).unwrap_or(0);
+
+    let Some(ss) = state.get_ext_mut::<SearchState>() else { return };
+    ss.persist.task_signals.push(crate::types::TaskSignal { timestamp_ms: now_ms, log_count, content: safe });
     // Ring buffer: drop oldest signals when over capacity
     let len = ss.persist.task_signals.len();
     if len > crate::types::MAX_TASK_SIGNALS {
@@ -209,6 +180,9 @@ pub(crate) fn refresh(state: &mut State) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+
+    // Current log count for distance-based decay
+    let current_log_count = u64::try_from(cp_mod_logs::types::LogsState::get(state).logs.len()).unwrap_or(0) as f64;
 
     // Read connection info + signals (snapshot to release borrow)
     let (port, master_key, project_hash, signals) = {
@@ -237,16 +211,13 @@ pub(crate) fn refresh(state: &mut State) {
         return;
     };
 
-    // Compute adaptive half-life
-    let half_life_ms = adaptive_half_life_ms(&signals);
-    let now_f64 = now_ms as f64;
-
     // Query logs index for each signal
     let mut all_results: Vec<ScoredResult> = Vec::new();
 
     for signal in &signals {
-        let query_age_ms = now_f64 - signal.timestamp_ms as f64;
-        let q_decay = decay(query_age_ms, half_life_ms);
+        // Log-count-based decay: distance = how many logs created since this signal
+        let q_distance = current_log_count - signal.log_count as f64;
+        let q_decay = decay(q_distance, HALF_LIFE_LOGS);
 
         let Ok(json) = client.search(&SearchParams {
             uid: &logs_uid,
@@ -265,9 +236,16 @@ pub(crate) fn refresh(state: &mut State) {
 
         for hit in hits {
             let relevance = hit.get("_rankingScore").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
-            let log_ts = hit.get("timestamp_ms").and_then(serde_json::Value::as_u64).unwrap_or(0);
-            let result_age_ms = now_f64 - log_ts as f64;
-            let r_decay = decay(result_age_ms, half_life_ms);
+
+            // Parse log number from ID (e.g. "L42" → 42) for count-based decay
+            let log_number = hit
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|id| id.strip_prefix('L'))
+                .and_then(|n| n.parse::<u64>().ok())
+                .unwrap_or(0);
+            let r_distance = current_log_count - log_number as f64;
+            let r_decay = decay(r_distance, HALF_LIFE_LOGS);
 
             let score = relevance * q_decay * r_decay;
 
@@ -309,22 +287,10 @@ pub(crate) fn refresh(state: &mut State) {
     // Selection was score-based; display is chronological.
     ranked.sort_by(|a, b| b.datetime.cmp(&a.datetime));
 
-    // Compute span for header
-    let span_ms = if signals.len() >= 2 {
-        signals.last().map_or(0, |s| s.timestamp_ms).saturating_sub(signals.first().map_or(0, |s| s.timestamp_ms))
-    } else {
-        0
-    };
-
     // Build YAML output
     let mut yaml = String::with_capacity(4096);
     let _h0 = writeln!(yaml, "# Context Radar — {} results from {} signals", ranked.len(), signals.len());
-    let _h1 = writeln!(
-        yaml,
-        "# Half-life: {} (span: {})",
-        format_duration_ms(half_life_ms),
-        format_duration_ms(span_ms as f64)
-    );
+    let _h1 = writeln!(yaml, "# Half-life: {HALF_LIFE_LOGS:.0} logs");
 
     // Show all task signals as anchors with timestamps (most recent first)
     if !signals.is_empty() {

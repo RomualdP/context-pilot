@@ -15,6 +15,10 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct TaskSignal {
     /// Unix timestamp (ms) when this signal was created.
     pub timestamp_ms: u64,
+    /// Total log count at the time this signal was pushed.
+    /// Used for log-count-based decay (distance = `current_count` - this).
+    #[serde(default)]
+    pub log_count: u64,
     /// Short description of the current task (1–2 sentences).
     pub content: String,
 }

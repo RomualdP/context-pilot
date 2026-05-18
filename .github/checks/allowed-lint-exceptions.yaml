@@ -95,16 +95,7 @@ exceptions:
     strategy: >
       Irreducible on stable Rust. Re-evaluate when provide() stabilizes.
 
-  # ── cp-mod-search/radar.rs: numeric casts + duration formatting ─────
-
-  - path: "crates/cp-mod-search/src/radar.rs"
-    match: "timestamp-diff ms fits in f64 mantissa for centuries"
-    reason: >
-      adaptive_half_life_ms() casts a u64 timestamp-difference to f64.
-      Timestamps in milliseconds stay well within f64's 53-bit mantissa
-      for centuries.
-    strategy: >
-      Irreducible — f64 arithmetic is required for exponential decay.
+  # ── cp-mod-search/radar.rs: numeric casts ────────────────────────────
 
   - path: "crates/cp-mod-search/src/radar.rs"
     match: "timestamp ms as f64 — decay math requires floating point"
@@ -113,15 +104,4 @@ exceptions:
       sequential write!() calls to build the YAML output string.
     strategy: >
       Irreducible — f64 arithmetic is required for exponential decay.
-
-  - path: "crates/cp-mod-search/src/radar.rs"
-    match: "display-only duration formatting"
-    reason: >
-      format_duration_ms() casts f64 → u64 and uses integer division
-      to decompose milliseconds into days/hours/minutes for display.
-      Input is always a non-negative timestamp delta, so truncation
-      and sign loss are harmless.
-    strategy: >
-      Could use Duration::from_millis() but would need a u64 input,
-      requiring the cast to happen at the call site instead.
 
