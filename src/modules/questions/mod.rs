@@ -195,7 +195,7 @@ impl Module for QuestionsModule {
             }
         };
         if fire {
-            let _id = cp_mod_spine::types::SpineState::create_notification(
+            let id = cp_mod_spine::types::SpineState::create_notification(
                 state,
                 cp_mod_spine::types::NotificationType::Custom,
                 "Think Reminder".into(),
@@ -203,6 +203,10 @@ impl Module for QuestionsModule {
                  augments your performances. Make a habit out of it."
                     .into(),
             );
+            // Auto-mark as processed — the nudge is injected into the chat
+            // stream but should not accumulate in the Spine panel or trigger
+            // auto-continuation.
+            let _found = cp_mod_spine::types::SpineState::mark_notification_processed(state, &id);
         }
     }
 
