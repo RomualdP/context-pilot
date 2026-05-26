@@ -141,6 +141,10 @@ pub(crate) mod theme {
     pub(crate) fn error() -> Color {
         rgb(active_theme().colors.error)
     }
+    /// Orange color from the active theme.
+    pub(crate) fn orange() -> Color {
+        rgb(active_theme().colors.orange)
+    }
 
     // Text colors
 

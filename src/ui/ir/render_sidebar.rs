@@ -177,7 +177,7 @@ fn token_count_color(tokens: u32) -> ratatui::style::Color {
     if tokens >= 10_000 {
         theme::error()
     } else if tokens >= 5_000 {
-        ratatui::style::Color::Rgb(255, 165, 0)
+        theme::orange()
     } else if tokens >= 2_500 {
         theme::warning()
     } else if tokens >= 500 {

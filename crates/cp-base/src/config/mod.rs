@@ -338,6 +338,8 @@ pub struct ThemeColors {
     pub warning: RgbColor,
     /// Error indicators (failures, blocked items).
     pub error: RgbColor,
+    /// Orange indicators (elevated warnings, heavy usage).
+    pub orange: RgbColor,
     /// Primary text color.
     pub text: RgbColor,
     /// Secondary text (labels, metadata).

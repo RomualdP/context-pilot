@@ -98,6 +98,11 @@ pub mod theme {
     pub fn error() -> Color {
         rgb(active_theme().colors.error)
     }
+    /// Orange indicator color (elevated warnings, heavy usage).
+    #[must_use]
+    pub fn orange() -> Color {
+        rgb(active_theme().colors.orange)
+    }
     /// Primary text color.
     #[must_use]
     pub fn text() -> Color {
