@@ -35,7 +35,14 @@ const RESULTS_PER_QUERY: u32 = 10;
 const SEMANTIC_RATIO: f64 = 0.7;
 
 /// Maximum number of results after dedup + ranking.
-const MAX_FINAL_RESULTS: usize = 30;
+const MAX_FINAL_RESULTS: usize = 40;
+
+/// Number of most-recent logs to always include deterministically.
+///
+/// These are fetched directly from [`LogsState`] — no Meilisearch
+/// query needed.  Guarantees the AI always sees the latest context
+/// regardless of signal-based relevance scoring.
+const RECENT_LOGS_COUNT: usize = 10;
 
 /// Half-life for log-count-based exponential decay (in number of logs).
 ///
@@ -282,6 +289,25 @@ pub(crate) fn refresh(state: &mut State) {
     let mut ranked: Vec<ScoredResult> = best_by_id.into_values().collect();
     ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     ranked.truncate(MAX_FINAL_RESULTS);
+
+    // Inject the N most recent logs deterministically (not via Meilisearch).
+    // This guarantees the AI always sees the latest context regardless of
+    // signal-based relevance scoring.  Deduplicates against ranked results.
+    let ranked_ids: std::collections::HashSet<String> = ranked.iter().map(|r| r.log_id.clone()).collect();
+    let logs_state = cp_mod_logs::types::LogsState::get(state);
+    let recent_count = RECENT_LOGS_COUNT.min(logs_state.logs.len());
+    for log in logs_state.logs.iter().rev().take(recent_count) {
+        if !ranked_ids.contains(&log.id) {
+            ranked.push(ScoredResult {
+                log_id: log.id.clone(),
+                datetime: log.datetime.clone(),
+                importance: log.importance.clone(),
+                tags: log.tags.clone(),
+                content: log.content.clone(),
+                score: 0.0,
+            });
+        }
+    }
 
     // Re-sort by datetime for display (newest first).
     // Selection was score-based; display is chronological.
