@@ -186,7 +186,7 @@ impl Module for FilesModule {
                         // Verify old_string against current disk AND virtual (post-queue) content.
                         // Matrix:
                         //   current ✓, virtual ✓ → OK
-                        //   current ✓, virtual ✗ → WARNING (pending queue edit conflicts)
+                        //   current ✓, virtual ✗ → ERROR (pending queue edit conflicts)
                         //   current ✗, virtual ✓ → OK (model edits post-queue state)
                         //   current ✗, virtual ✗ → ERROR (not found anywhere)
                         if let Some(old_string) = tool.input.get("old_string").and_then(|v| v.as_str())
@@ -199,7 +199,7 @@ impl Module for FilesModule {
                                 .is_some_and(|vc| tools::edit_file::find_normalized_match(vc, old_string).is_some());
 
                             if current_ok && !virtual_ok && virtual_content.is_some() {
-                                pf.warnings.push(format!(
+                                pf.errors.push(format!(
                                     "old_string found in '{path_str}' on disk but a pending Queue edit conflicts — the queued changes remove this text"
                                 ));
                             } else if !current_ok && !virtual_ok {
