@@ -108,6 +108,15 @@ fn iso_to_ms(s: &str) -> Option<u64> {
     u64::try_from(dt.timestamp_millis()).ok()
 }
 
+/// Warning appended to every panel-creating tool result.
+///
+/// Prevents the LLM from closing result panels before acting on their content.
+/// Closing a panel causes instant, irreversible context loss.
+const PANEL_WARNING: &str = "\n\nIMPORTANT: Results live in this panel. Act on the information FIRST (write \
+    files, answer questions, store in scratchpad, etc.), THEN close the panel. Closing it IMMEDIATELY and \
+    IRREVERSIBLY erases all content from your context — you cannot recall it from memory afterward. \
+    Never close-then-act; always act-then-close.";
+
 /// Build Meilisearch sort parameter from tool sort string.
 fn file_sort_string(sort: &str) -> Option<&'static str> {
     match sort {
@@ -355,5 +364,8 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
     // Create dynamic panel — full content lives there, not in the tool result.
     let panel_id = crate::panel::create(state, &format!("search: {query}"), &panel_content);
 
-    ok_result(tool, format!("Created panel {panel_id}: {file_count} file chunks, {log_count} logs for \"{query}\""))
+    ok_result(
+        tool,
+        format!("Created panel {panel_id}: {file_count} file chunks, {log_count} logs for \"{query}\"{PANEL_WARNING}"),
+    )
 }

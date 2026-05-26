@@ -32,6 +32,15 @@ fn ok_result(tool: &ToolUse, content: String) -> ToolResult {
     }
 }
 
+/// Warning appended to every panel-creating tool result.
+///
+/// Prevents the LLM from closing result panels before acting on their content.
+/// Closing a panel causes instant, irreversible context loss.
+const PANEL_WARNING: &str = "\n\nIMPORTANT: Results live in this panel. Act on the information FIRST (write \
+    files, answer questions, store in scratchpad, etc.), THEN close the panel. Closing it IMMEDIATELY and \
+    IRREVERSIBLY erases all content from your context — you cannot recall it from memory afterward. \
+    Never close-then-act; always act-then-close.";
+
 /// Build an error `ToolResult`.
 fn err_result(tool: &ToolUse, content: String) -> ToolResult {
     ToolResult {
@@ -101,7 +110,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
             // Create dynamic panel
             let panel_id = crate::panel::create(state, &format!("brave_search: {query}"), &panel_content);
 
-            ok_result(tool, format!("Created panel {panel_id}: {result_count} results for '{query}'"))
+            ok_result(tool, format!("Created panel {panel_id}: {result_count} results for '{query}'{PANEL_WARNING}"))
         }
         Err(e) => err_result(tool, e),
     }
@@ -151,7 +160,12 @@ fn exec_llm_context(tool: &ToolUse, state: &mut State) -> ToolResult {
 
             let panel_id = crate::panel::create(state, &format!("brave_llm_context: {query}"), &panel_content);
 
-            ok_result(tool, format!("Created panel {panel_id}: {url_count} URLs, ~{max_tokens} tokens for '{query}'"))
+            ok_result(
+                tool,
+                format!(
+                    "Created panel {panel_id}: {url_count} URLs, ~{max_tokens} tokens for '{query}'{PANEL_WARNING}"
+                ),
+            )
         }
         Err(e) => err_result(tool, e),
     }

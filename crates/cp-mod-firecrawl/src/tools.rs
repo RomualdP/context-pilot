@@ -47,6 +47,15 @@ fn err_result(tool: &ToolUse, content: String) -> ToolResult {
     }
 }
 
+/// Warning appended to every panel-creating tool result.
+///
+/// Prevents the LLM from closing result panels before acting on their content.
+/// Closing a panel causes instant, irreversible context loss.
+const PANEL_WARNING: &str = "\n\nIMPORTANT: Results live in this panel. Act on the information FIRST (write \
+    files, answer questions, store in scratchpad, etc.), THEN close the panel. Closing it IMMEDIATELY and \
+    IRREVERSIBLY erases all content from your context — you cannot recall it from memory afterward. \
+    Never close-then-act; always act-then-close.";
+
 /// Execute the `firecrawl_scrape` tool: scrape a single URL for content.
 fn exec_scrape(tool: &ToolUse, state: &mut State) -> ToolResult {
     let client = match get_client() {
@@ -132,7 +141,7 @@ fn exec_scrape(tool: &ToolUse, state: &mut State) -> ToolResult {
 
             let panel_id = crate::panel::create(state, &format!("firecrawl_scrape: {url}"), &content);
 
-            ok_result(tool, format!("Created panel {panel_id}: scraped {url} ({title})"))
+            ok_result(tool, format!("Created panel {panel_id}: scraped {url} ({title}){PANEL_WARNING}"))
         }
         Err(e) => err_result(tool, e),
     }
@@ -193,7 +202,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
                 // Fallback: dump as YAML
                 let panel_content = serde_yaml::to_string(&data).unwrap_or_else(|_| format!("{data:#}"));
                 let panel_id = crate::panel::create(state, &format!("firecrawl_search: {query}"), &panel_content);
-                return ok_result(tool, format!("Created panel {panel_id}: results for '{query}'"));
+                return ok_result(tool, format!("Created panel {panel_id}: results for '{query}'{PANEL_WARNING}"));
             };
 
             let count = results.len();
@@ -233,7 +242,7 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
 
             let panel_id = crate::panel::create(state, &format!("firecrawl_search: {query}"), &content);
 
-            ok_result(tool, format!("Created panel {panel_id}: {count} results for '{query}'"))
+            ok_result(tool, format!("Created panel {panel_id}: {count} results for '{query}'{PANEL_WARNING}"))
         }
         Err(e) => err_result(tool, e),
     }
@@ -305,7 +314,7 @@ fn exec_map(tool: &ToolUse, state: &mut State) -> ToolResult {
 
             let panel_id = crate::panel::create(state, &format!("firecrawl_map: {domain}"), &panel_content);
 
-            ok_result(tool, format!("Created panel {panel_id}: {count} URLs discovered on '{domain}'"))
+            ok_result(tool, format!("Created panel {panel_id}: {count} URLs discovered on '{domain}'{PANEL_WARNING}"))
         }
         Err(e) => err_result(tool, e),
     }
