@@ -167,11 +167,21 @@ fn render_normal_entry(lines: &mut Vec<Line<'static>>, entry: &SidebarEntry, cw:
 // ── Collapsed sidebar ────────────────────────────────────────────────
 
 /// Color for token count based on magnitude.
+///
+/// - Grey:   < 500 tokens (negligible)
+/// - White:  < 2 500 tokens (small)
+/// - Yellow: < 5 000 tokens (moderate)
+/// - Orange: < 10 000 tokens (large)
+/// - Red:    ≥ 10 000 tokens (heavy)
 fn token_count_color(tokens: u32) -> ratatui::style::Color {
-    if tokens >= 5000 {
+    if tokens >= 10_000 {
+        theme::error()
+    } else if tokens >= 5_000 {
+        ratatui::style::Color::Rgb(255, 165, 0)
+    } else if tokens >= 2_500 {
         theme::warning()
-    } else if tokens >= 1500 {
-        theme::accent_dim()
+    } else if tokens >= 500 {
+        theme::text()
     } else {
         theme::text_muted()
     }
