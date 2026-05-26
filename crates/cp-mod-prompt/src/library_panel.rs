@@ -1,7 +1,6 @@
 use crossterm::event::KeyEvent;
 
-use crate::types::PromptState;
-use cp_base::config::INJECTIONS;
+use crate::types::{PromptState, PromptType};
 
 use cp_base::panels::{CacheRequest, CacheUpdate, ContextItem, Panel, scroll_key_action};
 use cp_base::state::actions::Action;
@@ -44,20 +43,16 @@ impl Panel for LibraryPanel {
     fn blocks(&self, state: &State) -> Vec<cp_render::Block> {
         crate::library_blocks::library_blocks(state)
     }
-    fn title(&self, state: &State) -> String {
-        PromptState::get(state)
-            .open_prompt_id
-            .as_ref()
-            .map_or_else(|| "Library".to_string(), |id| format!("Library: editing {id}"))
+
+    fn title(&self, _state: &State) -> String {
+        "Library".to_string()
     }
 
     fn refresh(&self, state: &mut State) {
-        // Compute token count from context content and track content changes
         let items = self.context(state);
         if let Some(ctx) = state.context.iter_mut().find(|c| c.context_type == Kind::new(Kind::LIBRARY)) {
             let total: usize = items.iter().map(|i| cp_base::state::context::estimate_tokens(&i.content)).sum();
             ctx.token_count = total;
-            // Build combined content for hash tracking
             let combined: String = items.iter().map(|i| i.content.as_str()).collect::<Vec<_>>().join("\n");
             let _ = cp_base::panels::update_if_changed(ctx, &combined);
         }
@@ -73,71 +68,49 @@ impl Panel for LibraryPanel {
         };
 
         let ps = PromptState::get(state);
+        let agents = crate::storage::load_prompts_for(PromptType::Agent);
+        let skills = crate::storage::load_prompts_for(PromptType::Skill);
+        let commands = crate::storage::load_prompts_for(PromptType::Command);
+
         let mut content = String::new();
 
-        // If prompt editor is open, show warning + content for editing
-        if let Some(id) = &ps.open_prompt_id {
-            let item = ps
-                .agents
-                .iter()
-                .find(|a| &a.id == id)
-                .or_else(|| ps.skills.iter().find(|s| &s.id == id))
-                .or_else(|| ps.commands.iter().find(|c| &c.id == id));
-
-            if let Some(item) = item {
-                let type_str = if ps.agents.iter().any(|a| &a.id == id) {
-                    "agent"
-                } else if ps.skills.iter().any(|s| &s.id == id) {
-                    "skill"
-                } else {
-                    "command"
-                };
-
-                content.push_str(&INJECTIONS.editor_warnings.prompt.banner);
-                content.push('\n');
-                content.push_str(&INJECTIONS.editor_warnings.prompt.no_follow);
-                content.push('\n');
-                content.push_str(&INJECTIONS.editor_warnings.prompt.load_hint);
-                content.push('\n');
-                content.push_str(&INJECTIONS.editor_warnings.prompt.close_hint);
-                content.push_str("\n\n");
-                let _r = write!(content, "Editing {} '{}' ({}):\n\n", type_str, item.id, item.name);
-                content.push_str(&item.content);
-                content.push('\n');
-
-                return vec![ContextItem::new(&ctx.id, "Library", content, ctx.last_refresh_ms)];
-            }
-        }
-
-        // Normal mode: show tables
+        // Agents table
         content.push_str("Agents (system prompts):\n\n");
         content.push_str("| ID | Name | Active | Description |\n");
         content.push_str("|------|------|--------|-------------|\n");
-        for agent in &ps.agents {
+        for agent in &agents {
             let active = if ps.active_agent_id.as_deref() == Some(&agent.id) { "✓" } else { "" };
-            let _r = writeln!(content, "| {} | {} | {} | {} |", agent.id, agent.name, active, agent.description);
+            let _wa = writeln!(content, "| {} | {} | {} | {} |", agent.id, agent.name, active, agent.description);
         }
 
         // Skills table
-        if !ps.skills.is_empty() {
-            content.push_str("\nSkills (use skill_load/skill_unload):\n\n");
+        if !skills.is_empty() {
+            content.push_str("\nSkills (use skill_load to load, Close_panel to unload):\n\n");
             content.push_str("| ID | Name | Loaded | Description |\n");
             content.push_str("|------|------|--------|-------------|\n");
-            for skill in &ps.skills {
+            for skill in &skills {
                 let loaded = if ps.loaded_skill_ids.contains(&skill.id) { "✓" } else { "" };
-                let _r = writeln!(content, "| {} | {} | {} | {} |", skill.id, skill.name, loaded, skill.description);
+                let _wb = writeln!(content, "| {} | {} | {} | {} |", skill.id, skill.name, loaded, skill.description);
             }
         }
 
         // Commands table
-        if !ps.commands.is_empty() {
+        if !commands.is_empty() {
             content.push_str("\nCommands:\n\n");
             content.push_str("| Command | Name | Description |\n");
             content.push_str("|---------|------|-------------|\n");
-            for cmd in &ps.commands {
-                let _r = writeln!(content, "| /{} | {} | {} |", cmd.id, cmd.name, cmd.description);
+            for cmd in &commands {
+                let _wc = writeln!(content, "| /{} | {} | {} |", cmd.id, cmd.name, cmd.description);
             }
         }
+
+        // File paths info (so the AI knows where to edit/delete)
+        content.push_str("\nFile locations:\n");
+        let _wd = writeln!(content, "- Agents: {}/", crate::storage::dir_for(PromptType::Agent).display());
+        let _we = writeln!(content, "- Skills: {}/", crate::storage::dir_for(PromptType::Skill).display());
+        let _wf = writeln!(content, "- Commands: {}/", crate::storage::dir_for(PromptType::Command).display());
+        content.push_str("\nTo edit: use the Edit tool on the .md file directly.");
+        content.push_str("\nTo delete: delete the .md file.\n");
 
         vec![ContextItem::new(&ctx.id, "Library", content, ctx.last_refresh_ms)]
     }

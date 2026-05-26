@@ -1,8 +1,8 @@
 //! Prompt library module — agents, skills, and commands.
 //!
-//! Eleven tools covering CRUD for agents (system prompts), skills (knowledge
-//! panels), and commands (input shortcuts), plus a library editor for inline
-//! content editing.
+//! Three tools: `Behaviour_create` (unified create), `agent_load`, `skill_load`.
+//! Editing and deletion done via file operations — the AI uses `Edit` on `.md`
+//! files directly. Pre-flight validates YAML frontmatter on edits.
 
 /// IR block generation for the library panel (extracted for file size).
 mod library_blocks;
@@ -13,15 +13,13 @@ pub mod seed;
 /// Panel rendering for loaded skill content.
 mod skill_panel;
 /// Persistent storage for prompt items (agents, skills, commands).
-pub(crate) mod storage;
-/// Tool dispatch for all prompt CRUD operations.
+pub mod storage;
+/// Tool handlers for `Behaviour_create`, `agent_load`, `skill_load`.
 mod tools;
 /// Prompt item types: `PromptItem`, `PromptState`, `PromptType`.
 pub mod types;
 
-use types::PromptState;
-
-use serde_json::json;
+use types::{PromptState, PromptType};
 
 use cp_base::modules::ToolVisualizer;
 use cp_base::panels::Panel;
@@ -69,7 +67,7 @@ impl Module for PromptModule {
 
     fn save_module_data(&self, state: &State) -> serde_json::Value {
         let ps = PromptState::get(state);
-        json!({
+        serde_json::json!({
             "active_agent_id": ps.active_agent_id,
             "loaded_skill_ids": ps.loaded_skill_ids,
         })
@@ -116,93 +114,50 @@ impl Module for PromptModule {
     fn tool_definitions(&self) -> Vec<ToolDefinition> {
         let t = &*TOOL_TEXTS;
         vec![
-            // === Agent tools ===
-            ToolDefinition::from_yaml("agent_create", t)
-                .short_desc("Create agent (system prompt)")
-                .category("Agent")
+            ToolDefinition::from_yaml("Behaviour_create", t)
+                .short_desc("Create behaviour")
+                .category("Behaviour")
                 .param("name", ParamType::String, true)
+                .param("type", ParamType::String, true)
                 .param("description", ParamType::String, false)
                 .param("content", ParamType::String, true)
-                .build(),
-            ToolDefinition::from_yaml("Edit_prompt", t)
-                .short_desc("Edit agent/skill/command content")
-                .category("Agent")
-                .param("id", ParamType::String, true)
-                .param("old_string", ParamType::String, true)
-                .param("new_string", ParamType::String, true)
-                .param("replace_all", ParamType::Boolean, false)
-                .build(),
-            ToolDefinition::from_yaml("agent_delete", t)
-                .short_desc("Delete agent")
-                .category("Agent")
-                .param("id", ParamType::String, true)
                 .build(),
             ToolDefinition::from_yaml("agent_load", t)
                 .short_desc("Activate agent")
                 .category("Agent")
                 .param("id", ParamType::String, false)
                 .build(),
-            // === Skill tools ===
-            ToolDefinition::from_yaml("skill_create", t)
-                .short_desc("Create skill")
-                .category("Skill")
-                .param("name", ParamType::String, true)
-                .param("description", ParamType::String, false)
-                .param("content", ParamType::String, true)
-                .build(),
-            ToolDefinition::from_yaml("skill_delete", t)
-                .short_desc("Delete skill")
-                .category("Skill")
-                .param("id", ParamType::String, true)
-                .build(),
             ToolDefinition::from_yaml("skill_load", t)
                 .short_desc("Load skill as panel")
                 .category("Skill")
-                .param("id", ParamType::String, true)
-                .build(),
-            ToolDefinition::from_yaml("skill_unload", t)
-                .short_desc("Unload skill panel")
-                .category("Skill")
-                .param("id", ParamType::String, true)
-                .build(),
-            // === Library editor tools ===
-            ToolDefinition::from_yaml("Library_open_prompt_editor", t)
-                .short_desc("Open prompt in editor")
-                .category("Agent")
-                .param("id", ParamType::String, true)
-                .build(),
-            ToolDefinition::from_yaml("Library_close_prompt_editor", t)
-                .short_desc("Close prompt editor")
-                .category("Agent")
-                .build(),
-            // === Command tools ===
-            ToolDefinition::from_yaml("command_create", t)
-                .short_desc("Create command")
-                .category("Command")
-                .param("name", ParamType::String, true)
-                .param("description", ParamType::String, false)
-                .param("content", ParamType::String, true)
-                .build(),
-            ToolDefinition::from_yaml("command_delete", t)
-                .short_desc("Delete command")
-                .category("Command")
                 .param("id", ParamType::String, true)
                 .build(),
         ]
     }
 
     fn pre_flight(&self, tool: &ToolUse, state: &State) -> Option<Verdict> {
-        let ps = PromptState::get(state);
         match tool.name.as_str() {
-            "agent_delete" => {
+            "Behaviour_create" => {
                 let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    match ps.agents.iter().find(|a| a.id == id) {
-                        None => pf.errors.push(format!("Agent '{id}' not found")),
-                        Some(a) if a.is_builtin => {
-                            pf.errors.push(format!("Agent '{id}' is built-in and cannot be deleted"));
+                let type_str = tool.input.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let pt = match type_str {
+                    "agent" => Some(PromptType::Agent),
+                    "skill" => Some(PromptType::Skill),
+                    "command" => Some(PromptType::Command),
+                    _ => {
+                        pf.errors.push(format!("Invalid type '{type_str}' — must be 'agent', 'skill', or 'command'"));
+                        None
+                    }
+                };
+                if let Some(name) = tool.input.get("name").and_then(|v| v.as_str())
+                    && let Some(pt) = pt
+                {
+                    let id = storage::slugify(name);
+                    if !id.is_empty() {
+                        let path = storage::dir_for(pt).join(format!("{id}.md"));
+                        if path.exists() {
+                            pf.errors.push(format!("A {type_str} with ID '{id}' already exists at {}", path.display()));
                         }
-                        _ => {}
                     }
                 }
                 Some(pf)
@@ -211,21 +166,10 @@ impl Module for PromptModule {
                 let mut pf = Verdict::new();
                 if let Some(id) = tool.input.get("id").and_then(|v| v.as_str())
                     && !id.is_empty()
-                    && !ps.agents.iter().any(|a| a.id == id)
                 {
-                    pf.errors.push(format!("Agent '{id}' not found"));
-                }
-                Some(pf)
-            }
-            "skill_delete" => {
-                let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    match ps.skills.iter().find(|s| s.id == id) {
-                        None => pf.errors.push(format!("Skill '{id}' not found")),
-                        Some(s) if s.is_builtin => {
-                            pf.errors.push(format!("Skill '{id}' is built-in and cannot be deleted"));
-                        }
-                        _ => {}
+                    let agents = storage::load_prompts_for(PromptType::Agent);
+                    if !agents.iter().any(|a| a.id == id) {
+                        pf.errors.push(format!("Agent '{id}' not found"));
                     }
                 }
                 Some(pf)
@@ -233,57 +177,16 @@ impl Module for PromptModule {
             "skill_load" => {
                 let mut pf = Verdict::new();
                 if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    if !ps.skills.iter().any(|s| s.id == id) {
+                    let skills = storage::load_prompts_for(PromptType::Skill);
+                    if !skills.iter().any(|s| s.id == id) {
                         pf.errors.push(format!("Skill '{id}' not found"));
-                    } else if ps.loaded_skill_ids.contains(&id.to_string()) {
+                    } else if PromptState::get(state).loaded_skill_ids.contains(&id.to_string()) {
                         pf.warnings.push(format!("Skill '{id}' is already loaded"));
                     }
                 }
                 Some(pf)
             }
-            "skill_unload" => {
-                let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    if !ps.skills.iter().any(|s| s.id == id) {
-                        pf.errors.push(format!("Skill '{id}' not found"));
-                    } else if !ps.loaded_skill_ids.contains(&id.to_string()) {
-                        pf.warnings.push(format!("Skill '{id}' is not currently loaded"));
-                    }
-                }
-                Some(pf)
-            }
-            "Edit_prompt" | "Library_open_prompt_editor" => {
-                let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    let exists = ps.agents.iter().any(|a| a.id == id)
-                        || ps.skills.iter().any(|s| s.id == id)
-                        || ps.commands.iter().any(|c| c.id == id);
-                    if !exists {
-                        pf.errors.push(format!("Prompt '{id}' not found (not an agent, skill, or command)"));
-                    }
-                }
-                Some(pf)
-            }
-            "Library_close_prompt_editor" => {
-                let mut pf = Verdict::new();
-                if ps.open_prompt_id.is_none() {
-                    pf.warnings.push("No prompt editor is currently open".to_string());
-                }
-                Some(pf)
-            }
-            "command_delete" => {
-                let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    match ps.commands.iter().find(|c| c.id == id) {
-                        None => pf.errors.push(format!("Command '{id}' not found")),
-                        Some(c) if c.is_builtin => {
-                            pf.errors.push(format!("Command '{id}' is built-in and cannot be deleted"));
-                        }
-                        _ => {}
-                    }
-                }
-                Some(pf)
-            }
+            "Edit" => preflight_edit_prompt_file(tool),
             _ => None,
         }
     }
@@ -294,18 +197,9 @@ impl Module for PromptModule {
 
     fn tool_visualizers(&self) -> Vec<(&'static str, ToolVisualizer)> {
         vec![
-            ("agent_create", visualize_prompt_output),
-            ("Edit_prompt", cp_mod_files::visualize_diff),
-            ("Library_open_prompt_editor", visualize_prompt_output),
-            ("Library_close_prompt_editor", visualize_prompt_output),
-            ("agent_delete", visualize_prompt_output),
+            ("Behaviour_create", visualize_prompt_output),
             ("agent_load", visualize_prompt_output),
-            ("skill_create", visualize_prompt_output),
-            ("skill_delete", visualize_prompt_output),
             ("skill_load", visualize_prompt_output),
-            ("skill_unload", visualize_prompt_output),
-            ("command_create", visualize_prompt_output),
-            ("command_delete", visualize_prompt_output),
         ]
     }
 
@@ -351,9 +245,9 @@ impl Module for PromptModule {
 
     fn tool_category_descriptions(&self) -> Vec<(&'static str, &'static str)> {
         vec![
-            ("Skill", "Manage knowledge skills"),
-            ("Agent", "Manage system prompt agents"),
-            ("Command", "Manage input commands"),
+            ("Behaviour", "Create agents, skills, or commands"),
+            ("Agent", "Activate system prompt agents"),
+            ("Skill", "Load knowledge skills as context"),
         ]
     }
 
@@ -407,6 +301,41 @@ impl Module for PromptModule {
     fn watcher_immediate_refresh(&self) -> bool {
         true
     }
+}
+
+/// Check if a file path is inside one of the three prompt directories.
+fn is_prompt_file(path: &str) -> bool {
+    let path = std::path::Path::new(path);
+    [PromptType::Agent, PromptType::Skill, PromptType::Command].iter().any(|pt| path.starts_with(storage::dir_for(*pt)))
+}
+
+/// Pre-flight check for the `Edit` tool when targeting a prompt `.md` file.
+/// Simulates the edit and validates that YAML frontmatter remains intact.
+fn preflight_edit_prompt_file(tool: &ToolUse) -> Option<Verdict> {
+    let file_path = tool.input.get("file_path").and_then(|v| v.as_str())?;
+    if !is_prompt_file(file_path) {
+        return None; // Not a prompt file — skip
+    }
+
+    let mut pf = Verdict::new();
+    let Ok(current) = std::fs::read_to_string(file_path) else {
+        return Some(pf); // File doesn't exist yet or unreadable — let Edit handle it
+    };
+
+    let Some(old_str) = tool.input.get("old_string").and_then(|v| v.as_str()) else {
+        return Some(pf);
+    };
+    let Some(new_str) = tool.input.get("new_string").and_then(|v| v.as_str()) else {
+        return Some(pf);
+    };
+
+    let replace_all = tool.input.get("replace_all").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let simulated = if replace_all { current.replace(old_str, new_str) } else { current.replacen(old_str, new_str, 1) };
+
+    if let Err(reason) = storage::validate_frontmatter(&simulated) {
+        pf.errors.push(format!("Edit would break prompt file structure: {reason}"));
+    }
+    Some(pf)
 }
 
 /// Visualizer for prompt/agent/skill/command tool results.

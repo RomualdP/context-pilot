@@ -77,8 +77,8 @@ fn build_reverie_seed(state: &State, agent_id: &str, tool_restrictions: &str) ->
 
     // Agent instructions (cleaner / cartographer / etc.)
     {
-        let ps = cp_mod_prompt::types::PromptState::get(state);
-        if let Some(agent) = ps.agents.iter().find(|a| a.id == agent_id) {
+        let agents = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Agent);
+        if let Some(agent) = agents.iter().find(|a| a.id == agent_id) {
             seed.push_str("## Reverie Agent Instructions\n");
             seed.push_str(&agent.content);
             seed.push('\n');

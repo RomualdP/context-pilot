@@ -1,6 +1,6 @@
 use crate::state::persistence::{delete_message, save_message};
 use crate::state::{Kind, Message, State, estimate_tokens};
-use cp_mod_prompt::types::{PromptItem, PromptState};
+use cp_mod_prompt::types::PromptItem;
 use cp_mod_spine::types::{NotificationType, SpineState};
 
 use super::ActionResult;
@@ -23,7 +23,8 @@ pub(crate) fn handle_input_submit(state: &mut State) -> ActionResult {
         return ActionResult::Nothing;
     }
 
-    let content = replace_commands(&state.input, &PromptState::get(state).commands);
+    let commands = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Command);
+    let content = replace_commands(&state.input, &commands);
     // Expand paste sentinels: replace \x00{idx}\x00 with actual paste buffer content
     let content = expand_paste_sentinels(&content, &state.paste_buffers);
     state.input.clear();

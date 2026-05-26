@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use cp_mod_prompt::types::PromptState;
 use cp_render::Block;
 
 use crate::app::actions::Action;
@@ -234,7 +233,12 @@ impl ConversationPanel {
                     state.input_cursor,
                     viewport_width,
                     &InputBlockCtx {
-                        command_ids: &PromptState::get(state).commands.iter().map(|c| c.id.clone()).collect::<Vec<_>>(),
+                        command_ids: &cp_mod_prompt::storage::load_prompts_for(
+                            cp_mod_prompt::types::PromptType::Command,
+                        )
+                        .iter()
+                        .map(|c| c.id.clone())
+                        .collect::<Vec<_>>(),
                         paste_buffers: &state.paste_buffers,
                         paste_buffer_labels: &state.paste_buffer_labels,
                     },
@@ -254,7 +258,10 @@ impl ConversationPanel {
                 state.input_cursor,
                 viewport_width,
                 &InputBlockCtx {
-                    command_ids: &PromptState::get(state).commands.iter().map(|c| c.id.clone()).collect::<Vec<_>>(),
+                    command_ids: &cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Command)
+                        .iter()
+                        .map(|c| c.id.clone())
+                        .collect::<Vec<_>>(),
                     paste_buffers: &state.paste_buffers,
                     paste_buffer_labels: &state.paste_buffer_labels,
                 },

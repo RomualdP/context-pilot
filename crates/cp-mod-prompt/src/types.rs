@@ -41,22 +41,15 @@ pub struct PromptItem {
     pub is_builtin: bool,
 }
 
-/// Runtime state for the prompt library (agents, skills, commands).
+/// Runtime state for the prompt library.
+/// Prompt content is loaded dynamically from disk — this only tracks
+/// active selections and loaded panels.
 #[derive(Debug)]
 pub struct PromptState {
-    /// All known agents (built-in + user-created).
-    pub agents: Vec<PromptItem>,
     /// Currently active agent ID (None = default).
     pub active_agent_id: Option<String>,
-    /// All known skills (built-in + user-created).
-    pub skills: Vec<PromptItem>,
     /// IDs of skills currently loaded as context panels.
     pub loaded_skill_ids: Vec<String>,
-    /// All known commands (built-in + user-created).
-    pub commands: Vec<PromptItem>,
-    /// ID of the prompt currently open in the Library editor (for editing).
-    /// Max one at a time. `Edit_prompt` requires this to be set.
-    pub open_prompt_id: Option<String>,
 }
 
 impl Default for PromptState {
@@ -66,17 +59,10 @@ impl Default for PromptState {
 }
 
 impl PromptState {
-    /// Create an empty prompt state with no entries loaded.
+    /// Create an empty prompt state.
     #[must_use]
     pub const fn new() -> Self {
-        Self {
-            agents: vec![],
-            active_agent_id: None,
-            skills: vec![],
-            loaded_skill_ids: vec![],
-            commands: vec![],
-            open_prompt_id: None,
-        }
+        Self { active_agent_id: None, loaded_skill_ids: vec![] }
     }
     /// Get shared ref from State's `TypeMap`.
     ///

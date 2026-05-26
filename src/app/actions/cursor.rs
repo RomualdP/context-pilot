@@ -2,7 +2,6 @@
 
 use super::helpers::eject_cursor_from_sentinel;
 use crate::state::State;
-use cp_mod_prompt::types::PromptState;
 
 /// Handle `/command` expansion after typing space or newline.
 pub(super) fn handle_command_expansion(state: &mut State) {
@@ -24,8 +23,10 @@ pub(super) fn handle_command_expansion(state: &mut State) {
     }
     let word = state.input.get(word_start..before_space).unwrap_or("");
     if let Some(cmd_name) = word.strip_prefix('/') {
-        let cmd_content =
-            PromptState::get(state).commands.iter().find(|cmd| cmd.id == cmd_name).map(|cmd| cmd.content.clone());
+        let cmd_content = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Command)
+            .iter()
+            .find(|cmd| cmd.id == cmd_name)
+            .map(|cmd| cmd.content.clone());
         if let Some(content) = cmd_content {
             let label = cmd_name.to_string();
             let idx = state.paste_buffers.len();

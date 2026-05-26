@@ -340,7 +340,6 @@ impl Module for FilesModule {
 
 /// Visualizer for Edit and Write tool results.
 ///
-/// Also reused by cp-mod-prompt for `Edit_prompt`.
 /// Parses diff blocks and renders deleted lines in red, added lines in green.
 /// Callback summary blocks get compact styled rendering (only status word colored).
 /// Non-diff content is rendered in secondary text color.

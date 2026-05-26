@@ -1,26 +1,15 @@
 tools:
-  agent_create:
+  Behaviour_create:
     description: |
-      Creates a new agent with a name, description, and system prompt content. Agents define the AI's identity and behavior. ID is auto-generated from the name.
+      Creates a new behaviour (agent, skill, or command) as a .md file with YAML frontmatter. ID is auto-generated from the name (slugified). Fails if a behaviour with that ID already exists.
+
+      To edit an existing behaviour, use the Edit tool directly on its .md file (shown in the Library panel).
+      To delete a behaviour, delete its .md file. The system detects removals automatically.
     parameters:
-      name: "Agent name"
+      name: "Behaviour name (e.g., 'Code Reviewer')"
+      type: "Type: 'agent', 'skill', or 'command'"
       description: "Short description"
-      content: "System prompt content"
-
-  Edit_prompt:
-    description: |
-      Edits an agent, skill, or command by replacing exact text in its content. Routes automatically based on ID. Uses the same old_string/new_string pattern as the file Edit tool.
-    parameters:
-      id: "Agent, skill, or command ID"
-      old_string: "Exact text to find and replace in content"
-      new_string: "Replacement text"
-      replace_all: "Replace all occurrences (default: false)"
-
-  agent_delete:
-    description: |
-      Deletes an agent. Built-in agents cannot be deleted. If the deleted agent was active, reverts to default.
-    parameters:
-      id: "Agent ID to delete"
+      content: "Body content (system prompt, skill instructions, or command expansion)"
 
   agent_load:
     description: |
@@ -28,52 +17,8 @@ tools:
     parameters:
       id: "Agent ID to activate. Empty to use default."
 
-  skill_create:
-    description: |
-      Creates a new skill. Skills are loaded as context panels that provide additional instructions or knowledge to the AI.
-    parameters:
-      name: "Skill name"
-      description: "Short description"
-      content: "Skill content (instructions/knowledge)"
-
-  skill_delete:
-    description: |
-      Deletes a skill. If loaded, unloads it first. Built-in skills cannot be deleted.
-    parameters:
-      id: "Skill ID to delete"
-
   skill_load:
     description: |
-      Loads a skill as a context panel. The skill's content becomes visible to the AI as a context block.
+      Loads a skill as a context panel. The skill's content becomes visible to the AI as a context block. To unload a skill, close its panel with Close_panel.
     parameters:
       id: "Skill ID to load"
-
-  skill_unload:
-    description: |
-      Unloads a skill, removing its context panel.
-    parameters:
-      id: "Skill ID to unload"
-
-  Library_open_prompt_editor:
-    description: |
-      Opens a prompt's content in the Library panel for reading and editing. Required before using Edit_prompt. Max one prompt open at a time — opening a new one closes the previous. The Library panel will show the prompt content with a warning banner.
-    parameters:
-      id: "Agent, skill, or command ID to open"
-
-  Library_close_prompt_editor:
-    description: |
-      Closes the prompt editor in the Library panel, restoring the normal library view.
-
-  command_create:
-    description: |
-      Creates a new command. Commands are inline replacements triggered by /command-name in the input field.
-    parameters:
-      name: "Command name"
-      description: "Short description"
-      content: "Content to replace the /command with"
-
-  command_delete:
-    description: |
-      Deletes a command. Built-in commands cannot be deleted.
-    parameters:
-      id: "Command ID to delete"

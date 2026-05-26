@@ -22,7 +22,6 @@ pub(crate) use helpers::{clean_llm_id_prefix, find_context_by_id, parse_context_
 
 use crate::infra::constants::{SCROLL_ACCEL_INCREMENT, SCROLL_ACCEL_MAX};
 use crate::state::{Entry, Kind, State, StreamPhase};
-use cp_mod_prompt::types::PromptState;
 
 // Re-export Action/ActionResult from cp-base (shared with module crates)
 pub(crate) use cp_base::state::actions::{Action, ActionResult};
@@ -61,7 +60,9 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             }
 
             // After typing a space or newline, check if preceding text is a /command
-            if (ch == ' ' || ch == '\n') && !PromptState::get(state).commands.is_empty() {
+            if (ch == ' ' || ch == '\n')
+                && !cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Command).is_empty()
+            {
                 cursor::handle_command_expansion(state);
             }
 

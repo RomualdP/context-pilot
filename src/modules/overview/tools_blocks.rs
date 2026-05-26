@@ -75,10 +75,13 @@ pub(super) fn tools_blocks(state: &State) -> Vec<Block> {
 pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
     let mut out = Vec::new();
     let ps = PromptState::get(state);
+    let agents = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Agent);
+    let skills = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Skill);
+    let commands = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Command);
 
     out.push(Block::Header(vec![
         Span::styled("AGENTS".to_owned(), Semantic::Muted),
-        Span::muted(format!("  ({} available)", ps.agents.len())),
+        Span::muted(format!("  ({} available)", agents.len())),
     ]));
     out.push(Block::Empty);
 
@@ -90,8 +93,7 @@ pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
         Column { header: "Description".to_owned(), align: Align::Left },
     ];
 
-    let rows: Vec<Vec<Cell>> = ps
-        .agents
+    let rows: Vec<Vec<Cell>> = agents
         .iter()
         .map(|agent| {
             let is_active = ps.active_agent_id.as_deref() == Some(&agent.id);
@@ -113,11 +115,11 @@ pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
     out.push(Block::Table { columns, rows });
 
     // Skills section
-    if !ps.skills.is_empty() {
+    if !skills.is_empty() {
         out.push(Block::Separator);
         out.push(Block::Header(vec![
             Span::styled("SKILLS".to_owned(), Semantic::Muted),
-            Span::muted(format!("  ({} available, {} loaded)", ps.skills.len(), ps.loaded_skill_ids.len())),
+            Span::muted(format!("  ({} available, {} loaded)", skills.len(), ps.loaded_skill_ids.len())),
         ]));
         out.push(Block::Empty);
 
@@ -128,8 +130,7 @@ pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
             Column { header: "Description".to_owned(), align: Align::Left },
         ];
 
-        let skill_rows: Vec<Vec<Cell>> = ps
-            .skills
+        let skill_rows: Vec<Vec<Cell>> = skills
             .iter()
             .map(|skill| {
                 let is_loaded = ps.loaded_skill_ids.contains(&skill.id);
@@ -148,11 +149,11 @@ pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
     }
 
     // Commands section
-    if !ps.commands.is_empty() {
+    if !commands.is_empty() {
         out.push(Block::Separator);
         out.push(Block::Header(vec![
             Span::styled("COMMANDS".to_owned(), Semantic::Muted),
-            Span::muted(format!("  ({} available)", ps.commands.len())),
+            Span::muted(format!("  ({} available)", commands.len())),
         ]));
         out.push(Block::Empty);
 
@@ -162,8 +163,7 @@ pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
             Column { header: "Description".to_owned(), align: Align::Left },
         ];
 
-        let cmd_rows: Vec<Vec<Cell>> = ps
-            .commands
+        let cmd_rows: Vec<Vec<Cell>> = commands
             .iter()
             .map(|cmd| {
                 vec![

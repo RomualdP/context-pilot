@@ -5,9 +5,6 @@ use cp_base::config::constants;
 
 use crate::types::{PromptItem, PromptType};
 
-/// (agents, skills, commands) loaded from disk + built-ins.
-pub(crate) type AllPrompts = (Vec<PromptItem>, Vec<PromptItem>, Vec<PromptItem>);
-
 /// Subdirectory names under .context-pilot/ for each prompt type
 const fn subdir_for(pt: PromptType) -> &'static str {
     match pt {
@@ -18,7 +15,8 @@ const fn subdir_for(pt: PromptType) -> &'static str {
 }
 
 /// Full path to the directory for a prompt type
-pub(crate) fn dir_for(pt: PromptType) -> PathBuf {
+#[must_use]
+pub fn dir_for(pt: PromptType) -> PathBuf {
     PathBuf::from(constants::STORE_DIR).join(subdir_for(pt))
 }
 
@@ -100,89 +98,6 @@ pub(crate) fn load_prompts_from_dir(dir: &Path, prompt_type: PromptType) -> Vec<
     items
 }
 
-/// Save a prompt item to its directory as {id}.md
-pub(crate) fn save_prompt_to_dir(dir: &Path, item: &PromptItem) {
-    let _ = fs::create_dir_all(dir).ok();
-    let path = dir.join(format!("{}.md", item.id));
-    let content = format_prompt_file(&item.name, &item.description, &item.content);
-    let _ = fs::write(path, content).ok();
-}
-
-/// Delete a prompt file from its directory
-pub(crate) fn delete_prompt_from_dir(dir: &Path, id: &str) {
-    let path = dir.join(format!("{id}.md"));
-    if path.exists() {
-        let _ = fs::remove_file(path).ok();
-    }
-}
-
-/// Load all prompts from all three directories + built-ins from library.yaml.
-/// Returns (agents, skills, commands).
-pub(crate) fn load_all_prompts() -> AllPrompts {
-    use cp_base::config::accessors::library;
-
-    let mut agents = load_prompts_from_dir(&dir_for(PromptType::Agent), PromptType::Agent);
-    let mut skills = load_prompts_from_dir(&dir_for(PromptType::Skill), PromptType::Skill);
-    let mut commands = load_prompts_from_dir(&dir_for(PromptType::Command), PromptType::Command);
-
-    // Merge built-in agents (from library.yaml) — don't duplicate if user has same ID on disk
-    for builtin in library::agents() {
-        if agents.iter().any(|a| a.id == builtin.id) {
-            // Mark disk version as builtin
-            if let Some(a) = agents.iter_mut().find(|a| a.id == builtin.id) {
-                a.is_builtin = true;
-            }
-        } else {
-            agents.push(PromptItem {
-                id: builtin.id.clone(),
-                name: builtin.name.clone(),
-                description: builtin.description.clone(),
-                content: builtin.content.clone(),
-                prompt_type: PromptType::Agent,
-                is_builtin: true,
-            });
-        }
-    }
-
-    // Merge built-in skills
-    for builtin in library::skills() {
-        if skills.iter().any(|s| s.id == builtin.id) {
-            if let Some(s) = skills.iter_mut().find(|s| s.id == builtin.id) {
-                s.is_builtin = true;
-            }
-        } else {
-            skills.push(PromptItem {
-                id: builtin.id.clone(),
-                name: builtin.name.clone(),
-                description: builtin.description.clone(),
-                content: builtin.content.clone(),
-                prompt_type: PromptType::Skill,
-                is_builtin: true,
-            });
-        }
-    }
-
-    // Merge built-in commands
-    for builtin in library::commands() {
-        if commands.iter().any(|c| c.id == builtin.id) {
-            if let Some(c) = commands.iter_mut().find(|c| c.id == builtin.id) {
-                c.is_builtin = true;
-            }
-        } else {
-            commands.push(PromptItem {
-                id: builtin.id.clone(),
-                name: builtin.name.clone(),
-                description: builtin.description.clone(),
-                content: builtin.content.clone(),
-                prompt_type: PromptType::Command,
-                is_builtin: true,
-            });
-        }
-    }
-
-    (agents, skills, commands)
-}
-
 /// Generate a URL-safe slug from a name (e.g., "Code Reviewer" → "code-reviewer")
 pub(crate) fn slugify(name: &str) -> String {
     name.to_lowercase()
@@ -193,4 +108,66 @@ pub(crate) fn slugify(name: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+/// Load all prompts for a single type (from disk + built-ins merged).
+/// Re-reads from disk every call — no caching.
+#[must_use]
+pub fn load_prompts_for(pt: PromptType) -> Vec<PromptItem> {
+    use cp_base::config::accessors::library;
+
+    let mut items = load_prompts_from_dir(&dir_for(pt), pt);
+
+    let builtins = match pt {
+        PromptType::Agent => library::agents(),
+        PromptType::Skill => library::skills(),
+        PromptType::Command => library::commands(),
+    };
+
+    for builtin in builtins {
+        if items.iter().any(|i| i.id == builtin.id) {
+            if let Some(i) = items.iter_mut().find(|i| i.id == builtin.id) {
+                i.is_builtin = true;
+            }
+        } else {
+            items.push(PromptItem {
+                id: builtin.id.clone(),
+                name: builtin.name.clone(),
+                description: builtin.description.clone(),
+                content: builtin.content.clone(),
+                prompt_type: pt,
+                is_builtin: true,
+            });
+        }
+    }
+
+    items
+}
+
+/// Validate that content has correct `.md` frontmatter structure.
+///
+/// # Errors
+///
+/// Returns `Err(reason)` if the frontmatter is missing, malformed, or lacks a `name` field.
+pub fn validate_frontmatter(content: &str) -> Result<(), String> {
+    #[derive(serde::Deserialize)]
+    struct Fm {
+        name: Option<String>,
+    }
+
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return Err("File must start with YAML frontmatter (---)".to_string());
+    }
+    let after_first = trimmed.get(3..).unwrap_or("");
+    let Some(end) = after_first.find("\n---") else {
+        return Err("Missing closing frontmatter delimiter (---)".to_string());
+    };
+    let yaml_block = after_first.get(..end).unwrap_or("");
+
+    let fm: Fm = serde_yaml::from_str(yaml_block).map_err(|e| format!("Invalid YAML frontmatter: {e}"))?;
+    if fm.name.as_deref().unwrap_or("").is_empty() {
+        return Err("Frontmatter must include a non-empty 'name' field".to_string());
+    }
+    Ok(())
 }

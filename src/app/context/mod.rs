@@ -283,8 +283,8 @@ pub(super) fn prepare_stream_context(
 
         // Inject the reverie agent's prompt content
         {
-            let ps = cp_mod_prompt::types::PromptState::get(state);
-            if let Some(agent) = ps.agents.iter().find(|a| a.id == rev.agent_id) {
+            let agents = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Agent);
+            if let Some(agent) = agents.iter().find(|a| a.id == rev.agent_id) {
                 reverie_panel_content.push_str("## Agent Instructions\n");
                 reverie_panel_content.push_str(&agent.content);
                 reverie_panel_content.push('\n');

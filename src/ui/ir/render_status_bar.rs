@@ -251,17 +251,19 @@ fn build_badge(state: &State) -> Badge {
 fn build_agent(state: &State) -> Option<AgentCard> {
     let ps = cp_mod_prompt::types::PromptState::get(state);
     let agent_id = ps.active_agent_id.as_ref()?;
-    let name = ps.agents.iter().find(|a| &a.id == agent_id).map_or_else(|| agent_id.clone(), |a| a.name.clone());
+    let agents = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Agent);
+    let name = agents.iter().find(|a| &a.id == agent_id).map_or_else(|| agent_id.clone(), |a| a.name.clone());
     Some(AgentCard { name })
 }
 
 /// Build loaded skill cards.
 fn build_skills(state: &State) -> Vec<SkillCard> {
     let ps = cp_mod_prompt::types::PromptState::get(state);
+    let skills = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Skill);
     ps.loaded_skill_ids
         .iter()
         .map(|id| {
-            let name = ps.skills.iter().find(|s| s.id == *id).map_or_else(|| id.clone(), |s| s.name.clone());
+            let name = skills.iter().find(|s| s.id == *id).map_or_else(|| id.clone(), |s| s.name.clone());
             SkillCard { name }
         })
         .collect()
@@ -304,7 +306,7 @@ fn build_auto_continue(state: &State) -> AutoContinue {
 
 /// Build active reverie cards (all concurrent reveries, sorted by key).
 fn build_reveries(state: &State) -> Vec<ReverieCard> {
-    let ps = cp_mod_prompt::types::PromptState::get(state);
+    let agents = cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Agent);
     let mut sorted_keys: Vec<_> = state.reveries.keys().collect();
     sorted_keys.sort();
 
@@ -312,11 +314,8 @@ fn build_reveries(state: &State) -> Vec<ReverieCard> {
         .into_iter()
         .filter_map(|key| {
             let rev = state.reveries.get(key)?;
-            let agent_name = ps
-                .agents
-                .iter()
-                .find(|a| a.id == rev.agent_id)
-                .map_or_else(|| rev.agent_id.clone(), |a| a.name.clone());
+            let agent_name =
+                agents.iter().find(|a| a.id == rev.agent_id).map_or_else(|| rev.agent_id.clone(), |a| a.name.clone());
             Some(ReverieCard { agent: agent_name, tool_count: rev.tool_call_count.to_u32() })
         })
         .collect()
