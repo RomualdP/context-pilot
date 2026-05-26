@@ -125,29 +125,31 @@ impl Panel for SpinePanel {
     }
 
     fn blocks(&self, state: &State) -> Vec<cp_render::Block> {
-        use cp_render::{Block, Semantic, Span as S};
+        use cp_render::{Align, Block, Cell, Column, Semantic, Span as S};
 
         let mut blocks = Vec::new();
+
+        let notif_columns = vec![
+            Column { header: "ID".to_owned(), align: Align::Left },
+            Column { header: "Time".to_owned(), align: Align::Left },
+            Column { header: "Type".to_owned(), align: Align::Left },
+            Column { header: "Content".to_owned(), align: Align::Left },
+        ];
 
         // === Unprocessed Notifications ===
         let unprocessed: Vec<_> = SpineState::get(state).notifications.iter().filter(|n| n.is_unprocessed()).collect();
 
         if unprocessed.is_empty() {
-            blocks.push(Block::Line(vec![S::muted("No unprocessed notifications".into()).italic()]));
+            blocks.push(Block::Line(vec![S::muted("No unprocessed notifications.".into()).italic()]));
         } else {
-            for n in &unprocessed {
-                let type_sem = notification_type_semantic(n.kind);
-                let ts = format_timestamp(n.timestamp_ms);
-                blocks.push(Block::Line(vec![
-                    S::styled(format!("{} ", n.id), type_sem).bold(),
-                    S::muted(format!("{ts} ")),
-                    S::styled(n.kind.label().to_string(), type_sem),
-                    S::new(format!(" — {}", n.content)),
-                ]));
-            }
+            blocks.push(Block::Header(vec![
+                S::styled("Unprocessed".to_owned(), Semantic::Accent),
+                S::muted(format!("  ({})", unprocessed.len())),
+            ]));
+            let rows: Vec<Vec<Cell>> =
+                unprocessed.iter().map(|n| notification_row(n, notification_type_semantic(n.kind))).collect();
+            blocks.push(Block::Table { columns: notif_columns.clone(), rows });
         }
-
-        blocks.push(Block::Empty);
 
         // === Blocked Notifications ===
         let blocked: Vec<_> = SpineState::get(state)
@@ -157,17 +159,13 @@ impl Panel for SpinePanel {
             .collect();
 
         if !blocked.is_empty() {
-            blocks.push(Block::Line(vec![S::warning(format!("Blocked ({})", blocked.len()))]));
-            for n in &blocked {
-                let ts = format_timestamp(n.timestamp_ms);
-                blocks.push(Block::Line(vec![
-                    S::styled(format!("{} ", n.id), Semantic::Warning),
-                    S::muted(format!("{ts} ")),
-                    S::warning(n.kind.label().to_string()),
-                    S::muted(format!(" — {}", n.content)),
-                ]));
-            }
             blocks.push(Block::Empty);
+            blocks.push(Block::Header(vec![
+                S::styled("Blocked".to_owned(), Semantic::Warning),
+                S::muted(format!("  ({})", blocked.len())),
+            ]));
+            let rows: Vec<Vec<Cell>> = blocked.iter().map(|n| notification_row(n, Semantic::Warning)).collect();
+            blocks.push(Block::Table { columns: notif_columns.clone(), rows });
         }
 
         // === Recent Processed ===
@@ -175,17 +173,13 @@ impl Panel for SpinePanel {
             SpineState::get(state).notifications.iter().filter(|n| n.is_processed()).rev().take(10).collect();
 
         if !recent_processed.is_empty() {
-            blocks.push(Block::Line(vec![S::muted(format!("Processed ({})", recent_processed.len()))]));
-            for n in &recent_processed {
-                let type_sem = notification_type_semantic(n.kind);
-                let ts = format_timestamp(n.timestamp_ms);
-                blocks.push(Block::Line(vec![
-                    S::styled(format!("{} ", n.id), type_sem),
-                    S::muted(format!("{ts} ")),
-                    S::muted(n.kind.label().to_string()),
-                    S::muted(format!(" — {}", n.content)),
-                ]));
-            }
+            blocks.push(Block::Empty);
+            blocks.push(Block::Header(vec![
+                S::styled("Recent Processed".to_owned(), Semantic::Muted),
+                S::muted(format!("  ({})", recent_processed.len())),
+            ]));
+            let rows: Vec<Vec<Cell>> = recent_processed.iter().map(|n| notification_row(n, Semantic::Muted)).collect();
+            blocks.push(Block::Table { columns: notif_columns, rows });
         }
 
         blocks.push(Block::Empty);
@@ -208,7 +202,7 @@ impl Panel for SpinePanel {
             let watchers = registry.active_watchers();
             if !watchers.is_empty() {
                 blocks.push(Block::Empty);
-                blocks.push(Block::Line(vec![S::accent(format!("Active Watchers ({})", watchers.len()))]));
+                blocks.push(Block::Header(vec![S::accent(format!("Active Watchers ({})", watchers.len()))]));
                 let now = now_ms();
                 for w in watchers {
                     let age_s = cp_base::panels::time_arith::ms_to_secs(now.saturating_sub(w.registered_ms()));
@@ -262,5 +256,33 @@ const fn notification_type_semantic(nt: NotificationType) -> cp_render::Semantic
     match nt {
         NotificationType::UserMessage => cp_render::Semantic::Accent,
         NotificationType::ReloadResume | NotificationType::Custom => cp_render::Semantic::Code,
+    }
+}
+
+/// Build a table row for a single notification.
+fn notification_row(n: &crate::types::Notification, semantic: cp_render::Semantic) -> Vec<cp_render::Cell> {
+    use cp_render::Cell;
+
+    let ts = format_timestamp(n.timestamp_ms);
+    // Truncate content to keep the table from overflowing.
+    let truncated = truncate_str(&n.content, 60);
+
+    vec![
+        Cell::styled(n.id.clone(), semantic),
+        Cell::styled(ts, cp_render::Semantic::Muted),
+        Cell::styled(n.kind.label().to_owned(), semantic),
+        Cell::styled(truncated, cp_render::Semantic::Default),
+    ]
+}
+
+/// Truncate a string to `max_len` characters, appending "…" if truncated.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    let trimmed = s.replace('\n', " ");
+    if trimmed.chars().count() <= max_len {
+        trimmed
+    } else {
+        let mut result: String = trimmed.chars().take(max_len.saturating_sub(1)).collect();
+        result.push('…');
+        result
     }
 }
