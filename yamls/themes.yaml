@@ -42,7 +42,7 @@ themes:
       success: [134, 188, 111]     # Forest green
       warning: [229, 192, 123]     # Gold/amber
       error: [200, 80, 80]         # Blood red
-      orange: [220, 130, 70]       # Warm copper-orange
+      orange: [245, 135, 85]       # Deep orange (unified) (unified)
       text: [240, 240, 240]
       text_secondary: [180, 180, 180]
       text_muted: [144, 144, 144]
@@ -144,7 +144,7 @@ themes:
       success: [0, 255, 136]       # Matrix green
       warning: [255, 170, 0]       # Amber warning
       error: [255, 50, 100]        # Neon pink/red
-      orange: [255, 110, 40]       # Neon orange
+      orange: [245, 135, 85]       # Deep orange (unified)
       text: [220, 240, 255]        # Cool white
       text_secondary: [160, 180, 200]
       text_muted: [100, 120, 140]
@@ -195,7 +195,7 @@ themes:
       success: [102, 187, 106]     # Spring green
       warning: [255, 202, 40]      # Sunlight yellow
       error: [183, 28, 28]         # Dark berry red
-      orange: [220, 130, 40]       # Autumn orange
+      orange: [245, 135, 85]       # Deep orange (unified)
       text: [238, 238, 230]        # Warm white
       text_secondary: [180, 180, 170]
       text_muted: [130, 130, 120]
@@ -246,7 +246,7 @@ themes:
       success: [102, 205, 170]     # Seafoam
       warning: [255, 215, 0]       # Gold doubloon
       error: [255, 99, 71]         # Coral red
-      orange: [255, 150, 50]       # Sunset orange
+      orange: [245, 135, 85]       # Deep orange (unified)
       text: [240, 248, 255]        # Alice blue
       text_secondary: [176, 196, 222]
       text_muted: [119, 136, 153]
@@ -297,7 +297,7 @@ themes:
       success: [50, 205, 50]       # Lime green (go signal)
       warning: [255, 165, 0]       # Orange (caution)
       error: [255, 69, 0]          # Red-orange (alert)
-      orange: [255, 120, 30]       # Deep space orange
+      orange: [245, 135, 85]       # Deep orange (unified)
       text: [248, 248, 255]        # Ghost white
       text_secondary: [192, 192, 210]
       text_muted: [128, 128, 150]
