@@ -189,6 +189,19 @@ pub struct EmittedState {
 }
 
 // =============================================================================
+// Scroll State — per-panel scroll position saved/restored on TAB switch
+// =============================================================================
+
+/// Per-panel scroll state, saved when switching away and restored when switching back.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScrollState {
+    /// Vertical scroll offset (lines from top).
+    pub offset: f32,
+    /// Whether the user manually scrolled in this panel.
+    pub user_scrolled: bool,
+}
+
+// =============================================================================
 // Entry
 // =============================================================================
 
@@ -244,6 +257,9 @@ pub struct Entry {
     /// Full content token count (before pagination). `token_count` reflects current page.
     #[serde(skip)]
     pub full_token_count: usize,
+    /// Per-panel scroll state, saved/restored on panel switch.
+    #[serde(skip)]
+    pub scroll_state: ScrollState,
     /// Whether this panel was a cache hit on the last LLM tick (prefix match)
     #[serde(skip)]
     pub panel_cache_hit: bool,
@@ -331,6 +347,7 @@ pub fn make_default_entry(id: &str, context_type: Kind, name: &str, cache_deprec
         current_page: 0,
         total_pages: 1,
         full_token_count: 0,
+        scroll_state: ScrollState::default(),
         panel_cache_hit: false,
         panel_total_cost: 0.0,
         freeze_count: 0,

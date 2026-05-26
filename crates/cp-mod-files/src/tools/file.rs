@@ -76,6 +76,7 @@ fn open_single_file(path: &str, state: &mut State) -> String {
         current_page: 0,
         total_pages: 1,
         full_token_count: 0,
+        scroll_state: cp_base::state::context::ScrollState::default(),
         panel_cache_hit: false,
         panel_total_cost: 0.0,
         freeze_count: 0,

@@ -263,6 +263,11 @@ pub(super) fn check_timer_based_deprecation(app: &mut App) {
 
     // Mutable pass: remove suicided panels (reverse order to preserve indices)
     if !suicide_indices.is_empty() {
+        // Save current scroll state before removals (entry might shift or disappear)
+        if let Some(current) = app.state.context.get_mut(app.state.selected_context) {
+            current.scroll_state.offset = app.state.scroll_offset;
+            current.scroll_state.user_scrolled = app.state.flags.stream.user_scrolled;
+        }
         for &i in suicide_indices.iter().rev() {
             // Fix selected_context if it pointed at or past the removed panel
             if app.state.selected_context >= app.state.context.len().saturating_sub(1) {
@@ -271,6 +276,11 @@ pub(super) fn check_timer_based_deprecation(app: &mut App) {
                 app.state.selected_context = app.state.selected_context.saturating_sub(1);
             }
             drop(app.state.context.remove(i));
+        }
+        // Restore scroll from the (possibly new) selected panel
+        if let Some(incoming) = app.state.context.get(app.state.selected_context) {
+            app.state.scroll_offset = incoming.scroll_state.offset;
+            app.state.flags.stream.user_scrolled = incoming.scroll_state.user_scrolled;
         }
         app.state.flags.ui.dirty = true;
     }

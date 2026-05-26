@@ -18,7 +18,7 @@ pub(crate) mod input;
 pub(crate) mod streaming;
 
 // Re-export helpers for external use
-pub(crate) use helpers::{clean_llm_id_prefix, find_context_by_id, parse_context_pattern};
+pub(crate) use helpers::{clean_llm_id_prefix, find_context_by_id, parse_context_pattern, switch_to_panel};
 
 use crate::infra::constants::{SCROLL_ACCEL_INCREMENT, SCROLL_ACCEL_MAX};
 use crate::state::{Entry, Kind, State, StreamPhase};
@@ -140,6 +140,7 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
                 current_page: 0,
                 total_pages: 1,
                 full_token_count: 0,
+                scroll_state: cp_base::state::context::ScrollState::default(),
                 panel_cache_hit: false,
                 panel_total_cost: 0.0,
                 freeze_count: 0,
@@ -309,9 +310,7 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
         }
         Action::SelectContextById(id) => {
             if let Some(idx) = state.context.iter().position(|c| c.id == id) {
-                state.selected_context = idx;
-                state.scroll_offset = 0.0;
-                state.flags.stream.user_scrolled = false;
+                switch_to_panel(state, idx);
                 state.flags.ui.dirty = true;
             }
             ActionResult::Nothing
@@ -415,9 +414,7 @@ fn select_context(state: &mut State, forward: bool) {
         cur.saturating_sub(1)
     };
     let Some(&selected) = sorted.get(next) else { return };
-    state.selected_context = selected;
-    state.scroll_offset = 0.0;
-    state.flags.stream.user_scrolled = false;
+    switch_to_panel(state, selected);
 }
 
 /// Maximum dynamic entries per sidebar page (must match `render_sidebar.rs`).
@@ -481,8 +478,6 @@ fn page_dynamic(state: &mut State, forward: bool) {
     // Jump to the first panel on the target page.
     let target_idx = target_page.saturating_mul(DYNAMIC_PAGE_SIZE);
     if let Some(&selected) = dynamic_indices.get(target_idx) {
-        state.selected_context = selected;
-        state.scroll_offset = 0.0;
-        state.flags.stream.user_scrolled = false;
+        switch_to_panel(state, selected);
     }
 }

@@ -17,9 +17,7 @@ pub(crate) fn handle_input_submit(state: &mut State) -> ActionResult {
     if let Some(id) = parse_context_pattern(&state.input)
         && let Some(index) = find_context_by_id(state, &id)
     {
-        state.selected_context = index;
-        state.scroll_offset = 0.0;
-        state.flags.stream.user_scrolled = false;
+        super::switch_to_panel(state, index);
         state.input.clear();
         state.input_cursor = 0;
         return ActionResult::Nothing;
