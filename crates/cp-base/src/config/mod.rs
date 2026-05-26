@@ -107,6 +107,8 @@ pub struct EditorWarnings {
     /// Warnings for the callback script editor.
     pub callback: EditorWarningSet,
     /// Warnings for the prompt (agent/skill/command) editor.
+    /// Optional: section was removed from injections.yaml when `Library_close_prompt_editor` was deleted.
+    #[serde(default)]
     pub prompt: PromptEditorWarningSet,
 }
 
@@ -122,7 +124,7 @@ pub struct EditorWarningSet {
 }
 
 /// Warning lines for the prompt library editor panel.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct PromptEditorWarningSet {
     /// Top banner identifying this as a prompt editor.
     pub banner: String,
