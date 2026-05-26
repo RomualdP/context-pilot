@@ -4,6 +4,10 @@
 //! and runs the main event loop. Also handles `typst-compile` and
 //! `typst-recompile-watched` subcommands for callback scripts.
 
+// Force vendored OpenSSL for cross-compilation (activates openssl-sys/vendored).
+// The tui crate doesn't call openssl directly — this is purely for feature unification.
+use openssl as _;
+
 /// Application logic: event loop, actions, context preparation.
 mod app;
 /// Infrastructure: API clients, tools, constants, file watchers.

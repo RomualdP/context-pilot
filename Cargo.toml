@@ -36,6 +36,7 @@ tree-sitter-go = "0.25"
 tree-sitter-java = "0.23"
 tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
+openssl = { version = "0.10", features = ["vendored"] }
 
 [workspace.lints.rust]
 aarch64_softfloat_neon = "forbid"
@@ -1049,6 +1050,7 @@ unicode-width.workspace = true
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
 secrecy = { version = "0.10", features = ["serde"] }
 notify.workspace = true
+openssl.workspace = true
 
 [lints]
 workspace = true
