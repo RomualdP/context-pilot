@@ -801,6 +801,7 @@ name = "cp-mod-files"
 version = "0.1.0"
 dependencies = [
  "cp-base",
+ "cp-mod-queue",
  "cp-mod-tree",
  "cp-render",
  "crossterm",

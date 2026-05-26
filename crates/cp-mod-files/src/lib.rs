@@ -19,10 +19,60 @@ use cp_base::tools::{ToolResult, ToolUse};
 use self::panel::FilePanel;
 use cp_base::modules::Module;
 use cp_base::tools::pre_flight::Verdict;
+use cp_mod_queue::types::QueueState;
 
 /// Lazily parsed tool YAML definitions for the files module.
 static TOOL_TEXTS: std::sync::LazyLock<ToolTexts> =
     std::sync::LazyLock::new(|| ToolTexts::parse(include_str!("../../../yamls/tools/files.yaml")));
+
+/// Build virtual file content by replaying pending queue edits on top of `disk_content`.
+///
+/// Walks queued tool calls in order. A queued `Write` replaces the virtual content entirely;
+/// a queued `Edit` applies `old_string → new_string` via normalized matching (same logic as
+/// `execute_edit`). Returns `None` when no pending changes touch `canonical_path`.
+fn build_virtual_content(disk_content: &str, canonical_path: &str, state: &State) -> Option<String> {
+    let qs = state.get_ext::<QueueState>()?;
+    let mut virtual_content: Option<String> = None;
+
+    for call in &qs.queued_calls {
+        let path_val = call.input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let call_canonical = std::path::Path::new(path_val)
+            .canonicalize()
+            .map_or_else(|_| path_val.to_string(), |p| p.to_string_lossy().to_string());
+        if call_canonical != canonical_path {
+            continue;
+        }
+
+        match call.tool_name.as_str() {
+            "Write" => {
+                if let Some(contents) = call.input.get("contents").and_then(|v| v.as_str()) {
+                    virtual_content = Some(contents.to_string());
+                }
+            }
+            "Edit" => {
+                let base = virtual_content.as_deref().unwrap_or(disk_content);
+                let old = call.input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                let new = call.input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let replace_all = call.input.get("replace_all").and_then(serde_json::Value::as_bool).unwrap_or(false);
+
+                if let Some(actual) = tools::edit_file::find_normalized_match(base, old) {
+                    let actual = actual.to_owned();
+                    let mut buf = base.to_string();
+                    if replace_all {
+                        buf = buf.replace(&actual, new);
+                    } else {
+                        buf = buf.replacen(&actual, new, 1);
+                    }
+                    virtual_content = Some(buf);
+                }
+                // If the queued edit doesn't match, skip it — it may fail at flush time
+            }
+            _ => {}
+        }
+    }
+
+    virtual_content
+}
 
 /// Files module: Open, Edit, Write tools for file manipulation.
 #[derive(Debug, Clone, Copy)]
@@ -133,14 +183,32 @@ impl Module for FilesModule {
                         if !is_open {
                             pf.warnings.push(format!("File '{path_str}' is not open in context. Edit will proceed if old_string has a unique match, but open the file to see current content."));
                         }
-                        // Verify old_string actually matches file content
+                        // Verify old_string against current disk AND virtual (post-queue) content.
+                        // Matrix:
+                        //   current ✓, virtual ✓ → OK
+                        //   current ✓, virtual ✗ → WARNING (pending queue edit conflicts)
+                        //   current ✗, virtual ✓ → OK (model edits post-queue state)
+                        //   current ✗, virtual ✗ → ERROR (not found anywhere)
                         if let Some(old_string) = tool.input.get("old_string").and_then(|v| v.as_str())
                             && let Ok(content) = std::fs::read_to_string(p)
-                            && tools::edit_file::find_normalized_match(&content, old_string).is_none()
                         {
-                            pf.errors.push(format!(
-                                "old_string not found in '{path_str}' — open the file to see current content"
-                            ));
+                            let current_ok = tools::edit_file::find_normalized_match(&content, old_string).is_some();
+                            let virtual_content = build_virtual_content(&content, &canonical, state);
+                            let virtual_ok = virtual_content
+                                .as_ref()
+                                .is_some_and(|vc| tools::edit_file::find_normalized_match(vc, old_string).is_some());
+
+                            if current_ok && !virtual_ok && virtual_content.is_some() {
+                                pf.warnings.push(format!(
+                                    "old_string found in '{path_str}' on disk but a pending Queue edit conflicts — the queued changes remove this text"
+                                ));
+                            } else if !current_ok && !virtual_ok {
+                                pf.errors.push(format!(
+                                    "old_string not found in '{path_str}' — open the file to see current content"
+                                ));
+                            }
+                            // current ✗ virtual ✓ → fine (model is being smart)
+                            // current ✓ virtual ✓ → fine (no conflict)
                         }
                     }
                 }
