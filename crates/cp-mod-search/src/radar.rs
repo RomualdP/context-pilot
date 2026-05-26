@@ -285,28 +285,31 @@ pub(crate) fn refresh(state: &mut State) {
         }
     }
 
-    // Sort descending by score, take top K
-    let mut ranked: Vec<ScoredResult> = best_by_id.into_values().collect();
+    // Collect the N most-recent log IDs so we can reserve them for the
+    // deterministic section and prevent the semantic search from "stealing"
+    // their slots.
+    let logs_state = cp_mod_logs::types::LogsState::get(state);
+    let recent_count = RECENT_LOGS_COUNT.min(logs_state.logs.len());
+    let recent_ids: std::collections::HashSet<String> =
+        logs_state.logs.iter().rev().take(recent_count).map(|l| l.id.clone()).collect();
+
+    // Sort descending by score, exclude recent-log IDs, take top K
+    let mut ranked: Vec<ScoredResult> = best_by_id.into_values().filter(|r| !recent_ids.contains(&r.log_id)).collect();
     ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     ranked.truncate(MAX_FINAL_RESULTS);
 
     // Inject the N most recent logs deterministically (not via Meilisearch).
-    // This guarantees the AI always sees the latest context regardless of
-    // signal-based relevance scoring.  Deduplicates against ranked results.
-    let ranked_ids: std::collections::HashSet<String> = ranked.iter().map(|r| r.log_id.clone()).collect();
-    let logs_state = cp_mod_logs::types::LogsState::get(state);
-    let recent_count = RECENT_LOGS_COUNT.min(logs_state.logs.len());
+    // These are always included regardless of signal-based relevance scoring,
+    // because we excluded them from the semantic pool above.
     for log in logs_state.logs.iter().rev().take(recent_count) {
-        if !ranked_ids.contains(&log.id) {
-            ranked.push(ScoredResult {
-                log_id: log.id.clone(),
-                datetime: log.datetime.clone(),
-                importance: log.importance.clone(),
-                tags: log.tags.clone(),
-                content: log.content.clone(),
-                score: 0.0,
-            });
-        }
+        ranked.push(ScoredResult {
+            log_id: log.id.clone(),
+            datetime: log.datetime.clone(),
+            importance: log.importance.clone(),
+            tags: log.tags.clone(),
+            content: log.content.clone(),
+            score: 0.0,
+        });
     }
 
     // Re-sort by datetime for display (newest first).
