@@ -32,6 +32,14 @@ console_guardrails:
     Blocked: use the `typst_execute` tool instead — typst is embedded in the TUI.
     Example: typst_execute with command="typst compile doc.typ -o out.pdf"
 
+# History cleanup trap — forces the AI to close old conversation history panels
+# before executing a queued batch when too many accumulate.
+trap:
+  history_cleanup_triggered: |
+    Trap triggered: all subsequent tool calls other than Close_conversation_history will be refused until you close the following conversation history panels (oldest to most recent): %PANELS%. If you deem relevant to keep %OPTIONAL_1% or %OPTIONAL_2% for your work in progress, closing those two is not compulsory.
+  history_cleanup_blocked: |
+    History cleanup trap is active. Only Close_conversation_history is allowed until you close enough conversation history panels. Remaining panels to close: %REMAINING_PANELS%
+
 # Behavioral error redirects — tool results that guide the LLM to use the correct tool
 redirects:
   conversation_history_close: |

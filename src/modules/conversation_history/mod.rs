@@ -1,5 +1,7 @@
 /// Panel implementation for frozen conversation history display.
 mod panel;
+/// History cleanup trap: forces AI to close old panels before queue flush.
+pub(crate) mod trap;
 
 use crate::app::panels::Panel;
 use crate::infra::tools::{ToolDefinition, ToolResult, ToolUse};

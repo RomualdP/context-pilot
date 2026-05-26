@@ -9,6 +9,12 @@ use super::all_modules;
 pub(crate) fn pre_flight_tool(tool: &ToolUse, state: &State, active_modules: &HashSet<String>) -> Verdict {
     let mut result = Verdict::new();
 
+    // Phase 0: History cleanup trap — blocks all tools except Close_conversation_history
+    if let Some(error_msg) = super::conversation_history::trap::trap_blocks_tool(&tool.name, state) {
+        result.errors.push(error_msg);
+        return result;
+    }
+
     // Phase 1: Global schema validation against ToolDefinition
     if let Some(def) = state.tools.iter().find(|t| t.id == tool.name) {
         validate_schema(&tool.input, &def.params, &mut result);

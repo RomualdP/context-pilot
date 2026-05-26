@@ -59,6 +59,9 @@ impl Module for QueueModule {
             "active": qs.active,
             "queued_calls": qs.queued_calls,
             "next_index": qs.next_index,
+            "trap_active": qs.trap_active,
+            "trap_panel_ids": qs.trap_panel_ids,
+            "trap_optional_ids": qs.trap_optional_ids,
         })
     }
     fn load_module_data(&self, data: &serde_json::Value, state: &mut State) {
@@ -73,6 +76,19 @@ impl Module for QueueModule {
         }
         if let Some(v) = data.get("next_index").and_then(serde_json::Value::as_u64) {
             qs.next_index = v.to_usize();
+        }
+        if let Some(v) = data.get("trap_active").and_then(serde_json::Value::as_bool) {
+            qs.trap_active = v;
+        }
+        if let Some(arr) = data.get("trap_panel_ids")
+            && let Ok(v) = serde_json::from_value(arr.clone())
+        {
+            qs.trap_panel_ids = v;
+        }
+        if let Some(arr) = data.get("trap_optional_ids")
+            && let Ok(v) = serde_json::from_value(arr.clone())
+        {
+            qs.trap_optional_ids = v;
         }
     }
 

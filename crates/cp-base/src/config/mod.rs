@@ -79,9 +79,11 @@ pub struct Injections {
     /// Tool-result messages warning about dedicated tool usage.
     pub console_guardrails: ConsoleGuardrails,
     /// Behavioral redirects (e.g., "use X tool instead").
-    pub redirects: RedirectInjections,
+    pub redirects: behavioral::RedirectInjections,
     /// Provider-specific injected text (cleaner mode, seed re-injection).
     pub providers: ProviderInjections,
+    /// History cleanup trap messages.
+    pub trap: behavioral::TrapInjections,
 }
 
 /// Synthetic user/assistant messages injected by the spine engine.
@@ -144,12 +146,8 @@ pub struct ConsoleGuardrails {
     pub typst: String,
 }
 
-/// Behavioral redirects injected to steer the LLM toward correct tools.
-#[derive(Debug, Deserialize)]
-pub struct RedirectInjections {
-    /// Tells the LLM to use `Close_conversation_history` instead of `Close_panel`.
-    pub conversation_history_close: String,
-}
+/// Behavioral redirect and trap injection types (extracted for line-count).
+pub mod behavioral;
 
 /// Provider-specific text injected during prompt assembly.
 #[derive(Debug, Deserialize)]

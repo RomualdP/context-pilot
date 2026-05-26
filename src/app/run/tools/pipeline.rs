@@ -104,10 +104,15 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
         save_tool_call_message(app, tool);
 
         let result = if tool.name == "Queue_execute" {
-            // Queue flush: execute all queued calls, collect them for pipeline replay
-            let (summary_result, flushed) = super::cleanup::execute_queue_flush(tool, &mut app.state);
-            flushed_tools = flushed;
-            summary_result
+            // History cleanup trap: block flush when too many history panels are open
+            if let Some(trap_msg) = crate::modules::conversation_history::trap::check_and_trigger_trap(&mut app.state) {
+                crate::infra::tools::ToolResult::new(tool.id.clone(), trap_msg, false)
+            } else {
+                // Queue flush: execute all queued calls, collect them for pipeline replay
+                let (summary_result, flushed) = super::cleanup::execute_queue_flush(tool, &mut app.state);
+                flushed_tools = flushed;
+                summary_result
+            }
         } else {
             // Pre-flight: schema check + module semantic check (ALWAYS runs, queue or not)
             let pf = pre_flight_tool(tool, &app.state, &app.state.active_modules.clone());
@@ -123,7 +128,10 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                     }
                 }
 
-                if QueueState::get(&app.state).active && !QueueState::is_queue_tool(&tool.name) && tool.name != "Think"
+                if QueueState::get(&app.state).active
+                    && !QueueState::is_queue_tool(&tool.name)
+                    && tool.name != "Think"
+                    && !(QueueState::get(&app.state).trap_active && tool.name == "Close_conversation_history")
                 {
                     // Queue intercept: enqueue instead of executing
                     let qs = QueueState::get_mut(&mut app.state);
@@ -174,6 +182,12 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
             tools.push(ft.tool);
             tool_results.push(ft.result);
         }
+    }
+
+    // === HISTORY CLEANUP TRAP DEACTIVATION ===
+    // After Close_conversation_history executes, check if the trap can be lifted.
+    if tools.iter().any(|t| t.name == "Close_conversation_history") {
+        crate::modules::conversation_history::trap::maybe_deactivate_trap(&mut app.state);
     }
 
     // Check if any tool triggered a question form (blocking)

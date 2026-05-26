@@ -24,6 +24,12 @@ pub struct QueueState {
     pub queued_calls: Vec<QueuedToolCall>,
     /// Next index counter (1-based)
     pub next_index: usize,
+    /// Whether the history cleanup trap is active (blocks all tools except `Close_conversation_history`)
+    pub trap_active: bool,
+    /// Panel IDs the trap requires to be closed (oldest → newest)
+    pub trap_panel_ids: Vec<String>,
+    /// The two most recent panel IDs that may optionally be kept
+    pub trap_optional_ids: Vec<String>,
 }
 
 impl Default for QueueState {
@@ -39,7 +45,14 @@ impl QueueState {
     /// Create an empty inactive queue with index counter at 1.
     #[must_use]
     pub const fn new() -> Self {
-        Self { active: false, queued_calls: Vec::new(), next_index: 1 }
+        Self {
+            active: false,
+            queued_calls: Vec::new(),
+            next_index: 1,
+            trap_active: false,
+            trap_panel_ids: Vec::new(),
+            trap_optional_ids: Vec::new(),
+        }
     }
 
     /// Returns true if the given tool name is a Queue tool (always bypasses interception).
