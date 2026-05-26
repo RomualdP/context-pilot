@@ -304,9 +304,19 @@ impl Module for PromptModule {
 }
 
 /// Check if a file path is inside one of the three prompt directories.
+/// Handles both absolute and relative paths by canonicalizing comparison.
 fn is_prompt_file(path: &str) -> bool {
     let path = std::path::Path::new(path);
-    [PromptType::Agent, PromptType::Skill, PromptType::Command].iter().any(|pt| path.starts_with(storage::dir_for(*pt)))
+    [PromptType::Agent, PromptType::Skill, PromptType::Command].iter().any(|pt| {
+        let dir = storage::dir_for(*pt);
+        // Try canonical comparison first (handles absolute vs relative)
+        if let (Ok(canon_path), Ok(canon_dir)) = (path.canonicalize(), dir.canonicalize()) {
+            canon_path.starts_with(canon_dir)
+        } else {
+            // Fallback: check if path contains the relative dir segment
+            path.starts_with(&dir)
+        }
+    })
 }
 
 /// Pre-flight check for the `Edit` tool when targeting a prompt `.md` file.
