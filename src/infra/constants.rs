@@ -13,16 +13,16 @@ pub(crate) const API_VERSION: &str = "2023-06-01";
 // =============================================================================
 
 /// Minimum active messages in a chunk before it can be detached.
-pub(crate) const DETACH_CHUNK_MIN_MESSAGES: usize = 25;
+pub(crate) const DETACH_CHUNK_MIN_MESSAGES: usize = 10;
 
 /// Minimum token count in a chunk before it can be detached.
 pub(crate) const DETACH_CHUNK_MIN_TOKENS: usize = 5_000;
 
 /// Minimum messages to keep in the live conversation after detachment.
-pub(crate) const DETACH_KEEP_MIN_MESSAGES: usize = 10;
+pub(crate) const DETACH_KEEP_MIN_MESSAGES: usize = 5;
 
 /// Minimum tokens to keep in the live conversation after detachment.
-pub(crate) const DETACH_KEEP_MIN_TOKENS: usize = 1_000;
+pub(crate) const DETACH_KEEP_MIN_TOKENS: usize = 2_000;
 
 // =============================================================================
 // SCROLLING
