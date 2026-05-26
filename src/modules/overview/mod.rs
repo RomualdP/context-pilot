@@ -309,34 +309,20 @@ impl Module for OverviewModule {
                                     let current_hash =
                                         cp_mod_tree::tools::compute_file_hash(std::path::Path::new(file_path))
                                             .unwrap_or_default();
-                                    if !desc.file_hash.is_empty() && desc.file_hash != current_hash {
-                                        // Check for a pending tree_describe in the queue
-                                        let has_pending = state.active_modules.contains("queue")
-                                            && cp_mod_queue::types::QueueState::get(state).queued_calls.iter().any(
-                                                |call| {
-                                                    call.tool_name == "tree_describe"
-                                                        && call
-                                                            .input
-                                                            .get("descriptions")
-                                                            .and_then(|v| v.as_array())
-                                                            .is_some_and(|descs| {
-                                                                descs.iter().any(|d| {
-                                                                    d.get("path").and_then(|p| p.as_str())
-                                                                        == Some(rel_str.as_ref())
-                                                                        && d.get("delete")
-                                                                            .and_then(serde_json::Value::as_bool)
-                                                                            != Some(true)
-                                                                })
-                                                            })
-                                                },
-                                            );
-                                        if !has_pending {
-                                            pf.errors.push(format!(
-                                                "Panel '{id}' ({rel_str}) has a stale [!] tree description. \
-                                                 Update it with tree_describe before closing."
-                                            ));
-                                        }
+                                    if !desc.file_hash.is_empty()
+                                        && desc.file_hash != current_hash
+                                        && !has_pending_tree_describe(state, rel_str.as_ref())
+                                    {
+                                        pf.errors.push(format!(
+                                            "Panel '{id}' ({rel_str}) has a stale [!] tree description. \
+                                             Update it with tree_describe before closing."
+                                        ));
                                     }
+                                } else if !has_pending_tree_describe(state, rel_str.as_ref()) {
+                                    pf.errors.push(format!(
+                                        "Panel '{id}' ({rel_str}) has no tree description. \
+                                         Add one with tree_describe before closing."
+                                    ));
                                 }
                             }
                         }
@@ -462,6 +448,20 @@ impl Module for OverviewModule {
     fn watcher_immediate_refresh(&self) -> bool {
         true
     }
+}
+
+/// Check if there's a pending `tree_describe` in the queue for the given path.
+fn has_pending_tree_describe(state: &State, rel_path: &str) -> bool {
+    state.active_modules.contains("queue")
+        && cp_mod_queue::types::QueueState::get(state).queued_calls.iter().any(|call| {
+            call.tool_name == "tree_describe"
+                && call.input.get("descriptions").and_then(|v| v.as_array()).is_some_and(|descs| {
+                    descs.iter().any(|d| {
+                        d.get("path").and_then(|p| p.as_str()) == Some(rel_path)
+                            && d.get("delete").and_then(serde_json::Value::as_bool) != Some(true)
+                    })
+                })
+        })
 }
 
 /// Visualizer for core tool results.
