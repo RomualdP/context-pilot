@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use cp_base::config::constants;
 use cp_base::modules::{Module, ToolVisualizer};
 use cp_base::panels::Panel;
-use cp_base::state::context::Kind;
+use cp_base::state::context::{Kind, estimate_tokens};
 use cp_base::state::runtime::State;
 use cp_base::tools::pre_flight::Verdict;
 use cp_base::tools::{ParamType, ToolDefinition, ToolParam, ToolTexts};
@@ -289,6 +289,8 @@ impl Module for LogsModule {
                 let mut pf = Verdict::new();
                 // Auto-activate queue — closing history panels is destructive
                 pf.activate_queue = true;
+
+                // Panel ID: must exist and be a conversation history panel
                 if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
                     match state.context.iter().find(|c| c.id == id) {
                         None => pf.errors.push(format!("Panel '{id}' not found")),
@@ -300,25 +302,33 @@ impl Module for LogsModule {
                         _ => {}
                     }
                 }
-                // Validate memory content lengths before execution
+
+                // Logs: require at least one non-empty entry
+                let has_logs = tool.input.get("logs").and_then(|v| v.as_array()).is_some_and(|arr| {
+                    arr.iter().any(|e| e.get("content").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()))
+                });
+                if !has_logs {
+                    pf.errors.push(
+                        "Missing or empty 'logs' — provide at least one log entry to preserve context.".to_string(),
+                    );
+                }
+
+                // Memory tl_dr: validate length using the same estimator as the runtime
                 if let Some(memories) = tool.input.get("memories").and_then(|v| v.as_array()) {
                     let max_tokens = cp_mod_memory::MEMORY_TLDR_MAX_TOKENS;
                     for (i, mem) in memories.iter().enumerate() {
                         if let Some(content) = mem.get("content").and_then(|v| v.as_str()) {
-                            let approx_tokens = cp_base::panels::time_arith::div_const::<3>(
-                                content.split_whitespace().count().saturating_mul(4),
-                            );
-                            if approx_tokens > max_tokens {
+                            let tokens = estimate_tokens(content);
+                            if tokens > max_tokens {
                                 pf.errors.push(format!(
-                                    "Memory #{} content too long: ~{} tokens (max {}). Shorten it.",
+                                    "Memory #{} content too long: ~{tokens} tokens (max {max_tokens}). Shorten it.",
                                     i.saturating_add(1),
-                                    approx_tokens,
-                                    max_tokens,
                                 ));
                             }
                         }
                     }
                 }
+
                 Some(pf)
             }
             _ => None,
