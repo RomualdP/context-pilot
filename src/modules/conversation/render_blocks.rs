@@ -217,9 +217,53 @@ pub(crate) fn render_message_blocks(msg: &Message, opts: &MessageBlockOpts) -> V
         let is_assistant = msg.role == "assistant";
         let content_lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
+        let mut in_code_block = false;
 
         while i < content_lines.len() {
             let Some(&line) = content_lines.get(i) else { break };
+
+            // Detect fenced code block boundaries (``` with optional language tag)
+            if is_assistant && line.trim().starts_with("```") {
+                in_code_block = !in_code_block;
+                // Render the fence line itself as muted code
+                let fence_spans = vec![Span::styled(line.to_owned(), Semantic::Muted)];
+                if is_first_line {
+                    let mut line_spans = vec![
+                        Span::styled(role_icon.clone(), role_semantic),
+                        Span::styled(status_icon.clone(), Semantic::Muted),
+                    ];
+                    line_spans.extend(fence_spans);
+                    blocks.push(Block::line(line_spans));
+                    is_first_line = false;
+                } else {
+                    let mut line_spans = vec![Span::new(" ".repeat(prefix_width))];
+                    line_spans.extend(fence_spans);
+                    blocks.push(Block::line(line_spans));
+                }
+                i = i.saturating_add(1);
+                continue;
+            }
+
+            // Inside a code block: render verbatim — no wrapping, no markdown parsing.
+            // Preserves consecutive spaces, box-drawing alignment, ASCII art, etc.
+            if in_code_block {
+                let code_spans = vec![Span::styled(line.to_owned(), Semantic::Code)];
+                if is_first_line {
+                    let mut line_spans = vec![
+                        Span::styled(role_icon.clone(), role_semantic),
+                        Span::styled(status_icon.clone(), Semantic::Muted),
+                    ];
+                    line_spans.extend(code_spans);
+                    blocks.push(Block::line(line_spans));
+                    is_first_line = false;
+                } else {
+                    let mut line_spans = vec![Span::new(" ".repeat(prefix_width))];
+                    line_spans.extend(code_spans);
+                    blocks.push(Block::line(line_spans));
+                }
+                i = i.saturating_add(1);
+                continue;
+            }
 
             if line.is_empty() {
                 blocks.push(Block::line(vec![Span::new(" ".repeat(prefix_width))]));
