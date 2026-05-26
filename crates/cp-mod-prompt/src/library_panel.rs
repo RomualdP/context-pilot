@@ -104,13 +104,19 @@ impl Panel for LibraryPanel {
             }
         }
 
-        // File paths info (so the AI knows where to edit/delete)
-        content.push_str("\nFile locations:\n");
-        let _wd = writeln!(content, "- Agents: {}/", crate::storage::dir_for(PromptType::Agent).display());
-        let _we = writeln!(content, "- Skills: {}/", crate::storage::dir_for(PromptType::Skill).display());
-        let _wf = writeln!(content, "- Commands: {}/", crate::storage::dir_for(PromptType::Command).display());
-        content.push_str("\nTo edit: use the Edit tool on the .md file directly.");
-        content.push_str("\nTo delete: delete the .md file.\n");
+        // CRUD cheat sheet for the LLM
+        content.push_str("\nHow to manage behaviours:\n");
+        content.push_str("- Create: Behaviour_create(name, type, content) — type: 'agent', 'skill', or 'command'\n");
+        let _wd = writeln!(
+            content,
+            "- Edit: use Edit tool on the .md file — agents: {}/  skills: {}/  commands: {}/",
+            crate::storage::dir_for(PromptType::Agent).display(),
+            crate::storage::dir_for(PromptType::Skill).display(),
+            crate::storage::dir_for(PromptType::Command).display()
+        );
+        content.push_str("- Delete: delete the .md file (the system detects removals automatically)\n");
+        content.push_str("- Activate agent: agent_load(id) — pass empty id to revert to default\n");
+        content.push_str("- Load skill: skill_load(id) — unload by closing its panel with Close_panel\n");
 
         vec![ContextItem::new(&ctx.id, "Library", content, ctx.last_refresh_ms)]
     }

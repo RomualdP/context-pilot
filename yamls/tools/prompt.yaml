@@ -9,7 +9,7 @@ tools:
       name: "Behaviour name (e.g., 'Code Reviewer')"
       type: "Type: 'agent', 'skill', or 'command'"
       description: "Short description"
-      content: "Body content (system prompt, skill instructions, or command expansion)"
+      content: "Body content — varies by type: for agents, a system prompt (personality, guidelines, constraints); for skills, reference material or instructions loaded as a context panel; for commands, text that replaces a /command typed by the user"
 
   agent_load:
     description: |
