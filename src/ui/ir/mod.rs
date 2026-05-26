@@ -89,6 +89,7 @@ mod sidebar;
 use cp_render::{Align, Semantic, Span as IrSpan, TreeNode};
 use ratatui::prelude::{Line, Span, Style};
 use ratatui::style::Modifier;
+use unicode_width::UnicodeWidthStr as _;
 
 use super::theme;
 
@@ -199,12 +200,12 @@ fn render_table(columns: &[cp_render::Column], rows: &[Vec<cp_render::Cell>], li
     }
 
     let border_style = semantic_to_style(Semantic::Border);
-    let mut widths: Vec<usize> = columns.iter().map(|c| c.header.len()).collect();
+    let mut widths: Vec<usize> = columns.iter().map(|c| c.header.width()).collect();
 
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
             if let Some(w) = widths.get_mut(i) {
-                let cell_len: usize = cell.spans.iter().map(|s| s.text.len()).sum();
+                let cell_len: usize = cell.spans.iter().map(|s| s.text.width()).sum();
                 if cell_len > *w {
                     *w = cell_len;
                 }
@@ -245,7 +246,7 @@ fn render_table(columns: &[cp_render::Column], rows: &[Vec<cp_render::Cell>], li
             let w = widths.get(i).copied().unwrap_or(0);
             let align = if cell.align == Align::Left { col.align } else { cell.align };
             let content: String = cell.spans.iter().map(|s| s.text.as_str()).collect();
-            let padding = w.saturating_sub(content.len());
+            let padding = w.saturating_sub(content.width());
 
             match align {
                 Align::Right => {
@@ -308,7 +309,7 @@ const fn center_padding(total: usize) -> (usize, usize) {
 
 /// Pad a string to a given width with the specified alignment.
 fn pad_str(s: &str, width: usize, align: Align) -> String {
-    let padding = width.saturating_sub(s.len());
+    let padding = width.saturating_sub(s.width());
     match align {
         Align::Left => format!("{s}{}", " ".repeat(padding)),
         Align::Right => format!("{}{s}", " ".repeat(padding)),

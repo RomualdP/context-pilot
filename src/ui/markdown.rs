@@ -1,6 +1,7 @@
 use super::theme;
 use cp_base::cast::Safe as _;
 use ratatui::prelude::{Span, Style};
+use unicode_width::UnicodeWidthChar as _;
 
 /// Calculate the display width of text after stripping markdown markers.
 fn markdown_display_width(text: &str) -> usize {
@@ -16,8 +17,8 @@ fn markdown_display_width(text: &str) -> usize {
                         let _r1 = chars.next();
                         break;
                     }
-                    width = width.saturating_add(1);
-                    let _r1 = chars.next();
+                    width = width
+                        .saturating_add(chars.next().and_then(unicode_width::UnicodeWidthChar::width).unwrap_or(0));
                 }
             }
             '*' | '_' => {
@@ -30,11 +31,11 @@ fn markdown_display_width(text: &str) -> usize {
                             let _r2 = chars.next();
                             break;
                         }
-                        width = width.saturating_add(1);
+                        width = width.saturating_add(next.width().unwrap_or(0));
                     }
                 } else {
                     // Single * or _ — treat as literal character
-                    width = width.saturating_add(1);
+                    width = width.saturating_add(c.width().unwrap_or(0));
                 }
             }
             '[' => {
@@ -46,7 +47,7 @@ fn markdown_display_width(text: &str) -> usize {
                         found_bracket = true;
                         break;
                     }
-                    link_text_len = link_text_len.saturating_add(1);
+                    link_text_len = link_text_len.saturating_add(next.width().unwrap_or(0));
                 }
                 if found_bracket && chars.peek() == Some(&'(') {
                     let _r1 = chars.next(); // consume (
@@ -58,14 +59,14 @@ fn markdown_display_width(text: &str) -> usize {
                     width = width.saturating_add(link_text_len);
                 } else {
                     // Not a valid link
-                    width = width.saturating_add(1).saturating_add(link_text_len);
+                    width = width.saturating_add('['.width().unwrap_or(0)).saturating_add(link_text_len);
                     if found_bracket {
-                        width = width.saturating_add(1);
+                        width = width.saturating_add(']'.width().unwrap_or(0));
                     }
                 }
             }
             _ => {
-                width = width.saturating_add(1);
+                width = width.saturating_add(c.width().unwrap_or(0));
             }
         }
     }
@@ -95,12 +96,13 @@ fn wrap_cell_text(text: &str, width: usize) -> Vec<String> {
             if word_width > width {
                 // Break long word character by character
                 for ch in word.chars() {
-                    if current_width >= width {
+                    let cw = ch.width().unwrap_or(0);
+                    if current_width.saturating_add(cw) > width && current_width > 0 {
                         result_lines.push(std::mem::take(&mut current_line));
                         current_width = 0;
                     }
                     current_line.push(ch);
-                    current_width = current_width.saturating_add(1);
+                    current_width = current_width.saturating_add(cw);
                 }
             } else {
                 current_line.push_str(word);
@@ -117,12 +119,13 @@ fn wrap_cell_text(text: &str, width: usize) -> Vec<String> {
             if word_width > width {
                 current_width = 0;
                 for ch in word.chars() {
-                    if current_width >= width {
+                    let cw = ch.width().unwrap_or(0);
+                    if current_width.saturating_add(cw) > width && current_width > 0 {
                         result_lines.push(std::mem::take(&mut current_line));
                         current_width = 0;
                     }
                     current_line.push(ch);
-                    current_width = current_width.saturating_add(1);
+                    current_width = current_width.saturating_add(cw);
                 }
             } else {
                 current_line.push_str(word);
