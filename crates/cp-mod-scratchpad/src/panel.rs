@@ -56,17 +56,8 @@ impl Panel for ScratchpadPanel {
                 S::new(cell.title.clone()).bold(),
             ]));
 
-            let lines: Vec<&str> = cell.content.lines().take(5).collect();
-            for line in &lines {
+            for line in cell.content.lines() {
                 blocks.push(Block::Line(vec![S::new("   ".into()), S::muted(line.to_string())]));
-            }
-
-            let total_lines = cell.content.lines().count();
-            if total_lines > 5 {
-                blocks.push(Block::Line(vec![
-                    S::new("   ".into()),
-                    S::muted(format!("... ({} more lines)", total_lines.saturating_sub(5))).italic(),
-                ]));
             }
 
             blocks.push(Block::Empty);
