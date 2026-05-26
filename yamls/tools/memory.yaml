@@ -19,5 +19,4 @@ tools:
       contents: "New rich body text (visible when memory is opened)"
       importance: "New importance level"
       labels: "New labels (replaces existing)"
-      open: "Set true to show full contents in panel, false to show only tl;dr"
       delete: "Set true to delete"

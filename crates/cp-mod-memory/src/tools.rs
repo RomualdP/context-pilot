@@ -118,8 +118,6 @@ pub(crate) fn execute_update(tool: &ToolUse, state: &mut State) -> ToolResult {
             let ms = MemoryState::get_mut(state);
             let initial_len = ms.memories.len();
             ms.memories.retain(|m| m.id != id);
-            // Also remove from open_memory_ids
-            ms.open_memory_ids.retain(|mid| mid != id);
             if ms.memories.len() < initial_len {
                 deleted.push(id.to_string());
             } else {
@@ -160,19 +158,6 @@ pub(crate) fn execute_update(tool: &ToolUse, state: &mut State) -> ToolResult {
                 if let Some(labels_arr) = update_value.get("labels").and_then(|v| v.as_array()) {
                     m.labels = labels_arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
                     changes.push("labels");
-                }
-
-                // Handle open/close toggle
-                if let Some(open) = update_value.get("open").and_then(serde_json::Value::as_bool) {
-                    if open {
-                        if !ms.open_memory_ids.contains(&id.to_string()) {
-                            ms.open_memory_ids.push(id.to_string());
-                            changes.push("opened");
-                        }
-                    } else {
-                        ms.open_memory_ids.retain(|mid| mid != id);
-                        changes.push("closed");
-                    }
                 }
 
                 if !changes.is_empty() {
