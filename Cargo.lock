@@ -869,18 +869,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cp-mod-preset"
-version = "0.1.0"
-dependencies = [
- "cp-base",
- "cp-mod-prompt",
- "cp-render",
- "serde",
- "serde_json",
- "serde_yaml",
-]
-
-[[package]]
 name = "cp-mod-prompt"
 version = "0.1.0"
 dependencies = [
@@ -6158,7 +6146,6 @@ dependencies = [
  "cp-mod-github",
  "cp-mod-logs",
  "cp-mod-memory",
- "cp-mod-preset",
  "cp-mod-prompt",
  "cp-mod-queue",
  "cp-mod-scratchpad",

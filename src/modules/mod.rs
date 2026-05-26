@@ -30,7 +30,6 @@ pub(crate) use cp_mod_git::GitModule;
 pub(crate) use cp_mod_github::GithubModule;
 pub(crate) use cp_mod_logs::LogsModule;
 pub(crate) use cp_mod_memory::MemoryModule;
-pub(crate) use cp_mod_preset::PresetModule;
 pub(crate) use cp_mod_prompt::PromptModule;
 pub(crate) use cp_mod_queue::QueueModule;
 pub(crate) use cp_mod_scratchpad::ScratchpadModule;
@@ -122,7 +121,6 @@ pub(crate) fn all_modules() -> Vec<Box<dyn Module>> {
         Box::new(TodoModule),
         Box::new(MemoryModule),
         Box::new(ScratchpadModule),
-        Box::new(PresetModule::new(all_modules, active_tool_definitions, crate::app::ensure_default_contexts)),
         Box::new(SpineModule),
         Box::new(LogsModule),
         Box::new(TypstModule),

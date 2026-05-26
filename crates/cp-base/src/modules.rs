@@ -73,8 +73,8 @@ pub trait Module: Send + Sync {
     /// Called once at startup for each module. Use `state.set_ext(MyState { ... })`.
     fn init_state(&self, _state: &mut State) {}
 
-    /// Reset module-owned state to defaults (e.g., when loading a preset).
-    /// Called by preset system to clear module data without full restart.
+    /// Reset module-owned state to defaults.
+    /// Called to clear module data without full restart.
     fn reset_state(&self, _state: &mut State) {}
 
     /// Serialize this module's data from State into a JSON value for persistence.

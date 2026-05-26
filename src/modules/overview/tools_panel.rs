@@ -6,7 +6,7 @@ use crate::state::State;
 use cp_base::panels::scroll_key_action;
 use std::fmt::Write as _;
 
-/// Panel that displays tool configuration, agents, skills, and presets.
+/// Panel that displays tool configuration, agents, and skills.
 pub(super) struct ToolsPanel;
 
 impl Panel for ToolsPanel {
@@ -20,12 +20,6 @@ impl Panel for ToolsPanel {
         blocks.extend(super::tools_blocks::tools_blocks(state));
         blocks.push(cp_render::Block::Separator);
         blocks.extend(super::tools_blocks::seeds_blocks(state));
-
-        let presets_section = super::tools_blocks::presets_blocks();
-        if !presets_section.is_empty() {
-            blocks.push(cp_render::Block::Separator);
-            blocks.extend(presets_section);
-        }
 
         blocks
     }

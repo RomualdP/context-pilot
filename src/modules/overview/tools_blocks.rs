@@ -1,7 +1,7 @@
 //! IR block builders for the Tools / Configuration panel.
 //!
 //! Produces `Vec<Block>` equivalents of `render_details.rs` functions
-//! (`render_tools`, `render_seeds`, `render_presets`), using `cp_render`
+//! (`render_tools`, `render_seeds`), using `cp_render`
 //! types instead of ratatui. Called from `ToolsPanel::blocks()`.
 
 use std::collections::HashSet;
@@ -10,8 +10,6 @@ use cp_render::{Align, Block, Cell, Column, Semantic, Span};
 
 use crate::modules::all_modules;
 use crate::state::State;
-
-use cp_mod_preset::tools::list_presets_with_info;
 use cp_mod_prompt::types::PromptState;
 
 /// TOOLS section: tools grouped by category, with enable/disable status.
@@ -178,49 +176,6 @@ pub(super) fn seeds_blocks(state: &State) -> Vec<Block> {
 
         out.push(Block::Table { columns: cmd_columns, rows: cmd_rows });
     }
-
-    out
-}
-
-/// PRESETS section: available presets table.
-pub(super) fn presets_blocks() -> Vec<Block> {
-    let mut out = Vec::new();
-
-    let presets = list_presets_with_info();
-    if presets.is_empty() {
-        return out;
-    }
-
-    out.push(Block::Header(vec![
-        Span::styled("PRESETS".to_owned(), Semantic::Muted),
-        Span::muted(format!("  ({} available)", presets.len())),
-    ]));
-    out.push(Block::Empty);
-
-    let columns = vec![
-        Column { header: "Name".to_owned(), align: Align::Left },
-        Column { header: "Type".to_owned(), align: Align::Left },
-        Column { header: "Description".to_owned(), align: Align::Left },
-    ];
-
-    let rows: Vec<Vec<Cell>> = presets
-        .iter()
-        .map(|p| {
-            let (type_label, type_semantic) =
-                if p.built_in { ("built-in", Semantic::AccentDim) } else { ("custom", Semantic::Success) };
-
-            let display_name = truncate_str(&p.name, 25);
-            let display_desc = truncate_str(&p.description, 35);
-
-            vec![
-                Cell::styled(display_name, Semantic::Default),
-                Cell::styled(type_label.to_owned(), type_semantic),
-                Cell::styled(display_desc, Semantic::Muted),
-            ]
-        })
-        .collect();
-
-    out.push(Block::Table { columns, rows });
 
     out
 }

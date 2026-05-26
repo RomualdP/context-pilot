@@ -375,7 +375,6 @@ fn main() -> ExitCode {
     // Phase 6: Prepare workspace
     ensure_default_contexts(&mut state);
     ensure_default_agent(&mut state);
-    cp_mod_preset::builtin::ensure_builtin_presets();
     mark_step_done(&mut steps, STEP_WORKSPACE);
     render_boot_screen(&mut terminal, &steps);
 
