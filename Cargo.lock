@@ -861,7 +861,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "cp-base",
- "cp-mod-memory",
  "cp-render",
  "log",
  "serde",

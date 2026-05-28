@@ -383,8 +383,6 @@ pub(crate) struct SearchResult {
     pub datetime: Option<String>,
     /// Importance level — log results only.
     pub importance: Option<String>,
-    /// Tags — log results only.
-    pub tags: Option<Vec<String>>,
     /// Meilisearch ranking score (0.0–1.0), when `showRankingScore` is enabled.
     pub ranking_score: Option<f64>,
 }
@@ -478,8 +476,8 @@ pub(crate) fn files_index_settings() -> serde_json::Value {
 /// See design doc §4 "Logs Index" for rationale.
 pub(crate) fn logs_index_settings() -> serde_json::Value {
     serde_json::json!({
-        "searchableAttributes": ["content", "tags"],
-        "filterableAttributes": ["timestamp_ms", "importance", "tags", "worker_id"],
+        "searchableAttributes": ["content"],
+        "filterableAttributes": ["timestamp_ms", "importance", "worker_id"],
         "sortableAttributes": ["timestamp_ms"]
     })
 }

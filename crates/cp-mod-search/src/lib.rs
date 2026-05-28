@@ -465,7 +465,6 @@ pub fn sync_logs_to_meilisearch(state: &State) {
                 "id": l.id,
                 "content": l.content,
                 "importance": l.importance,
-                "tags": l.tags,
                 "timestamp_ms": l.timestamp_ms,
                 "datetime": l.datetime,
             })

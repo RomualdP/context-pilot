@@ -19,20 +19,39 @@ pub(crate) fn pre_flight_tool(tool: &ToolUse, state: &State, active_modules: &Ha
     // If another queued item already targets the same panel, reject early.
     // Skip when trap is active — queued items are frozen (queue flush blocked),
     // and Close_conversation_history executes directly during trap.
-    if tool.name == "Close_conversation_history"
-        && let Some(target_id) = tool.input.get("id").and_then(serde_json::Value::as_str)
-    {
+    if tool.name == "Close_conversation_history" {
         let qs = cp_mod_queue::types::QueueState::get(state);
         if !qs.trap_active {
-            let already_queued = qs.queued_calls.iter().any(|q| {
-                q.tool_name == "Close_conversation_history"
-                    && q.input.get("id").and_then(serde_json::Value::as_str) == Some(target_id)
-            });
-            if already_queued {
-                result.errors.push(format!(
-                    "Panel '{target_id}' is already queued for closing by another Close_conversation_history call",
-                ));
-                return result;
+            // Extract panel_ids from this call
+            let new_ids: Vec<&str> = tool
+                .input
+                .get("panels")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str)).collect())
+                .unwrap_or_default();
+
+            // Extract panel_ids from all queued Close_conversation_history calls
+            let queued_ids: Vec<&str> = qs
+                .queued_calls
+                .iter()
+                .filter(|q| q.tool_name == "Close_conversation_history")
+                .flat_map(|q| {
+                    q.input
+                        .get("panels")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str))
+                })
+                .collect();
+
+            for id in &new_ids {
+                if queued_ids.contains(id) {
+                    result.errors.push(format!(
+                        "Panel '{id}' is already queued for closing by another Close_conversation_history call",
+                    ));
+                    return result;
+                }
             }
         }
     }

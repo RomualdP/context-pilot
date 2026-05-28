@@ -57,8 +57,6 @@ struct ScoredResult {
     datetime: String,
     /// Importance level (`"low"`, `"medium"`, `"high"`, `"critical"`).
     importance: String,
-    /// Freeform categorization tags.
-    tags: Vec<String>,
     /// Log entry text.
     content: String,
     /// Combined score: `relevance × query_decay × result_decay`.
@@ -78,9 +76,6 @@ fn write_entry(yaml: &mut String, entry: &ScoredResult) {
     let _w0 = writeln!(yaml, "  - content: \"{}\"", entry.content.replace('"', "\\\""));
     let _w1 = writeln!(yaml, "    datetime: \"{}\"", entry.datetime);
     let _w2 = writeln!(yaml, "    importance: {}", entry.importance);
-    if !entry.tags.is_empty() {
-        let _w3 = writeln!(yaml, "    tags: [{}]", entry.tags.join(", "));
-    }
     let _w4 = writeln!(yaml, "    score: {:.3}", entry.score);
 }
 
@@ -192,7 +187,6 @@ pub(crate) fn refresh(state: &State) {
             id: l.id.clone(),
             datetime: l.datetime.clone(),
             importance: l.importance.clone(),
-            tags: l.tags.clone(),
             content: l.content.clone(),
         })
         .collect();
@@ -240,8 +234,6 @@ struct RecentLogSnapshot {
     datetime: String,
     /// Importance level (e.g. `"high"`).
     importance: String,
-    /// Freeform categorization tags.
-    tags: Vec<String>,
     /// Log entry text.
     content: String,
 }
@@ -324,14 +316,9 @@ fn refresh_inner(job: &RefreshJob) {
             let log_id = hit.get("id").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
             let datetime = hit.get("datetime").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
             let importance = hit.get("importance").and_then(serde_json::Value::as_str).unwrap_or("medium").to_string();
-            let tags: Vec<String> = hit
-                .get("tags")
-                .and_then(serde_json::Value::as_array)
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                .unwrap_or_default();
             let content = hit.get("content").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
 
-            all_results.push(ScoredResult { log_id, datetime, importance, tags, content, score });
+            all_results.push(ScoredResult { log_id, datetime, importance, content, score });
         }
     }
 
@@ -364,7 +351,6 @@ fn refresh_inner(job: &RefreshJob) {
             log_id: log.id.clone(),
             datetime: log.datetime.clone(),
             importance: log.importance.clone(),
-            tags: log.tags.clone(),
             content: log.content.clone(),
             score: 0.0,
         });

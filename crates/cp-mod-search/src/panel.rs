@@ -270,12 +270,6 @@ fn build_log_value(r: &SearchResult, hide_contents: bool) -> serde_json::Value {
     if let Some(ref imp) = r.importance {
         drop(obj.insert("importance".into(), serde_json::Value::String(imp.clone())));
     }
-    if let Some(ref tags) = r.tags {
-        drop(obj.insert(
-            "tags".into(),
-            serde_json::Value::Array(tags.iter().map(|t| serde_json::Value::String(t.clone())).collect()),
-        ));
-    }
     if let Some(score) = r.ranking_score {
         drop(obj.insert("relevance".into(), serde_json::json!(format!("{score:.4}"))));
     }

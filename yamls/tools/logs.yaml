@@ -1,26 +1,21 @@
 tools:
   log_create:
     description: |
-      Creates timestamped log entries for recording decisions, actions, or notable events during the conversation. Each entry can have an importance level and freeform tags for categorization. Logs are indexed by the search module for full-text retrieval.
+      Creates timestamped log entries for recording decisions, actions, or notable events during the conversation. Each entry can have an importance level. Logs are indexed by the search module for full-text retrieval.
     parameters:
       entries: "Array of log entries to create (timestamped automatically)"
       content: "Short, atomic log entry"
       importance: "Importance level"
-      tags: "Freeform tags for categorization (e.g., ['decision', 'architecture'])"
 
   Close_conversation_history:
     description: |
-      Closes a conversation history panel. Before closing, creates log entries and memory items to preserve important information. Everything in the history panel will be lost after closing.
+      Closes one or more conversation history panels. Before closing, creates log entries to preserve important information. Everything in the history panels will be lost after closing.
 
-      IMPORTANT: Before calling this tool, carefully review ALL human messages in the panel. Extract and preserve:
-      - **Logs**: Short, atomic entries for mid-conversation context — decisions made, actions taken, bugs found, user preferences expressed, task context. Logs are medium-lifecycle: they maintain conversation flow across reloads. Include importance and tags for each entry.
-      - **Memories**: Longer-lived knowledge that matters beyond this session — architecture decisions, user preferences, project conventions, important discoveries. Memories persist across conversations.
+      IMPORTANT: Before calling this tool, carefully review ALL human messages in each panel. Extract and preserve:
+      - **Logs**: Short, atomic entries for mid-conversation context — decisions made, actions taken, bugs found, user preferences expressed, task context. Logs are medium-lifecycle: they maintain conversation flow across reloads.
 
-      Every substantive piece of information from human messages should be captured in either a log or a memory. When in doubt, preserve it. Log timestamps are set to the panel's last message time, not the current time.
+      Every substantive piece of information from human messages should be captured in a log. When in doubt, preserve it. Log timestamps are set to each panel's last message time, not the current time.
     parameters:
-      id: "ID of the conversation history panel to close (e.g., 'P12')"
-      logs: "Log entries to create (timestamped automatically). Should be short, atomic things to remember from the conversation."
-      content: "Short, atomic log entry to remember"
-      importance: "Importance level"
-      tags: "Freeform tags for categorization"
-      memories: "Memory items to create (persistent across conversations)"
+      panels: "Array of panels to close"
+      panel_id: "ID of the conversation history panel to close (e.g., 'P12')"
+      logs: "Log entries to create — simple strings, one per entry"

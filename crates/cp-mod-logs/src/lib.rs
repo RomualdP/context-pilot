@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use cp_base::config::constants;
 use cp_base::modules::{Module, ToolVisualizer};
 use cp_base::panels::Panel;
-use cp_base::state::context::{Kind, estimate_tokens};
+use cp_base::state::context::Kind;
 use cp_base::state::runtime::State;
 use cp_base::tools::pre_flight::Verdict;
 use cp_base::tools::{ParamType, ToolDefinition, ToolParam, ToolTexts};
@@ -244,40 +244,24 @@ impl Module for LogsModule {
                         ToolParam::new("importance", ParamType::String)
                             .desc("Importance level")
                             .enum_vals(&["low", "medium", "high", "critical"]),
-                        ToolParam::new("tags", ParamType::Array(Box::new(ParamType::String)))
-                            .desc("Freeform tags for categorization (e.g., ['decision', 'architecture'])"),
                     ]),
                     true,
                 )
                 .build(),
             ToolDefinition::from_yaml("Close_conversation_history", t)
-                .short_desc("Close a conversation history panel with logs/memories")
+                .short_desc("Close conversation history panels with logs")
                 .category("Context")
                 .reverie_allowed(true)
-                .param("id", ParamType::String, true)
                 .param_array(
-                    "logs",
+                    "panels",
                     ParamType::Object(vec![
-                        ToolParam::new("content", ParamType::String)
-                            .desc("Short, atomic log entry to remember")
+                        ToolParam::new("panel_id", ParamType::String)
+                            .desc("ID of the conversation history panel to close (e.g., 'P12')")
                             .required(),
-                        ToolParam::new("importance", ParamType::String)
-                            .desc("Importance level")
-                            .enum_vals(&["low", "medium", "high", "critical"]),
-                        ToolParam::new("tags", ParamType::Array(Box::new(ParamType::String)))
-                            .desc("Freeform tags for categorization"),
+                        ToolParam::new("logs", ParamType::Array(Box::new(ParamType::String)))
+                            .desc("Log entries to create — simple strings, one per entry"),
                     ]),
-                    false,
-                )
-                .param_array(
-                    "memories",
-                    ParamType::Object(vec![
-                        ToolParam::new("content", ParamType::String).desc("Memory content").required(),
-                        ToolParam::new("importance", ParamType::String)
-                            .desc("Importance level")
-                            .enum_vals(&["low", "medium", "high", "critical"]),
-                    ]),
-                    false,
+                    true,
                 )
                 .build(),
         ]
@@ -290,42 +274,44 @@ impl Module for LogsModule {
                 // Auto-activate queue — closing history panels is destructive
                 pf.activate_queue = true;
 
-                // Panel ID: must exist and be a conversation history panel
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
+                // Panels array: must exist and be non-empty
+                let Some(panels) = tool.input.get("panels").and_then(|v| v.as_array()) else {
+                    pf.errors.push("Missing required 'panels' array".to_string());
+                    return Some(pf);
+                };
+                if panels.is_empty() {
+                    pf.errors.push("Empty 'panels' array — provide at least one panel to close".to_string());
+                    return Some(pf);
+                }
+
+                for (i, panel_obj) in panels.iter().enumerate() {
+                    let idx = i.saturating_add(1);
+
+                    // panel_id: must exist and be a conversation history panel
+                    let Some(id) = panel_obj.get("panel_id").and_then(|v| v.as_str()) else {
+                        pf.errors.push(format!("Panel #{idx}: missing 'panel_id'"));
+                        continue;
+                    };
+
                     match state.context.iter().find(|c| c.id == id) {
-                        None => pf.errors.push(format!("Panel '{id}' not found")),
+                        None => pf.errors.push(format!("Panel #{idx}: '{id}' not found")),
                         Some(ctx) if ctx.context_type.as_str() != Kind::CONVERSATION_HISTORY => {
                             pf.errors.push(format!(
-                                "Panel '{id}' is not a conversation history panel — use Close_panel instead"
+                                "Panel #{idx}: '{id}' is not a conversation history panel — use Close_panel instead"
                             ));
                         }
                         _ => {}
                     }
-                }
 
-                // Logs: require at least one non-empty entry
-                let has_logs = tool.input.get("logs").and_then(|v| v.as_array()).is_some_and(|arr| {
-                    arr.iter().any(|e| e.get("content").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()))
-                });
-                if !has_logs {
-                    pf.errors.push(
-                        "Missing or empty 'logs' — provide at least one log entry to preserve context.".to_string(),
-                    );
-                }
-
-                // Memory tl_dr: validate length using the same estimator as the runtime
-                if let Some(memories) = tool.input.get("memories").and_then(|v| v.as_array()) {
-                    let max_tokens = cp_mod_memory::MEMORY_TLDR_MAX_TOKENS;
-                    for (i, mem) in memories.iter().enumerate() {
-                        if let Some(content) = mem.get("content").and_then(|v| v.as_str()) {
-                            let tokens = estimate_tokens(content);
-                            if tokens > max_tokens {
-                                pf.errors.push(format!(
-                                    "Memory #{} content too long: ~{tokens} tokens (max {max_tokens}). Shorten it.",
-                                    i.saturating_add(1),
-                                ));
-                            }
-                        }
+                    // Logs: require at least one non-empty string per panel
+                    let has_logs = panel_obj
+                        .get("logs")
+                        .and_then(|v| v.as_array())
+                        .is_some_and(|arr| arr.iter().any(|e| e.as_str().is_some_and(|s| !s.is_empty())));
+                    if !has_logs {
+                        pf.errors.push(format!(
+                            "Panel #{idx} ('{id}'): provide at least one log entry to preserve context."
+                        ));
                     }
                 }
 

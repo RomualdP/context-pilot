@@ -55,7 +55,14 @@ pub(crate) fn check_and_trigger_trap(state: &mut State) -> Option<String> {
             .queued_calls
             .iter()
             .filter(|q| q.tool_name == "Close_conversation_history")
-            .filter_map(|q| q.input.get("id").and_then(serde_json::Value::as_str))
+            .flat_map(|q| {
+                q.input
+                    .get("panels")
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str))
+            })
             .collect();
         panels.retain(|(id, _)| !queued_close_ids.iter().any(|qc| *qc == id));
     }

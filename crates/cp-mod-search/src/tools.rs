@@ -178,7 +178,6 @@ fn parse_file_hit(hit: &serde_json::Value) -> SearchResult {
         log_id: None,
         datetime: None,
         importance: None,
-        tags: None,
         ranking_score: hit.get("_rankingScore").and_then(serde_json::Value::as_f64),
     }
 }
@@ -198,10 +197,6 @@ fn parse_log_hit(hit: &serde_json::Value) -> SearchResult {
         log_id: hit.get("id").and_then(serde_json::Value::as_str).map(String::from),
         datetime: hit.get("datetime").and_then(serde_json::Value::as_str).map(String::from),
         importance: hit.get("importance").and_then(serde_json::Value::as_str).map(String::from),
-        tags: hit
-            .get("tags")
-            .and_then(serde_json::Value::as_array)
-            .map(|a| a.iter().filter_map(|t| t.as_str().map(String::from)).collect()),
         ranking_score: hit.get("_rankingScore").and_then(serde_json::Value::as_f64),
     }
 }

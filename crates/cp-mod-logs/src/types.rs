@@ -21,9 +21,6 @@ pub struct LogEntry {
     /// Importance level: `"low"`, `"medium"`, `"high"`, or `"critical"`.
     #[serde(default = "default_importance")]
     pub importance: String,
-    /// Freeform tags for categorization (e.g. `["decision", "architecture"]`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tags: Vec<String>,
 }
 
 /// Default importance level for deserialization of legacy logs.
@@ -46,14 +43,14 @@ impl LogEntry {
     pub fn new(id: String, content: String) -> Self {
         let timestamp_ms = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis().to_u64());
         let datetime = ms_to_iso(timestamp_ms);
-        Self { id, timestamp_ms, datetime, content, importance: "medium".to_string(), tags: vec![] }
+        Self { id, timestamp_ms, datetime, content, importance: "medium".to_string() }
     }
 
     /// Create a log entry with an explicit timestamp (ms since UNIX epoch).
     #[must_use]
     pub fn with_timestamp(id: String, content: String, timestamp_ms: u64) -> Self {
         let datetime = ms_to_iso(timestamp_ms);
-        Self { id, timestamp_ms, datetime, content, importance: "medium".to_string(), tags: vec![] }
+        Self { id, timestamp_ms, datetime, content, importance: "medium".to_string() }
     }
 }
 
