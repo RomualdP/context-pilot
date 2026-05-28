@@ -108,7 +108,7 @@ pub(super) fn prepare_stream_context(
     // messages the LLM already saw (e.g., user sent a message during a tool
     // call pause — the message is in context, LLM responds, but without this
     // the notification would still be "unprocessed" when the stream ends).
-    cp_mod_spine::types::SpineState::mark_user_message_notifications_processed(state);
+    cp_mod_spine::types::SpineState::mark_all_unprocessed_as_processed(state);
 
     // Compute freeze conditions early — needed to guard detachment below
     // and reused later for the unified freeze pass.

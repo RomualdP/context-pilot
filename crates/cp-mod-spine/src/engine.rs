@@ -125,6 +125,8 @@ pub fn check_spine(state: &mut State) -> SpineDecision {
     }
 
     // All guard rails passed — fire the continuation
+    // Mark all consumed notifications as processed so they don't re-trigger
+    SpineState::mark_all_unprocessed_as_processed(state);
     let count = &mut SpineState::get_mut(state).config.auto_continuation_count;
     *count = count.saturating_add(1);
     if SpineState::get(state).config.autonomous_start_ms.is_none() {

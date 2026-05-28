@@ -324,15 +324,15 @@ impl SpineState {
         }
     }
 
-    /// Mark all "transparent" notifications (`UserMessage`, `ReloadResume`) as processed.
-    pub fn mark_user_message_notifications_processed(state: &mut State) {
+    /// Mark ALL unprocessed notifications as processed.
+    /// Called when a continuation fires — the notifications have been consumed
+    /// (built into a synthetic message or relaunch) and should not trigger again.
+    pub fn mark_all_unprocessed_as_processed(state: &mut State) {
         let changed = {
             let ss = Self::get_mut(state);
             let mut changed = false;
             for n in &mut ss.notifications {
-                if n.is_unprocessed()
-                    && matches!(n.kind, NotificationType::UserMessage | NotificationType::ReloadResume)
-                {
+                if n.is_unprocessed() {
                     n.status = NotificationStatus::Processed;
                     changed = true;
                 }
