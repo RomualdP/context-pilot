@@ -51,6 +51,30 @@ impl Drop for ProfileGuard {
     }
 }
 
+/// Minimum duration (ms) before a tool execution is logged to the slow-tool file.
+const TOOL_THRESHOLD_MS: u128 = 50;
+/// Path to the on-disk slow-tool execution log.
+const TOOL_LOG_DIR: &str = ".context-pilot/logs";
+/// Filename within `TOOL_LOG_DIR`.
+const TOOL_LOG_FILE: &str = ".context-pilot/logs/tool-times.log";
+
+/// Log a tool execution that exceeded the slow-tool threshold (50 ms).
+///
+/// Appends a line to `.context-pilot/logs/tool-times.log` with the local datetime,
+/// elapsed milliseconds, and tool name. Creates the directory if needed.
+/// Silently no-ops on any I/O error.
+pub(crate) fn log_slow_tool(tool_name: &str, elapsed: std::time::Duration) {
+    let ms = elapsed.as_millis();
+    if ms < TOOL_THRESHOLD_MS {
+        return;
+    }
+    drop(std::fs::create_dir_all(TOOL_LOG_DIR));
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(TOOL_LOG_FILE) {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let _r = writeln!(file, "{ts}  {ms:>6}ms  {tool_name}");
+    }
+}
+
 /// Create a profiling guard that logs slow operations on drop.
 ///
 /// Records timing to the in-memory perf system, and writes to `.context-pilot/perf.log`

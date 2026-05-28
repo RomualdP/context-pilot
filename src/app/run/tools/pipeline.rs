@@ -102,6 +102,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
 
     // Create tool call messages and execute tools
     for tool in &tools {
+        let tool_start = std::time::Instant::now();
         save_tool_call_message(app, tool);
 
         let result = if tool.name == "Queue_execute" {
@@ -169,6 +170,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
             }
         };
         tool_results.push(result);
+        crate::infra::profiler::log_slow_tool(&tool.name, tool_start.elapsed());
     }
 
     // === QUEUE FLUSH REPLAY ===
