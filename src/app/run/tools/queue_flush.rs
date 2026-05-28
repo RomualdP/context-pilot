@@ -2,8 +2,10 @@
 //!
 //! Extracted from `cleanup.rs` to keep that module under the 500-line limit.
 
+use crate::app::App;
+use crate::app::panels::now_ms;
 use crate::infra::tools::execute_tool;
-use crate::state::State;
+use crate::state::{Message, MsgKind, MsgStatus, State, ToolUseRecord};
 
 use cp_mod_queue::types::QueueState;
 
@@ -15,6 +17,8 @@ pub(crate) struct FlushedTool {
     pub tool: cp_base::tools::ToolUse,
     /// The execution result for this tool call.
     pub result: crate::infra::tools::ToolResult,
+    /// The queue position this tool occupied (for compact display).
+    pub queue_index: usize,
 }
 
 /// Execute all queued tool calls in order.
@@ -56,7 +60,7 @@ pub(crate) fn execute_queue_flush(
             result.content.clone()
         };
         let _r = writeln!(summary, "{}. {} → {} ({})", call.index, call.tool_name, status, short);
-        flushed.push(FlushedTool { tool: queued_tool, result });
+        flushed.push(FlushedTool { tool: queued_tool, result, queue_index: call.index });
     }
 
     // The summary wrapper preserves tempo — only the individual flushed
@@ -64,4 +68,43 @@ pub(crate) fn execute_queue_flush(
     let mut wrapper = crate::infra::tools::ToolResult::new(tool.id.clone(), summary, false);
     wrapper.preserves_tempo = true;
     (wrapper, flushed)
+}
+
+/// Create and persist a compact `tool_call` message for a queue-flushed `ToolUse`.
+///
+/// Instead of replaying the full parameters (which duplicate the already-visible
+/// "Queued as #N" message), this saves a lightweight `Tool_execution` stub with
+/// just the tool name, queue position, and parameter byte-size.
+pub(crate) fn save_flushed_tool_call_message(app: &mut App, tool: &cp_base::tools::ToolUse, queue_index: usize) {
+    let tool_id = format!("T{}", app.state.next_tool_id);
+    let tool_global_uid = format!("UID_{}_T", app.state.global_next_uid);
+    app.state.next_tool_id = app.state.next_tool_id.saturating_add(1);
+    app.state.global_next_uid = app.state.global_next_uid.saturating_add(1);
+
+    let params_size = serde_json::to_string(&tool.input).map_or(0, |s| s.len());
+    let compact_input = serde_json::json!({
+        "tool_name": tool.name,
+        "tool_position": queue_index,
+        "tool_parameters_size": params_size,
+    });
+
+    let tool_msg = Message {
+        id: tool_id,
+        uid: Some(tool_global_uid),
+        role: "assistant".to_string(),
+        msg_type: MsgKind::ToolCall,
+        content: String::new(),
+        content_token_count: 0,
+        status: MsgStatus::Full,
+        tool_uses: vec![ToolUseRecord {
+            id: tool.id.clone(),
+            name: "Tool_execution".to_string(),
+            input: compact_input,
+        }],
+        tool_results: Vec::new(),
+        input_tokens: 0,
+        timestamp_ms: now_ms(),
+    };
+    app.save_message_async(&tool_msg);
+    app.state.messages.push(tool_msg);
 }

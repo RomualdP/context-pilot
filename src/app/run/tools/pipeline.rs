@@ -181,7 +181,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     // not just the Queue_execute wrapper.
     if !flushed_tools.is_empty() {
         for ft in &flushed_tools {
-            save_tool_call_message(app, &ft.tool);
+            super::queue_flush::save_flushed_tool_call_message(app, &ft.tool, ft.queue_index);
         }
         for ft in flushed_tools {
             tools.push(ft.tool);
