@@ -36,6 +36,13 @@ pub fn check_spine(state: &mut State) -> SpineDecision {
         return SpineDecision::Idle;
     }
 
+    // User explicitly stopped streaming (Esc). This is an absolute hard stop —
+    // nothing bypasses it. Notifications queue up until the user re-engages
+    // by sending a message (which clears user_stopped via on_user_message).
+    if SpineState::get(state).config.user_stopped {
+        return SpineDecision::Idle;
+    }
+
     // Backoff after consecutive failed continuations (errors with all retries exhausted).
     // Delay: 2^errors seconds, capped at 60s. Prevents runaway loops on persistent API failures.
     {
@@ -54,37 +61,6 @@ pub fn check_spine(state: &mut State) -> SpineDecision {
     // Nothing to do if no unprocessed notifications
     if !SpineState::has_unprocessed_notifications(state) {
         return SpineDecision::Idle;
-    }
-
-    // If any unprocessed notification comes from an external human channel
-    // (chat/bridge), treat it like a fresh user message: reset all counters
-    // so guard rails don't block what is effectively human-initiated input.
-    {
-        let has_external =
-            SpineState::get(state).notifications.iter().any(|n| n.is_unprocessed() && n.source == "chat");
-        if has_external {
-            let cfg = &mut SpineState::get_mut(state).config;
-            cfg.auto_continuation_count = 0;
-            cfg.autonomous_start_ms = None;
-            cfg.consecutive_continuation_errors = 0;
-            cfg.last_continuation_error_ms = None;
-        }
-    }
-
-    // Check if user explicitly stopped (Esc) — only block todo-driven continuations,
-    // not new triggers like chat messages or coucou timers. A fresh notification
-    // (Custom/UserMessage) always gets through — the user intended to wake us.
-    if SpineState::get(state).config.user_stopped {
-        let all_todo = SpineState::get(state)
-            .notifications
-            .iter()
-            .filter(|n| n.is_unprocessed())
-            .all(|n| n.source == "todo_continuation");
-        if all_todo {
-            return SpineDecision::Idle;
-        }
-        // Non-todo notification present — clear user_stopped and proceed
-        SpineState::get_mut(state).config.user_stopped = false;
     }
 
     // === Guardrail 2: No two synthetic messages in a row ===
