@@ -141,7 +141,8 @@ impl Default for PerfMetrics {
     }
 }
 
-/// Read CPU ticks and memory from /proc/self/stat and /proc/self/statm.
+/// Read CPU ticks and memory from /proc/self/stat and /proc/self/statm (Linux).
+#[cfg(target_os = "linux")]
 fn read_proc_stat() -> Option<(u64, u64)> {
     // Read CPU ticks from /proc/self/stat
     // Format: pid (comm) state ... utime stime ...
@@ -160,6 +161,54 @@ fn read_proc_stat() -> Option<(u64, u64)> {
     let mem_bytes = rss_pages.saturating_mul(page_size);
 
     Some((cpu_ticks, mem_bytes))
+}
+
+/// Read CPU ticks (centiseconds) and memory (bytes) via `ps` (macOS).
+#[cfg(target_os = "macos")]
+fn read_proc_stat() -> Option<(u64, u64)> {
+    let pid = std::process::id();
+    let output =
+        std::process::Command::new("ps").args(["-o", "rss=,cputime=", "-p", &pid.to_string()]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let text = text.trim();
+    let mut parts = text.split_whitespace();
+    let rss_kb: u64 = parts.next()?.parse().ok()?;
+    let mem_bytes = rss_kb.saturating_mul(1024);
+    let cpu_centisecs = parse_ps_cputime(parts.next()?)?;
+    Some((cpu_centisecs, mem_bytes))
+}
+
+/// Parse `ps` cputime format (`H:MM:SS.cc` / `MM:SS.cc`) into centiseconds.
+#[cfg(target_os = "macos")]
+fn parse_ps_cputime(raw: &str) -> Option<u64> {
+    let (main_part, centis_str) = raw.rsplit_once('.')?;
+    let centis: u64 = centis_str.parse().ok()?;
+    let segments: Vec<&str> = main_part.split(':').collect();
+    let total_secs: u64 = match segments.len() {
+        1 => segments.first()?.parse().ok()?,
+        2 => {
+            let mins: u64 = segments.first()?.parse().ok()?;
+            let secs: u64 = segments.get(1)?.parse().ok()?;
+            mins.saturating_mul(60).saturating_add(secs)
+        }
+        3 => {
+            let hours: u64 = segments.first()?.parse().ok()?;
+            let mins: u64 = segments.get(1)?.parse().ok()?;
+            let secs: u64 = segments.get(2)?.parse().ok()?;
+            hours.saturating_mul(3600).saturating_add(mins.saturating_mul(60)).saturating_add(secs)
+        }
+        _ => return None,
+    };
+    Some(total_secs.saturating_mul(100).saturating_add(centis))
+}
+
+/// Fallback for unsupported platforms — no CPU/memory data available.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn read_proc_stat() -> Option<(u64, u64)> {
+    None
 }
 
 /// Global performance metrics instance.
