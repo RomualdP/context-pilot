@@ -399,45 +399,40 @@ struct ParamCtx<'prefix> {
     wrap_width: usize,
 }
 
-/// Render a parameter key-value pair as one or more blocks.
+/// Render a parameter key-value pair as one or more blocks (wraps instead of truncating).
 fn render_param_blocks(blocks: &mut Vec<Block>, ctx: &ParamCtx<'_>, key: &str, val: &str) {
     let key_span_width = key.len().saturating_add(2); // "key: "
-    let val_width = ctx.wrap_width.saturating_sub(key_span_width);
-    let val_lines: Vec<&str> = val.lines().collect();
+    let val_width = ctx.wrap_width.saturating_sub(key_span_width).max(10);
+    let continuation = format!("{}{}", ctx.prefix, " ".repeat(key_span_width));
+    let mut is_first = true;
 
-    if val_lines.len() <= 1 {
-        let display_val = truncate_single_line(val, val_width);
-        blocks.push(Block::line(vec![
-            Span::new(ctx.prefix.to_owned()),
-            Span::styled(format!("{key}: "), Semantic::Accent),
-            Span::styled(display_val, Semantic::Code),
-        ]));
-    } else {
-        let continuation = format!("{}{}", ctx.prefix, " ".repeat(key_span_width));
-        for (idx, line) in val_lines.iter().enumerate() {
-            let display_line = truncate_single_line(line, val_width);
-            if idx == 0 {
+    for source_line in val.lines() {
+        let wrapped = wrap_text(source_line, val_width);
+        // wrap_text returns empty vec for empty lines
+        let wrapped = if wrapped.is_empty() { vec![String::new()] } else { wrapped };
+        for wrapped_line in &wrapped {
+            if is_first {
                 blocks.push(Block::line(vec![
                     Span::new(ctx.prefix.to_owned()),
                     Span::styled(format!("{key}: "), Semantic::Accent),
-                    Span::styled(display_line, Semantic::Code),
+                    Span::styled(wrapped_line.clone(), Semantic::Code),
                 ]));
+                is_first = false;
             } else {
                 blocks.push(Block::line(vec![
                     Span::new(continuation.clone()),
-                    Span::styled(display_line, Semantic::Code),
+                    Span::styled(wrapped_line.clone(), Semantic::Code),
                 ]));
             }
         }
     }
-}
 
-/// Truncate a single line, adding ellipsis if it exceeds the max width.
-fn truncate_single_line(val: &str, max_width: usize) -> String {
-    if val.len() > max_width {
-        format!("{}…", val.get(..val.floor_char_boundary(max_width.saturating_sub(1))).unwrap_or(""))
-    } else {
-        val.to_string()
+    // Handle empty val (no lines at all)
+    if is_first {
+        blocks.push(Block::line(vec![
+            Span::new(ctx.prefix.to_owned()),
+            Span::styled(format!("{key}: "), Semantic::Accent),
+        ]));
     }
 }
 
