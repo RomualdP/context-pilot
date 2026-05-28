@@ -211,13 +211,9 @@ impl Module for SearchModule {
         let Some(ss) = state.get_ext::<SearchState>() else {
             return serde_json::Value::Null;
         };
-        // Snapshot OCR metrics into persist so they survive TUI reload
+        // Snapshot metrics into persist so they survive TUI reload
         let mut persist = ss.persist.clone();
         if let Ok(m) = ss.metrics.lock() {
-            persist.ocr_attempted = m.ocr_attempted;
-            persist.ocr_succeeded = m.ocr_succeeded;
-            persist.ocr_failed = m.ocr_failed;
-            persist.ocr_cached = m.ocr_cached;
             persist.recompute_counts.clone_from(&m.recompute_counts);
             persist.last_sent_ms.clone_from(&m.last_sent_ms);
         }
@@ -266,20 +262,6 @@ impl Module for SearchModule {
                     &persist.project_hash,
                     &metrics,
                 );
-            }
-
-            // Restore OCR metrics from persisted data (not stored in Meilisearch).
-            // Only overwrite if persist has real values — otherwise keep the
-            // inferred values from populate_initial_metrics (which checks the
-            // disk cache and Meilisearch facets as a fallback).
-            if let Ok(mut m) = metrics.lock()
-                && persist.ocr_attempted > 0
-            {
-                m.ocr_attempted = persist.ocr_attempted;
-                m.ocr_succeeded = persist.ocr_succeeded;
-                m.ocr_failed = persist.ocr_failed;
-                m.ocr_cached = persist.ocr_cached;
-                m.ocr_enabled = true;
             }
 
             // Restore recompute tracking from persisted data

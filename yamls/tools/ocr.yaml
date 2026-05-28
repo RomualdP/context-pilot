@@ -13,21 +13,12 @@ tools:
 
       Requires DATALAB_API_KEY in the environment.
     parameters:
-      path:
-        type: string
-        required: true
-        description: >
-          Path to the document file to convert. Supports: PDF, PNG, JPG, JPEG,
-          TIFF, WEBP, BMP, HEIC, GIF.
-      mode:
-        type: string
-        required: true
-        description: >
-          Output format. 'markdown' for clean markdown text extraction.
-          'text_boxes' for JSON with bounding boxes and block types.
-      output:
-        type: string
-        required: true
-        description: >
-          Path where the conversion result will be written. For 'markdown' mode,
-          a .md file is recommended. For 'text_boxes' mode, a .json file.
+      path: >
+        Path to the document file to convert. Supports: PDF, PNG, JPG, JPEG,
+        TIFF, WEBP, BMP, HEIC, GIF.
+      mode: >
+        Output format. 'markdown' for clean markdown text extraction.
+        'text_boxes' for JSON with bounding boxes and block types.
+      output: >
+        Path where the conversion result will be written. For 'markdown' mode,
+        a .md file is recommended. For 'text_boxes' mode, a .json file.

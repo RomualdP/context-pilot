@@ -60,14 +60,6 @@ pub(crate) struct SearchPersistData {
     pub project_hash: String,
     /// Whether the initial full-project indexing has completed.
     pub index_ready: bool,
-    /// OCR: files where conversion was attempted (persisted across reloads).
-    pub ocr_attempted: u64,
-    /// OCR: files successfully converted to text (persisted across reloads).
-    pub ocr_succeeded: u64,
-    /// OCR: files that failed conversion (persisted across reloads).
-    pub ocr_failed: u64,
-    /// OCR: files served from the disk cache (persisted across reloads).
-    pub ocr_cached: u64,
     /// Per-file recompute counter: how many times each file has been re-indexed.
     /// Persisted across TUI reloads to accumulate counts over time.
     #[serde(default)]
@@ -242,21 +234,8 @@ pub(crate) struct SearchMetrics {
     pub tree_sitter_chunks: u64,
     /// Number of fixed-size fallback chunks produced.
     pub fallback_chunks: u64,
-    /// OCR: files where conversion was attempted.
-    pub ocr_attempted: u64,
-    /// OCR: files successfully converted to text.
-    pub ocr_succeeded: u64,
-    /// OCR: files that failed conversion.
-    pub ocr_failed: u64,
-    /// OCR: files served from the disk cache.
-    pub ocr_cached: u64,
     /// Whether the initial full-project scan has completed.
     pub scan_complete: bool,
-    /// Whether the Datalab OCR client was successfully created.
-    ///
-    /// Set by the indexer thread on startup.  Read by `overlay_info()`
-    /// to decide whether to show the OCR section.
-    pub ocr_enabled: bool,
     /// Cached live stats from the Meilisearch `/stats` endpoint.
     ///
     /// Refreshed at most every 2 seconds by `overlay_info()`.
@@ -307,16 +286,6 @@ pub struct SearchOverlayInfo {
     pub tree_sitter_chunks: u64,
     /// Number of fixed-size fallback chunks produced.
     pub fallback_chunks: u64,
-    /// OCR: files where conversion was attempted.
-    pub ocr_attempted: u64,
-    /// OCR: files successfully converted to text.
-    pub ocr_succeeded: u64,
-    /// OCR: files that failed conversion.
-    pub ocr_failed: u64,
-    /// OCR: files served from the disk cache.
-    pub ocr_cached: u64,
-    /// Whether the OCR API key is configured.
-    pub ocr_available: bool,
     /// Total database size on disk (bytes). From live stats.
     pub database_size_bytes: u64,
     /// Used portion of the database (bytes). From live stats.

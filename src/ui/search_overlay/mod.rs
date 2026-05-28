@@ -1,8 +1,7 @@
 //! Ctrl+I Meilisearch indexing status overlay.
 //!
 //! Renders a floating, centered info box showing the Meilisearch server
-//! status, indexing metrics, extension breakdown, splitter stats,
-//! and OCR pipeline status.
+//! status, indexing metrics, and extension breakdown.
 
 /// Plain-text export of the indexing overlay for clipboard copy.
 pub(crate) mod text;
@@ -22,7 +21,7 @@ const OVERLAY_WIDTH: u16 = 120;
 /// Render the Meilisearch indexing status overlay.
 ///
 /// Displays server status, index metrics, extension breakdown, splitter
-/// stats, and OCR pipeline info in a centered, bordered box.
+/// stats, and embedding info in a centered, bordered box.
 pub(crate) fn render_index_overlay(frame: &mut Frame<'_>, state: &State, area: Rect) {
     let (left_lines, right_lines) = build_overlay_columns(state);
 
@@ -76,7 +75,7 @@ pub(crate) fn render_index_overlay(frame: &mut Frame<'_>, state: &State, area: R
 /// Build overlay content as two columns: (left, right).
 ///
 /// Left column: server, database, core stats, extensions.
-/// Right column: splitter, embeddings, OCR, recent tasks, recomputed, recently sent.
+/// Right column: splitter, embeddings, recent tasks, recomputed, recently sent.
 fn build_overlay_columns(state: &State) -> (Vec<Line<'static>>, Vec<Line<'static>>) {
     let Some(info) = cp_mod_search::overlay_info(state) else {
         let fallback = vec![Line::from(""), Line::from("  Search module not initialized.")];
@@ -184,7 +183,7 @@ fn build_left_column(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<Line
     lines
 }
 
-/// Build the right column: splitter, embeddings, OCR, tasks, recomputed, recently sent.
+/// Build the right column: splitter, embeddings, tasks, recomputed, recently sent.
 fn build_right_column(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<Line<'static>> {
     let mut lines = Vec::with_capacity(32);
 
@@ -244,31 +243,6 @@ fn build_right_column(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<Lin
 
         if info.logs_doc_count > 0 {
             lines.push(Line::from(format!("  Logs    {} documents", info.logs_doc_count)));
-        }
-    }
-
-    // ── OCR Pipeline ──
-    if info.ocr_available || info.ocr_attempted > 0 {
-        lines.push(Line::from(""));
-        lines.push(section_header("OCR Pipeline"));
-
-        if info.ocr_attempted > 0 {
-            lines.push(Line::from(format!(
-                "  Attempted  {}   Succeeded  {}   Cached  {}",
-                info.ocr_attempted, info.ocr_succeeded, info.ocr_cached,
-            )));
-            if info.ocr_failed > 0 {
-                lines.push(Line::from(vec![
-                    Span::raw("  Failed     "),
-                    Span::styled(format!("{}", info.ocr_failed), Style::default().fg(theme::error())),
-                ]));
-            }
-        } else {
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("Enabled", Style::default().fg(theme::success())),
-                Span::styled(" — no OCR files found yet", Style::default().fg(theme::text_muted())),
-            ]));
         }
     }
 

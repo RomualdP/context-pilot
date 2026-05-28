@@ -122,13 +122,6 @@ pub(crate) fn populate_initial_metrics(
         }
     }
 
-    // Infer OCR metrics from the disk cache + Meilisearch facets.
-    // This recovers baseline OCR stats even if the persisted data was lost
-    // (e.g., first reload after the persistence fix was deployed).
-    // Must happen BEFORE file_ext_counts, which may move extension_counts.
-    let ocr_cache_count = count_ocr_cache_files();
-    let ocr_indexed_count = count_ocr_indexed_files(&extension_counts);
-
     // Derive file count from extension counts (more accurate than chunk/3 estimate)
     // Each file produces multiple chunks, but the extension facet counts chunks not files.
     // We keep the estimate from stats for files, but use facet data for extension ratios.
@@ -156,46 +149,7 @@ pub(crate) fn populate_initial_metrics(
         m.extension_counts = file_ext_counts;
         m.tree_sitter_chunks = tree_sitter_chunks;
         m.fallback_chunks = fallback_chunks;
-
-        // Bootstrap OCR metrics from cache/index if persist data is zero.
-        // Once real persist data exists (after a save with the fix), these
-        // inferred values will be overwritten by the caller.
-        if m.ocr_attempted == 0 && (ocr_cache_count > 0 || ocr_indexed_count > 0) {
-            let inferred = ocr_cache_count.max(ocr_indexed_count);
-            m.ocr_attempted = inferred;
-            m.ocr_succeeded = inferred;
-            m.ocr_cached = ocr_cache_count;
-            m.ocr_enabled = true;
-        }
     }
-}
-
-/// Count `.md` files in the global OCR cache directory.
-///
-/// Each file represents a previously successful OCR conversion.
-/// Returns 0 if the cache directory doesn't exist or can't be read.
-fn count_ocr_cache_files() -> u64 {
-    let Some(dir) = std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join(".context-pilot/ocr-cache"))
-    else {
-        return 0;
-    };
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
-    };
-    let count = entries
-        .filter_map(Result::ok)
-        .filter(|e| e.path().extension().and_then(std::ffi::OsStr::to_str) == Some("md"))
-        .count();
-    u64::try_from(count).unwrap_or(0)
-}
-
-/// Count how many indexed chunks have OCR-eligible extensions.
-///
-/// Checks the facet-derived extension counts for extensions that
-/// require OCR processing (pdf, png, jpg, etc.).  Returns chunk
-/// count (not file count) — used as a lower bound for OCR activity.
-fn count_ocr_indexed_files(extension_counts: &std::collections::HashMap<String, u64>) -> u64 {
-    extension_counts.iter().filter(|(ext, _)| crate::meili::ocr::is_ocr_extension(ext)).map(|(_, count)| *count).sum()
 }
 
 // -- Embedder configuration --------------------------------------------------

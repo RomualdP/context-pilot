@@ -10,8 +10,6 @@ pub(crate) mod bootstrap;
 pub(crate) mod client;
 /// Binary download and platform detection.
 pub(crate) mod download;
-/// Datalab OCR API client for converting PDFs/images to text.
-pub(crate) mod ocr;
 /// Ctrl+I overlay data provider (live stats from Meilisearch).
 pub(crate) mod overlay;
 /// Server lifecycle: start, stop, health check, reconnect.

@@ -107,24 +107,6 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
         }
     }
 
-    // OCR
-    if info.ocr_available || info.ocr_attempted > 0 {
-        out.push_str("\n── OCR Pipeline ──\n");
-        if info.ocr_attempted > 0 {
-            writeln!(
-                out,
-                "Attempted  {}   Succeeded  {}   Cached  {}",
-                info.ocr_attempted, info.ocr_succeeded, info.ocr_cached,
-            )
-            .unwrap_or(());
-            if info.ocr_failed > 0 {
-                writeln!(out, "Failed     {}", info.ocr_failed).unwrap_or(());
-            }
-        } else {
-            out.push_str("Enabled — no OCR files found yet\n");
-        }
-    }
-
     // Recent Tasks
     if !info.recent_tasks.is_empty() {
         out.push_str("\n── Recent Tasks ──\n");
