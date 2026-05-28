@@ -237,8 +237,10 @@ pub(crate) fn execute_describe_files(tool: &ToolUse, state: &mut State) -> ToolR
         let should_close = desc_obj.get("close_panel").and_then(serde_json::Value::as_bool).unwrap_or(true);
         if should_close && let Some(ref cwd) = cwd {
             let abs_path = cwd.join(&normalized).to_string_lossy().to_string();
-            if let Some(pos) =
-                state.context.iter().position(|c| c.context_type.as_str() == Kind::FILE && c.name == abs_path)
+            if let Some(pos) = state
+                .context
+                .iter()
+                .position(|c| c.context_type.as_str() == Kind::FILE && c.get_meta_str("file_path") == Some(&abs_path))
             {
                 let panel_id = state.context.get(pos).map(|c| c.id.clone()).unwrap_or_default();
                 let _removed = state.context.remove(pos);
