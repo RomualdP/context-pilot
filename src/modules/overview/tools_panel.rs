@@ -15,16 +15,10 @@ impl Panel for ToolsPanel {
     }
 
     fn blocks(&self, state: &State) -> Vec<cp_render::Block> {
-        let mut blocks = Vec::new();
-
-        blocks.extend(super::tools_blocks::tools_blocks(state));
-        blocks.push(cp_render::Block::Separator);
-        blocks.extend(super::tools_blocks::seeds_blocks(state));
-
-        blocks
+        super::tools_blocks::tools_blocks(state)
     }
     fn title(&self, _state: &State) -> String {
-        "Configuration".to_string()
+        "Tools".to_string()
     }
 
     fn max_freezes(&self) -> u8 {
