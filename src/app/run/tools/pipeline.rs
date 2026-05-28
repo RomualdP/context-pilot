@@ -9,7 +9,6 @@ use crate::state::persistence::build_message_op;
 use crate::state::{Message, MsgKind, MsgStatus, StreamPhase, ToolResultRecord, ToolUseRecord};
 
 use crate::app::run::streaming::{has_dirty_file_panels, trigger_dirty_panel_refresh};
-use cp_base::state::context::Kind;
 use cp_mod_callback::firing as callback_firing;
 use cp_mod_callback::trigger as callback_trigger;
 use cp_mod_console::tools::CONSOLE_WAIT_BLOCKING_SENTINEL;
@@ -130,10 +129,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                     }
                 }
 
-                if QueueState::get(&app.state).active
-                    && !QueueState::is_queue_tool(&tool.name)
-                    && tool.name != "Think"
-                    && !(QueueState::get(&app.state).trap_active && tool.name == "Close_conversation_history")
+                if QueueState::get(&app.state).active && !QueueState::is_queue_tool(&tool.name) && tool.name != "Think"
                 {
                     // Queue intercept: enqueue instead of executing
                     let qs = QueueState::get_mut(&mut app.state);
@@ -158,7 +154,28 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                     if pf.has_warnings() {
                         let _r = write!(msg, "\n{}", pf.format_errors());
                     }
-                    crate::infra::tools::ToolResult::new(tool.id.clone(), msg, false)
+
+                    // Auto-flush: when a queued Close_conversation_history would
+                    // defuse the trap, deactivate it and flush the entire queue
+                    // (which was the original Queue_execute intent).
+                    if tool.name == "Close_conversation_history"
+                        && crate::modules::conversation_history::trap::would_defuse_trap(&app.state)
+                    {
+                        crate::modules::conversation_history::trap::force_deactivate_trap(&mut app.state);
+                        let (flush_result, flushed) = super::queue_flush::execute_queue_flush(tool, &mut app.state);
+                        let n = flushed.len();
+                        flushed_tools = flushed;
+                        crate::infra::tools::ToolResult::new(
+                            tool.id.clone(),
+                            format!(
+                                "{msg}\nTrap defused — auto-executing {n} queued action(s).\n{}",
+                                flush_result.content
+                            ),
+                            false,
+                        )
+                    } else {
+                        crate::infra::tools::ToolResult::new(tool.id.clone(), msg, false)
+                    }
                 } else {
                     // Execute normally
                     let mut result = execute_tool(tool, &mut app.state);
@@ -196,44 +213,9 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     }
 
     // === REMAINING HISTORY PANELS ===
-    // After Close_conversation_history, augment result with virtual remaining panels
-    // (subtract any panels queued for closing that haven't executed yet).
+    // After Close_conversation_history, augment result with remaining panel count.
     if tools.iter().any(|t| t.name == "Close_conversation_history") {
-        let mut remaining: Vec<String> = app
-            .state
-            .context
-            .iter()
-            .filter(|c| c.context_type.as_str() == Kind::CONVERSATION_HISTORY)
-            .map(|c| c.id.clone())
-            .collect();
-
-        let qs = QueueState::get(&app.state);
-        let queued_closes: Vec<&str> = qs
-            .queued_calls
-            .iter()
-            .filter(|q| q.tool_name == "Close_conversation_history")
-            .flat_map(|q| {
-                q.input
-                    .get("panels")
-                    .and_then(|v| v.as_array())
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str))
-            })
-            .collect();
-        remaining.retain(|id| !queued_closes.iter().any(|qc| *qc == id));
-
-        let suffix = if remaining.is_empty() {
-            "\nNo conversation history panels remaining.".to_string()
-        } else {
-            format!("\nRemaining conversation history panels: {}", remaining.join(", "))
-        };
-
-        for (tool, tr) in tools.iter().zip(tool_results.iter_mut()) {
-            if tool.name == "Close_conversation_history" && !tr.is_error {
-                tr.content.push_str(&suffix);
-            }
-        }
+        super::queue_flush::augment_remaining_history_panels(&app.state, &tools, &mut tool_results);
     }
 
     // Check if any tool triggered a question form (blocking)

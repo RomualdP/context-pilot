@@ -39,33 +39,19 @@ pub(crate) fn check_and_trigger_trap(state: &mut State) -> Option<String> {
         return Some(format_blocked_message(state));
     }
 
-    // Collect history panels sorted oldest → newest
+    // Subtract panels targeted by queued Close_conversation_history calls —
+    // the queue flush is about to close those, so they shouldn't count.
+    if project_remaining_panels(state) < TRAP_THRESHOLD {
+        return None;
+    }
+
+    // Collect history panels sorted oldest → newest (for optional-keep selection)
     let mut panels: Vec<(String, u64)> = state
         .context
         .iter()
         .filter(|c| c.context_type.as_str() == Kind::CONVERSATION_HISTORY)
         .map(|c| (c.id.clone(), c.last_refresh_ms))
         .collect();
-
-    // Subtract panels that are already targeted by queued Close_conversation_history
-    // calls — the queue flush is about to close those, so they shouldn't count.
-    {
-        let qs = QueueState::get(state);
-        let queued_close_ids: Vec<&str> = qs
-            .queued_calls
-            .iter()
-            .filter(|q| q.tool_name == "Close_conversation_history")
-            .flat_map(|q| {
-                q.input
-                    .get("panels")
-                    .and_then(|v| v.as_array())
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str))
-            })
-            .collect();
-        panels.retain(|(id, _)| !queued_close_ids.iter().any(|qc| *qc == id));
-    }
 
     if panels.len() < TRAP_THRESHOLD {
         return None;
@@ -137,7 +123,57 @@ pub(crate) fn maybe_deactivate_trap(state: &mut State) {
     }
 }
 
+/// Check whether all queued `Close_conversation_history` calls would bring
+/// the remaining history panel count below [`TRAP_THRESHOLD`].
+///
+/// Called from `pipeline.rs` after queuing a `Close_conversation_history`
+/// during an active trap to decide whether to auto-flush the queue.
+pub(crate) fn would_defuse_trap(state: &State) -> bool {
+    if !QueueState::get(state).trap_active {
+        return false;
+    }
+    project_remaining_panels(state) < TRAP_THRESHOLD
+}
+
+/// Unconditionally deactivate the trap.  Does **not** clear queued
+/// `Close_conversation_history` calls — they will be executed by the
+/// upcoming queue flush.
+pub(crate) fn force_deactivate_trap(state: &mut State) {
+    let qs = QueueState::get_mut(state);
+    qs.trap_active = false;
+    qs.trap_panel_ids.clear();
+    qs.trap_optional_ids.clear();
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/// Project how many conversation history panels would remain after all
+/// queued `Close_conversation_history` calls execute.
+fn project_remaining_panels(state: &State) -> usize {
+    let current_ids: Vec<String> = state
+        .context
+        .iter()
+        .filter(|c| c.context_type.as_str() == Kind::CONVERSATION_HISTORY)
+        .map(|c| c.id.clone())
+        .collect();
+
+    let qs = QueueState::get(state);
+    let queued_close_ids: Vec<&str> = qs
+        .queued_calls
+        .iter()
+        .filter(|q| q.tool_name == "Close_conversation_history")
+        .flat_map(|q| {
+            q.input
+                .get("panels")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str))
+        })
+        .collect();
+
+    current_ids.iter().filter(|id| !queued_close_ids.contains(&id.as_str())).count()
+}
 
 /// Build the "blocked" message listing panels still open.
 fn format_blocked_message(state: &State) -> String {

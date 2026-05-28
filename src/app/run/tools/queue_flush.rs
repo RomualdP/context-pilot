@@ -7,6 +7,7 @@ use crate::app::panels::now_ms;
 use crate::infra::tools::execute_tool;
 use crate::state::{Message, MsgKind, MsgStatus, State, ToolUseRecord};
 
+use cp_base::state::context::Kind;
 use cp_mod_queue::types::QueueState;
 
 /// Flushed tool execution pair: the original `ToolUse` and its result.
@@ -97,4 +98,49 @@ pub(crate) fn save_flushed_tool_call_message(app: &mut App, tool: &cp_base::tool
     };
     app.save_message_async(&tool_msg);
     app.state.messages.push(tool_msg);
+}
+
+/// Append "remaining history panels" info to `Close_conversation_history` results.
+///
+/// Subtracts panels targeted by queued (but not yet flushed) closes so the
+/// AI sees an accurate projection of what will remain after the queue flushes.
+pub(crate) fn augment_remaining_history_panels(
+    state: &State,
+    tools: &[cp_base::tools::ToolUse],
+    tool_results: &mut [crate::infra::tools::ToolResult],
+) {
+    let mut remaining: Vec<String> = state
+        .context
+        .iter()
+        .filter(|c| c.context_type.as_str() == Kind::CONVERSATION_HISTORY)
+        .map(|c| c.id.clone())
+        .collect();
+
+    let qs = QueueState::get(state);
+    let queued_closes: Vec<&str> = qs
+        .queued_calls
+        .iter()
+        .filter(|q| q.tool_name == "Close_conversation_history")
+        .flat_map(|q| {
+            q.input
+                .get("panels")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p.get("panel_id").and_then(serde_json::Value::as_str))
+        })
+        .collect();
+    remaining.retain(|id| !queued_closes.contains(&id.as_str()));
+
+    let suffix = if remaining.is_empty() {
+        "\nNo conversation history panels remaining.".to_string()
+    } else {
+        format!("\nRemaining conversation history panels: {}", remaining.join(", "))
+    };
+
+    for (tool, tr) in tools.iter().zip(tool_results.iter_mut()) {
+        if tool.name == "Close_conversation_history" && !tr.is_error {
+            tr.content.push_str(&suffix);
+        }
+    }
 }
