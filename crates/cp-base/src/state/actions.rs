@@ -27,6 +27,24 @@ pub enum Action {
     CursorHome,
     /// Move cursor to end of line (End).
     CursorEnd,
+    /// Move cursor one character left (Left arrow).
+    CursorLeft,
+    /// Move cursor one character right (Right arrow).
+    CursorRight,
+    /// Select one character left (Shift+Left).
+    CursorLeftSelect,
+    /// Select one character right (Shift+Right).
+    CursorRightSelect,
+    /// Extend selection one word left (Shift+Ctrl/Alt+Left).
+    CursorWordLeftSelect,
+    /// Extend selection one word right (Shift+Ctrl/Alt+Right).
+    CursorWordRightSelect,
+    /// Extend selection to start of line (Shift+Home).
+    CursorHomeSelect,
+    /// Extend selection to end of line (Shift+End).
+    CursorEndSelect,
+    /// Select all text in input (Ctrl+A).
+    SelectAll,
 
     // === Conversation lifecycle ===
     /// Discard all messages and start fresh.

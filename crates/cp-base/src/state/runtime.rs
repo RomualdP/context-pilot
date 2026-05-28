@@ -21,6 +21,8 @@ pub struct State {
     pub input: String,
     /// Cursor position in input (byte index)
     pub input_cursor: usize,
+    /// Selection anchor (byte index). When set, text between anchor and cursor is selected.
+    pub input_selection_anchor: Option<usize>,
     /// Paste buffers: stored content for inline paste placeholders
     pub paste_buffers: Vec<String>,
     /// Labels for paste buffers: None = paste, Some(name) = command
@@ -183,6 +185,7 @@ impl Default for State {
             messages: vec![],
             input: String::new(),
             input_cursor: 0,
+            input_selection_anchor: None,
             paste_buffers: vec![],
             paste_buffer_labels: vec![],
             selected_context: 0,

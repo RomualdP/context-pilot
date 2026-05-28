@@ -84,6 +84,8 @@ pub struct Span {
     pub italic: bool,
     /// Dim the output (reduce intensity).
     pub dimmed: bool,
+    /// Reverse video (swap foreground/background) — used for text selection.
+    pub reversed: bool,
     /// Optional raw RGB colour override (syntax highlighting).
     /// When set, the adapter uses this instead of mapping `semantic`.
     pub color: Option<(u8, u8, u8)>,
@@ -93,13 +95,21 @@ impl Span {
     /// Plain span with default styling.
     #[must_use]
     pub const fn new(text: String) -> Self {
-        Self { text, semantic: Semantic::Default, bold: false, italic: false, dimmed: false, color: None }
+        Self {
+            text,
+            semantic: Semantic::Default,
+            bold: false,
+            italic: false,
+            dimmed: false,
+            reversed: false,
+            color: None,
+        }
     }
 
     /// Span with a specific semantic token.
     #[must_use]
     pub const fn styled(text: String, semantic: Semantic) -> Self {
-        Self { text, semantic, bold: false, italic: false, dimmed: false, color: None }
+        Self { text, semantic, bold: false, italic: false, dimmed: false, reversed: false, color: None }
     }
 
     /// Span with a raw RGB colour override (syntax highlighting).
@@ -111,6 +121,7 @@ impl Span {
             bold: false,
             italic: false,
             dimmed: false,
+            reversed: false,
             color: Some((red, green, blue)),
         }
     }
@@ -169,6 +180,13 @@ impl Span {
     #[must_use]
     pub const fn dim(mut self) -> Self {
         self.dimmed = true;
+        self
+    }
+
+    /// Set reversed modifier (swap foreground/background for text selection).
+    #[must_use]
+    pub const fn reversed(mut self) -> Self {
+        self.reversed = true;
         self
     }
 }

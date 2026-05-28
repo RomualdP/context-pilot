@@ -29,6 +29,7 @@ pub(crate) fn handle_input_submit(state: &mut State) -> ActionResult {
     let content = expand_paste_sentinels(&content, &state.paste_buffers);
     state.input.clear();
     state.input_cursor = 0;
+    state.input_selection_anchor = None;
     state.paste_buffers.clear();
     state.paste_buffer_labels.clear();
     let user_token_estimate = estimate_tokens(&content);
@@ -100,6 +101,7 @@ pub(crate) fn handle_clear_conversation(state: &mut State) -> ActionResult {
     }
     state.messages.clear();
     state.input.clear();
+    state.input_selection_anchor = None;
     // Reset token count for Conversation context and update timestamp
     if let Some(ctx) = state.context.iter_mut().find(|c| c.context_type.as_str() == Kind::CONVERSATION) {
         ctx.token_count = 0;

@@ -106,3 +106,17 @@ exceptions:
     strategy: >
       Irreducible — f64 arithmetic is required for exponential decay.
 
+  # ── render_input_blocks.rs: too_many_lines on render_input_blocks ────
+
+  - path: "src/modules/conversation/render_input_blocks.rs"
+    match: "rendering pipeline with selection logic"
+    reason: >
+      render_input_blocks() is a single rendering pipeline that handles
+      cursor insertion, paste sentinel expansion, selection highlighting,
+      command hints, and line wrapping. Splitting it would scatter tightly
+      coupled rendering logic across functions with no reuse benefit.
+    strategy: >
+      Could extract sub-phases into helper functions, but each phase
+      depends on state from previous phases (byte offsets, selection range).
+      The linear flow is clearer than scattered helpers.
+

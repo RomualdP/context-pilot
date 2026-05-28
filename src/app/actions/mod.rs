@@ -14,6 +14,8 @@ mod cursor;
 pub(crate) mod helpers;
 /// Input submission and conversation clearing.
 pub(crate) mod input;
+/// Context panel navigation (next/prev, page jumping).
+mod navigation;
 /// Stream append/done/error handling.
 pub(crate) mod streaming;
 
@@ -35,6 +37,8 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
 
     match action {
         Action::InputChar(ch) => {
+            // Delete selection if any, then insert
+            let _ = cursor::delete_selection(state);
             state.input.insert(state.input_cursor, ch);
             state.input_cursor = state.input_cursor.saturating_add(ch.len_utf8());
 
@@ -69,12 +73,14 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             ActionResult::Nothing
         }
         Action::InsertText(text) => {
+            let _ = cursor::delete_selection(state);
             state.input.insert_str(state.input_cursor, &text);
             state.input_cursor = state.input_cursor.saturating_add(text.len());
             ActionResult::Nothing
         }
         Action::PasteText(text) => {
-            // Store in paste buffers and insert sentinel marker at cursor
+            // Delete selection first, then store in paste buffers and insert sentinel
+            let _ = cursor::delete_selection(state);
             let idx = state.paste_buffers.len();
             state.paste_buffers.push(text);
             state.paste_buffer_labels.push(None);
@@ -88,7 +94,7 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             ActionResult::Nothing
         }
         Action::InputDelete => {
-            if state.input_cursor < state.input.len() {
+            if !cursor::delete_selection(state) && state.input_cursor < state.input.len() {
                 let _r = state.input.remove(state.input_cursor);
             }
             ActionResult::Nothing
@@ -115,6 +121,42 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
         }
         Action::CursorEnd => {
             cursor::handle_cursor_end(state);
+            ActionResult::Nothing
+        }
+        Action::CursorLeft => {
+            cursor::handle_cursor_left(state);
+            ActionResult::Nothing
+        }
+        Action::CursorRight => {
+            cursor::handle_cursor_right(state);
+            ActionResult::Nothing
+        }
+        Action::CursorLeftSelect => {
+            cursor::handle_cursor_left_select(state);
+            ActionResult::Nothing
+        }
+        Action::CursorRightSelect => {
+            cursor::handle_cursor_right_select(state);
+            ActionResult::Nothing
+        }
+        Action::CursorWordLeftSelect => {
+            cursor::handle_cursor_word_left_select(state);
+            ActionResult::Nothing
+        }
+        Action::CursorWordRightSelect => {
+            cursor::handle_cursor_word_right_select(state);
+            ActionResult::Nothing
+        }
+        Action::CursorHomeSelect => {
+            cursor::handle_cursor_home_select(state);
+            ActionResult::Nothing
+        }
+        Action::CursorEndSelect => {
+            cursor::handle_cursor_end_select(state);
+            ActionResult::Nothing
+        }
+        Action::SelectAll => {
+            cursor::handle_select_all(state);
             ActionResult::Nothing
         }
 
@@ -152,19 +194,19 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             ActionResult::Save
         }
         Action::SelectNextContext => {
-            select_context(state, true);
+            navigation::select_context(state, true);
             ActionResult::Nothing
         }
         Action::SelectPrevContext => {
-            select_context(state, false);
+            navigation::select_context(state, false);
             ActionResult::Nothing
         }
         Action::PageDynamicNext => {
-            page_dynamic(state, true);
+            navigation::page_dynamic(state, true);
             ActionResult::Nothing
         }
         Action::PageDynamicPrev => {
-            page_dynamic(state, false);
+            navigation::page_dynamic(state, false);
             ActionResult::Nothing
         }
 
@@ -381,104 +423,5 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             ActionResult::Nothing
         }
         Action::None => ActionResult::Nothing,
-    }
-}
-
-/// Navigate to the next (`forward=true`) or previous (`forward=false`) context panel,
-/// sorted by numeric panel ID.
-fn select_context(state: &mut State, forward: bool) {
-    if state.context.is_empty() {
-        return;
-    }
-    let mut sorted: Vec<usize> = (0..state.context.len()).collect();
-    sorted.sort_by(|&a, &b| {
-        let id_a = state
-            .context
-            .get(a)
-            .and_then(|el| el.id.strip_prefix('P'))
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or(usize::MAX);
-        let id_b = state
-            .context
-            .get(b)
-            .and_then(|el| el.id.strip_prefix('P'))
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or(usize::MAX);
-        id_a.cmp(&id_b)
-    });
-    let cur = sorted.iter().position(|&i| i == state.selected_context).unwrap_or(0);
-    let next = if forward {
-        config::wrap_next(cur, sorted.len())
-    } else if cur == 0 {
-        sorted.len().saturating_sub(1)
-    } else {
-        cur.saturating_sub(1)
-    };
-    let Some(&selected) = sorted.get(next) else { return };
-    switch_to_panel(state, selected);
-}
-
-/// Maximum dynamic entries per sidebar page (must match `render_sidebar.rs`).
-const DYNAMIC_PAGE_SIZE: usize = 10;
-
-/// Jump to the first dynamic panel on the next or previous page.
-///
-/// - From a **fixed** panel: forward → last page start, backward → first page start.
-/// - From a **dynamic** panel: forward/backward wraps circularly through pages.
-fn page_dynamic(state: &mut State, forward: bool) {
-    if state.context.is_empty() {
-        return;
-    }
-    // Sort indices by panel ID numerically (same ordering as select_context / sidebar).
-    let mut sorted: Vec<usize> = (0..state.context.len()).collect();
-    sorted.sort_by(|&a, &b| {
-        let id_a = state
-            .context
-            .get(a)
-            .and_then(|el| el.id.strip_prefix('P'))
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or(usize::MAX);
-        let id_b = state
-            .context
-            .get(b)
-            .and_then(|el| el.id.strip_prefix('P'))
-            .and_then(|n| n.parse::<usize>().ok())
-            .unwrap_or(usize::MAX);
-        id_a.cmp(&id_b)
-    });
-
-    // Collect dynamic panel indices only (preserving sorted order).
-    let dynamic_indices: Vec<usize> =
-        sorted.iter().filter(|&&i| state.context.get(i).is_some_and(|c| !c.context_type.is_fixed())).copied().collect();
-
-    if dynamic_indices.is_empty() {
-        return;
-    }
-
-    let total_pages = dynamic_indices.len().div_ceil(DYNAMIC_PAGE_SIZE);
-
-    // Is the currently selected panel dynamic?
-    let current_is_dynamic = state.context.get(state.selected_context).is_some_and(|c| !c.context_type.is_fixed());
-
-    let target_page = if current_is_dynamic {
-        // Find which page the current selection is on, then move to next/prev.
-        let pos = dynamic_indices.iter().position(|&i| i == state.selected_context).unwrap_or(0);
-        let current_page = pos.checked_div(DYNAMIC_PAGE_SIZE).unwrap_or(0);
-        if forward {
-            if current_page >= total_pages.saturating_sub(1) { 0 } else { current_page.saturating_add(1) }
-        } else if current_page == 0 {
-            total_pages.saturating_sub(1)
-        } else {
-            current_page.saturating_sub(1)
-        }
-    } else {
-        // From a fixed panel: forward → last page, backward → first page.
-        if forward { total_pages.saturating_sub(1) } else { 0 }
-    };
-
-    // Jump to the first panel on the target page.
-    let target_idx = target_page.saturating_mul(DYNAMIC_PAGE_SIZE);
-    if let Some(&selected) = dynamic_indices.get(target_idx) {
-        switch_to_panel(state, selected);
     }
 }

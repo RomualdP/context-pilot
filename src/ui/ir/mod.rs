@@ -130,6 +130,9 @@ fn ir_span_to_ratatui(ir: &IrSpan) -> Span<'static> {
     if ir.dimmed {
         style = style.add_modifier(Modifier::DIM);
     }
+    if ir.reversed {
+        style = style.add_modifier(Modifier::REVERSED);
+    }
     Span::styled(ir.text.clone(), style)
 }
 

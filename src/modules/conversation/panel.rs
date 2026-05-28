@@ -44,8 +44,9 @@ impl ConversationPanel {
     }
 
     /// Compute hash for input cache invalidation
-    fn compute_input_hash(input: &str, cursor: usize, viewport_width: u16) -> u64 {
-        hash_values(&[input, &format!("{cursor}{viewport_width}")])
+    fn compute_input_hash(input: &str, cursor: usize, anchor: Option<usize>, viewport_width: u16) -> u64 {
+        let anchor_str = anchor.map_or_else(String::new, |a| a.to_string());
+        hash_values(&[input, &format!("{cursor}{anchor_str}{viewport_width}")])
     }
 
     /// Compute a hash of all content that affects rendering
@@ -82,6 +83,7 @@ impl ConversationPanel {
         // Hash input
         std::hash::Hash::hash(&state.input, &mut hasher);
         std::hash::Hash::hash(&state.input_cursor, &mut hasher);
+        std::hash::Hash::hash(&state.input_selection_anchor, &mut hasher);
 
         std::hash::Hasher::finish(&hasher)
     }
@@ -216,7 +218,8 @@ impl ConversationPanel {
         }
 
         // Render input area with caching
-        let input_hash = Self::compute_input_hash(&state.input, state.input_cursor, viewport_width);
+        let input_hash =
+            Self::compute_input_hash(&state.input, state.input_cursor, state.input_selection_anchor, viewport_width);
 
         if let Some(ref cached) = state.input_cache {
             if cached.input_hash == input_hash && cached.viewport_width == viewport_width {
@@ -231,7 +234,7 @@ impl ConversationPanel {
                 let input_blocks = render_input_blocks::render_input_blocks(
                     &state.input,
                     state.input_cursor,
-                    viewport_width,
+                    state.input_selection_anchor,
                     &InputBlockCtx {
                         command_ids: &cp_mod_prompt::storage::load_prompts_for(
                             cp_mod_prompt::types::PromptType::Command,
@@ -241,6 +244,7 @@ impl ConversationPanel {
                         .collect::<Vec<_>>(),
                         paste_buffers: &state.paste_buffers,
                         paste_buffer_labels: &state.paste_buffer_labels,
+                        viewport_width,
                     },
                 );
                 let block_count = input_blocks.len();
@@ -256,7 +260,7 @@ impl ConversationPanel {
             let input_blocks = render_input_blocks::render_input_blocks(
                 &state.input,
                 state.input_cursor,
-                viewport_width,
+                state.input_selection_anchor,
                 &InputBlockCtx {
                     command_ids: &cp_mod_prompt::storage::load_prompts_for(cp_mod_prompt::types::PromptType::Command)
                         .iter()
@@ -264,6 +268,7 @@ impl ConversationPanel {
                         .collect::<Vec<_>>(),
                     paste_buffers: &state.paste_buffers,
                     paste_buffer_labels: &state.paste_buffer_labels,
+                    viewport_width,
                 },
             );
             let block_count = input_blocks.len();
@@ -306,10 +311,24 @@ impl Panel for ConversationPanel {
 
     fn handle_key(&self, key: &KeyEvent, state: &State) -> Option<Action> {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let word_mod = ctrl || alt;
 
         // Ctrl+Backspace for delete word
         if ctrl && key.code == KeyCode::Backspace {
             return Some(Action::DeleteWordLeft);
+        }
+        // Ctrl+A for select all
+        if ctrl && key.code == KeyCode::Char('a') {
+            return Some(Action::SelectAll);
+        }
+        // Ctrl/Alt+Arrow for word jump (with optional Shift for selection)
+        if word_mod && key.code == KeyCode::Left {
+            return Some(if shift { Action::CursorWordLeftSelect } else { Action::CursorWordLeft });
+        }
+        if word_mod && key.code == KeyCode::Right {
+            return Some(if shift { Action::CursorWordRightSelect } else { Action::CursorWordRight });
         }
 
         // Regular typing and editing
@@ -317,8 +336,10 @@ impl Panel for ConversationPanel {
             KeyCode::Char(c) => Some(Action::InputChar(c)),
             KeyCode::Backspace => Some(Action::InputBackspace),
             KeyCode::Delete => Some(Action::InputDelete),
-            KeyCode::Left => Some(Action::CursorWordLeft),
-            KeyCode::Right => Some(Action::CursorWordRight),
+            KeyCode::Left if shift => Some(Action::CursorLeftSelect),
+            KeyCode::Left => Some(Action::CursorLeft),
+            KeyCode::Right if shift => Some(Action::CursorRightSelect),
+            KeyCode::Right => Some(Action::CursorRight),
             KeyCode::Enter => {
                 // Send if: cursor at end AND (input empty OR ends with empty line)
                 let at_end = state.input_cursor >= state.input.len();
@@ -337,7 +358,9 @@ impl Panel for ConversationPanel {
                     }
                 }
             }
+            KeyCode::Home if shift => Some(Action::CursorHomeSelect),
             KeyCode::Home => Some(Action::CursorHome),
+            KeyCode::End if shift => Some(Action::CursorEndSelect),
             KeyCode::End => Some(Action::CursorEnd),
             // Remaining variants: delegate scroll keys, ignore everything else
             KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown => scroll_key_action(key),
