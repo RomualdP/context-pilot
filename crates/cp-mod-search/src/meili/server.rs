@@ -80,7 +80,7 @@ fn write_pid(pid: u32) -> Result<(), String> {
 }
 
 /// Read the PID from the global PID file (if it exists).
-fn read_pid() -> Option<u32> {
+pub(super) fn read_pid() -> Option<u32> {
     let path = pid_path().ok()?;
     std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }

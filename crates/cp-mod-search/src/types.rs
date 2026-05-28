@@ -212,6 +212,12 @@ pub(crate) struct MeiliLiveStats {
     pub last_update: String,
     /// Recent tasks (last 5, filtered to project indexes).
     pub recent_tasks: Vec<MeiliTask>,
+    /// Meilisearch process CPU ticks (for delta computation across refreshes).
+    pub meili_cpu_ticks: u64,
+    /// Meilisearch process CPU usage percentage (computed from tick deltas).
+    pub meili_cpu_pct: f32,
+    /// Meilisearch process RSS in bytes.
+    pub meili_memory_bytes: u64,
 }
 
 /// Runtime metrics for the background indexer.
@@ -341,6 +347,10 @@ pub struct SearchOverlayInfo {
     pub top_recomputed: Vec<(String, u64)>,
     /// Most recently re-indexed files (sorted by timestamp descending, max 8).
     pub recently_sent: Vec<(String, u64)>,
+    /// Meilisearch process CPU usage percentage.
+    pub meili_cpu_pct: f32,
+    /// Meilisearch process RSS in bytes.
+    pub meili_memory_bytes: u64,
 }
 
 // -- Search results ----------------------------------------------------------

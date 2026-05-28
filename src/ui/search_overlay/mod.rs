@@ -108,6 +108,23 @@ fn build_left_column(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<Line
         Span::styled(version_label, Style::default().fg(theme::text_muted())),
     ]));
 
+    // ── Process ──
+    if info.meili_memory_bytes > 0 || info.meili_cpu_pct > 0.0 {
+        let cpu_color = if info.meili_cpu_pct < 25.0 {
+            theme::success()
+        } else if info.meili_cpu_pct < 50.0 {
+            theme::warning()
+        } else {
+            theme::error()
+        };
+        lines.push(Line::from(vec![
+            Span::raw("  Process "),
+            Span::styled(format!("CPU {:.1}%", info.meili_cpu_pct), Style::default().fg(cpu_color)),
+            Span::raw("    "),
+            Span::styled(format!("RAM {}", format_bytes(info.meili_memory_bytes)), Style::default().fg(theme::text())),
+        ]));
+    }
+
     // ── Database ──
     if info.database_size_bytes > 0 {
         lines.push(Line::from(""));

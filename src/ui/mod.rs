@@ -58,7 +58,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &mut State) {
 
     // Render performance overlay if enabled
     if state.flags.ui.perf_enabled {
-        perf::render_perf_overlay(frame, area);
+        perf::render_perf_overlay(frame, area, state);
     }
 
     // Render autocomplete popup if active (via IR overlays)

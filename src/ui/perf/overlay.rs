@@ -11,15 +11,17 @@ use ratatui::Frame;
 use ratatui::prelude::{Color, Line, Rect, Span, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
+use crate::state::State;
+
 /// Render the performance overlay in the top-right corner.
-pub(crate) fn render_perf_overlay(frame: &mut Frame<'_>, area: Rect) {
+pub(crate) fn render_perf_overlay(frame: &mut Frame<'_>, area: Rect, state: &State) {
     use super::super::helpers::render_table;
 
     let snapshot = PERF.snapshot();
 
     // Overlay dimensions
     let overlay_width = 62u16;
-    let overlay_height = 28u16;
+    let overlay_height = 30u16;
 
     // Position in top-right
     let x = area.width.saturating_sub(overlay_width.saturating_add(2));
@@ -53,6 +55,24 @@ pub(crate) fn render_perf_overlay(frame: &mut Frame<'_>, area: Rect) {
         Span::styled(format!(" CPU: {:.1}%", snapshot.cpu_usage), Style::default().fg(cpu_color)),
         Span::styled(format!("  RAM: {:.1} MB", snapshot.memory_mb), Style::default().fg(theme::text_muted())),
     ]));
+
+    // Meilisearch process stats
+    if let Some(meili) = cp_mod_search::overlay_info(state)
+        && (meili.meili_memory_bytes > 0 || meili.meili_cpu_pct > 0.0)
+    {
+        let meili_cpu_color = if meili.meili_cpu_pct < 25.0 {
+            theme::success()
+        } else if meili.meili_cpu_pct < 50.0 {
+            theme::warning()
+        } else {
+            theme::error()
+        };
+        let meili_mb = meili.meili_memory_bytes.to_f64() / (1024.0 * 1024.0);
+        lines.push(Line::from(vec![
+            Span::styled(format!(" Meili CPU: {:.1}%", meili.meili_cpu_pct), Style::default().fg(meili_cpu_color)),
+            Span::styled(format!("  RAM: {meili_mb:.1} MB"), Style::default().fg(theme::text_muted())),
+        ]));
+    }
     lines.push(Line::from(""));
 
     // Budget bars

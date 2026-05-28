@@ -30,6 +30,12 @@ pub(crate) fn build_overlay_text(state: &State) -> String {
     )
     .unwrap_or(());
 
+    // Process stats
+    if info.meili_memory_bytes > 0 || info.meili_cpu_pct > 0.0 {
+        writeln!(out, "Process CPU {:.1}%    RAM {}\n", info.meili_cpu_pct, format_bytes(info.meili_memory_bytes),)
+            .unwrap_or(());
+    }
+
     // Database
     if info.database_size_bytes > 0 {
         writeln!(
