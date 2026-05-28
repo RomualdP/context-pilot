@@ -47,9 +47,7 @@ pub(crate) fn execute_queue_flush(
         let fresh_id = format!("flush_{}_{}", call.index, call.tool_use_id);
         let queued_tool =
             cp_base::tools::ToolUse { id: fresh_id, name: call.tool_name.clone(), input: call.input.clone() };
-        let flush_start = std::time::Instant::now();
         let result = execute_tool(&queued_tool, state);
-        crate::infra::profiler::log_slow_tool(&queued_tool.name, flush_start.elapsed());
         let status = if result.is_error { "ERROR" } else { "ok" };
         let short = if result.content.len() > 100 {
             let end = result.content.floor_char_boundary(97);

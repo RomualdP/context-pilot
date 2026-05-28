@@ -101,8 +101,8 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     }
 
     // Create tool call messages and execute tools
+    let pipeline_start = std::time::Instant::now();
     for tool in &tools {
-        let tool_start = std::time::Instant::now();
         save_tool_call_message(app, tool);
 
         let result = if tool.name == "Queue_execute" {
@@ -170,8 +170,10 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
             }
         };
         tool_results.push(result);
-        crate::infra::profiler::log_slow_tool(&tool.name, tool_start.elapsed());
     }
+
+    // Build tool names for slow-tool logging (used at every return point).
+    let tool_names: String = tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(",");
 
     // === QUEUE FLUSH REPLAY ===
     // If Queue_execute fired, extend the tools/results vecs with the flushed items.
@@ -236,6 +238,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
         // Store the pending tool results for later resolution.
         app.pending_question_tool_results = Some(tool_results);
         app.save_state_async();
+        crate::infra::profiler::log_slow_tool(&tool_names, pipeline_start.elapsed());
         return;
     }
 
@@ -380,6 +383,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     if has_console_wait {
         app.pending_console_wait_tool_results = Some(tool_results);
         app.save_state_async();
+        crate::infra::profiler::log_slow_tool(&tool_names, pipeline_start.elapsed());
         return;
     }
 
@@ -418,6 +422,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
 
     // Check if reload was requested — main loop will handle flag + exit
     if app.state.flags.lifecycle.reload_pending {
+        crate::infra::profiler::log_slow_tool(&tool_names, pipeline_start.elapsed());
         return;
     }
 
@@ -454,6 +459,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
         app.deferred_tool_sleeping = true;
         app.deferred_tool_sleep_until_ms = app.state.tool_sleep_until_ms;
         app.state.tool_sleep_until_ms = 0; // Clear from state (App owns it now)
+        crate::infra::profiler::log_slow_tool(&tool_names, pipeline_start.elapsed());
         return;
     }
 
@@ -469,6 +475,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
         // No dirty panels — continue streaming immediately
         crate::app::run::streaming::continue_streaming(app, tx);
     }
+    crate::infra::profiler::log_slow_tool(&tool_names, pipeline_start.elapsed());
 }
 
 // Post-execution checks (panels, sleep, question form) live in tool_checks.rs
