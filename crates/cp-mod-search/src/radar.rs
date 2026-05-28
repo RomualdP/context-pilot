@@ -63,12 +63,16 @@ struct ScoredResult {
     score: f64,
 }
 
-/// Exponential decay factor: `exp(-ln(2) × age / half_life)`.
+/// Exponential decay with floor: `0.5 + 0.5 × exp(-ln(2) × age / half_life)`.
+///
+/// Decays from 1.0 (age = 0) down to a floor of 0.5 (age → ∞).
+/// Old logs always retain at least half their relevance weight,
+/// preventing semantically relevant older entries from vanishing.
 fn decay(age_ms: f64, half_life_ms: f64) -> f64 {
     if half_life_ms <= 0.0 {
         return 1.0;
     }
-    (-f64::ln(2.0) * age_ms / half_life_ms).exp()
+    0.5f64.mul_add((-f64::ln(2.0) * age_ms / half_life_ms).exp(), 0.5)
 }
 
 /// Append YAML lines for a single radar entry.
