@@ -9,8 +9,6 @@ use crate::state::{Message, MsgKind, MsgStatus, State, ToolUseRecord};
 
 use cp_mod_queue::types::QueueState;
 
-use std::fmt::Write as _;
-
 /// Flushed tool execution pair: the original `ToolUse` and its result.
 pub(crate) struct FlushedTool {
     /// The original tool-use request that was dequeued and executed.
@@ -42,7 +40,7 @@ pub(crate) fn execute_queue_flush(
     let calls = qs.flush();
     qs.active = false;
 
-    let mut summary = format!("Executed {} queued action(s):\n", calls.len());
+    let summary = format!("Executed {} queued action(s).", calls.len());
     let mut flushed = Vec::with_capacity(calls.len());
 
     for call in &calls {
@@ -52,14 +50,6 @@ pub(crate) fn execute_queue_flush(
         let queued_tool =
             cp_base::tools::ToolUse { id: fresh_id, name: call.tool_name.clone(), input: call.input.clone() };
         let result = execute_tool(&queued_tool, state);
-        let status = if result.is_error { "ERROR" } else { "ok" };
-        let short = if result.content.len() > 100 {
-            let end = result.content.floor_char_boundary(97);
-            format!("{}...", result.content.get(..end).unwrap_or(""))
-        } else {
-            result.content.clone()
-        };
-        let _r = writeln!(summary, "{}. {} → {} ({})", call.index, call.tool_name, status, short);
         flushed.push(FlushedTool { tool: queued_tool, result, queue_index: call.index });
     }
 
