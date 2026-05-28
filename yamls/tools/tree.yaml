@@ -20,3 +20,4 @@ tools:
       path: "File or folder path"
       description: "Description text"
       delete: "Set true to remove description"
+      close_panel: "Auto-close the file's open panel after describing it (default: true). Set false to keep viewing the file."

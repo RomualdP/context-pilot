@@ -150,6 +150,9 @@ impl Module for TreeModule {
                         ToolParam::new("path", ParamType::String).desc("File or folder path").required(),
                         ToolParam::new("description", ParamType::String).desc("Description text"),
                         ToolParam::new("delete", ParamType::Boolean).desc("Set true to remove description"),
+                        ToolParam::new("close_panel", ParamType::Boolean).desc(
+                            "Auto-close the file's open panel after describing it (default: true). Set false to keep viewing the file.",
+                        ),
                     ]),
                     true,
                 )

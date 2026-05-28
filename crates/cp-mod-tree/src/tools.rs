@@ -182,7 +182,11 @@ pub(crate) fn execute_describe_files(tool: &ToolUse, state: &mut State) -> ToolR
     let mut added = Vec::new();
     let mut updated = Vec::new();
     let mut removed = Vec::new();
+    let mut auto_closed = Vec::new();
     let mut errors = Vec::new();
+
+    // Resolve CWD once for absolute path matching when auto-closing panels.
+    let cwd = std::env::current_dir().ok();
 
     for desc_obj in descriptions {
         let Some(path_str) = desc_obj.get("path").and_then(|v| v.as_str()) else {
@@ -223,10 +227,23 @@ pub(crate) fn execute_describe_files(tool: &ToolUse, state: &mut State) -> ToolR
         if let Some(existing) = ts.descriptions.iter_mut().find(|d| d.path == normalized) {
             existing.description = description;
             existing.file_hash = file_hash;
-            updated.push(normalized);
+            updated.push(normalized.clone());
         } else {
             ts.descriptions.push(TreeFileDescription { path: normalized.clone(), description, file_hash });
-            added.push(normalized);
+            added.push(normalized.clone());
+        }
+
+        // Auto-close the file's open panel unless close_panel=false
+        let should_close = desc_obj.get("close_panel").and_then(serde_json::Value::as_bool).unwrap_or(true);
+        if should_close && let Some(ref cwd) = cwd {
+            let abs_path = cwd.join(&normalized).to_string_lossy().to_string();
+            if let Some(pos) =
+                state.context.iter().position(|c| c.context_type.as_str() == Kind::FILE && c.name == abs_path)
+            {
+                let panel_id = state.context.get(pos).map(|c| c.id.clone()).unwrap_or_default();
+                let _removed = state.context.remove(pos);
+                auto_closed.push(format!("{panel_id} ({normalized})"));
+            }
         }
     }
 
@@ -239,6 +256,9 @@ pub(crate) fn execute_describe_files(tool: &ToolUse, state: &mut State) -> ToolR
     }
     if !removed.is_empty() {
         result.push(format!("Removed: {}", removed.join(", ")));
+    }
+    if !auto_closed.is_empty() {
+        result.push(format!("Auto-closed panels: {}", auto_closed.join(", ")));
     }
     if !errors.is_empty() {
         result.push(format!("Errors: {}", errors.join("; ")));
