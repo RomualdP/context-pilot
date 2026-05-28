@@ -122,13 +122,15 @@ fn validate_schema(input: &serde_json::Value, params: &[ToolParam], result: &mut
 // Here be dragons (and type mismatches)
 
 /// Check if a JSON value matches the expected `ParamType`.
+/// Lenient for arrays: a single value matching the inner type is accepted
+/// (common LLM mistake — sending `"path": "foo.rs"` instead of `"path": ["foo.rs"]`).
 fn check_type(value: &serde_json::Value, expected: &ParamType) -> bool {
     match expected {
         ParamType::String => value.is_string(),
         ParamType::Integer => value.is_i64() || value.is_u64(),
         ParamType::Number => value.is_number(),
         ParamType::Boolean => value.is_boolean(),
-        ParamType::Array(_) => value.is_array(),
+        ParamType::Array(inner) => value.is_array() || check_type(value, inner),
         ParamType::Object(_) => value.is_object(),
     }
 }
