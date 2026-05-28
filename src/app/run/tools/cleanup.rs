@@ -2,16 +2,13 @@ use std::sync::mpsc::Sender;
 
 use crate::app::panels::now_ms;
 use crate::infra::api::StreamEvent;
-use crate::infra::tools::execute_tool;
-use crate::state::{Message, MsgKind, MsgStatus, State, ToolResultRecord};
+use crate::state::{Message, MsgKind, MsgStatus, ToolResultRecord};
 
-use cp_base::state::watchers::WatcherRegistry;
+use cp_base::state::watchers::{ASYNC_ERROR_PREFIX, WatcherRegistry};
 use cp_mod_console::tools::CONSOLE_WAIT_BLOCKING_SENTINEL;
-use cp_mod_queue::types::QueueState;
 use cp_mod_spine::types::{NotificationType, SpineState};
 
 use crate::app::App;
-use std::fmt::Write as _;
 
 /// Non-blocking check: poll `WatcherRegistry` for satisfied conditions.
 /// - Blocking watchers: replace sentinel tool results and resume pipeline.
@@ -83,6 +80,33 @@ pub(crate) fn check_watchers(app: &mut App, tx: &Sender<StreamEvent>) {
                 result.description.push_str(" → see ");
                 result.description.push_str(&panel_id);
                 result.description.push_str(" (already loaded, read it directly)");
+            }
+            // Handle DynPanel creation for async tool results (generic panels)
+            if let Some(ref dp) = result.create_dyn_panel {
+                let panel_id = app.state.next_available_context_id();
+                let uid = format!("UID_{}_P", app.state.global_next_uid);
+                app.state.global_next_uid = app.state.global_next_uid.saturating_add(1);
+
+                let mut ctx = crate::state::make_default_entry(
+                    &panel_id,
+                    cp_base::state::context::Kind::new(&dp.context_type),
+                    &dp.display_name,
+                    true,
+                );
+                ctx.uid = Some(uid);
+                for (key, value) in &dp.metadata {
+                    ctx.set_meta(key, value);
+                }
+                if let Some(ref content) = dp.content {
+                    ctx.cached_content = Some(content.clone());
+                    ctx.token_count = cp_base::state::context::estimate_tokens(content);
+                    ctx.full_token_count = ctx.token_count;
+                    ctx.total_pages = cp_base::state::context::compute_total_pages(ctx.token_count);
+                    ctx.cache_deprecated = false;
+                }
+                app.state.context.push(ctx);
+                result.description =
+                    result.description.replace(cp_base::state::watchers::DYN_PANEL_ID_PLACEHOLDER, &panel_id);
             }
             // Auto-close panels for watchers that request it
             if result.close_panel
@@ -181,14 +205,48 @@ pub(crate) fn check_watchers(app: &mut App, tx: &Sender<StreamEvent>) {
             result.description.push_str(&panel_id);
             result.description.push_str(" (already loaded, read it directly)");
         }
+        // Handle DynPanel creation for async tool results (generic panels)
+        if let Some(ref dp) = result.create_dyn_panel {
+            let panel_id = app.state.next_available_context_id();
+            let uid = format!("UID_{}_P", app.state.global_next_uid);
+            app.state.global_next_uid = app.state.global_next_uid.saturating_add(1);
+
+            let mut ctx = crate::state::make_default_entry(
+                &panel_id,
+                cp_base::state::context::Kind::new(&dp.context_type),
+                &dp.display_name,
+                true,
+            );
+            ctx.uid = Some(uid);
+            for (key, value) in &dp.metadata {
+                ctx.set_meta(key, value);
+            }
+            if let Some(ref content) = dp.content {
+                ctx.cached_content = Some(content.clone());
+                ctx.token_count = cp_base::state::context::estimate_tokens(content);
+                ctx.full_token_count = ctx.token_count;
+                ctx.total_pages = cp_base::state::context::compute_total_pages(ctx.token_count);
+                ctx.cache_deprecated = false;
+            }
+            app.state.context.push(ctx);
+            result.description =
+                result.description.replace(cp_base::state::watchers::DYN_PANEL_ID_PLACEHOLDER, &panel_id);
+        }
     }
 
     // Replace sentinels with real results (descriptions now include panel IDs)
     for tr in &mut tool_results {
         if tr.content == CONSOLE_WAIT_BLOCKING_SENTINEL {
-            // Console wait sentinel: replace entirely with watcher result
+            // Console wait / async tool sentinel: replace entirely with watcher result
             if let Some(result) = merged_blocking.iter().find(|r| r.tool_use_id.as_deref() == Some(&tr.tool_use_id)) {
-                tr.content = result.description.clone();
+                // Async tools encode error status via ASYNC_ERROR_PREFIX in the description
+                // (WatcherResult can't carry is_error due to struct_excessive_bools forbid).
+                if let Some(stripped) = result.description.strip_prefix(ASYNC_ERROR_PREFIX) {
+                    tr.content = stripped.to_string();
+                    tr.is_error = true;
+                } else {
+                    tr.content = result.description.clone();
+                }
             }
         } else if tr.content.starts_with(CONSOLE_WAIT_BLOCKING_SENTINEL) {
             // Callback blocking sentinel: format is "SENTINEL{sentinel_id}{original_content}"
@@ -432,63 +490,4 @@ pub(crate) fn flush_pending_tool_results_as_interrupted(app: &mut App) {
     };
     app.save_message_async(&result_msg);
     app.state.messages.push(result_msg);
-}
-
-// ─── Queue flush (called from tool_pipeline.rs) ─────────────────────────────
-
-/// Flushed tool execution pair: the original `ToolUse` and its result.
-pub(crate) struct FlushedTool {
-    /// The original tool-use request that was dequeued and executed.
-    pub tool: cp_base::tools::ToolUse,
-    /// The execution result for this tool call.
-    pub result: crate::infra::tools::ToolResult,
-}
-
-/// Execute all queued tool calls in order.
-/// Returns (`summary_result`, `flushed_tools`) so the pipeline can run callbacks/sentinels
-/// on the individual tools — not just the `Queue_execute` wrapper.
-pub(crate) fn execute_queue_flush(
-    tool: &cp_base::tools::ToolUse,
-    state: &mut State,
-) -> (crate::infra::tools::ToolResult, Vec<FlushedTool>) {
-    let qs = QueueState::get_mut(state);
-    if qs.queued_calls.is_empty() {
-        return (
-            crate::infra::tools::ToolResult::new(
-                tool.id.clone(),
-                "Queue is empty — nothing to execute.".to_string(),
-                false,
-            ),
-            Vec::new(),
-        );
-    }
-    let calls = qs.flush();
-    qs.active = false;
-
-    let mut summary = format!("Executed {} queued action(s):\n", calls.len());
-    let mut flushed = Vec::with_capacity(calls.len());
-
-    for call in &calls {
-        // Generate a fresh tool_use_id to avoid collision with the intercept-time message.
-        // The original id was already used in the "Queued as #N" tool_result at intercept time.
-        let fresh_id = format!("flush_{}_{}", call.index, call.tool_use_id);
-        let queued_tool =
-            cp_base::tools::ToolUse { id: fresh_id, name: call.tool_name.clone(), input: call.input.clone() };
-        let result = execute_tool(&queued_tool, state);
-        let status = if result.is_error { "ERROR" } else { "ok" };
-        let short = if result.content.len() > 100 {
-            let end = result.content.floor_char_boundary(97);
-            format!("{}...", result.content.get(..end).unwrap_or(""))
-        } else {
-            result.content.clone()
-        };
-        let _r = writeln!(summary, "{}. {} → {} ({})", call.index, call.tool_name, status, short);
-        flushed.push(FlushedTool { tool: queued_tool, result });
-    }
-
-    // The summary wrapper preserves tempo — only the individual flushed
-    // tool results should drive the tempo decision (transparent queue).
-    let mut wrapper = crate::infra::tools::ToolResult::new(tool.id.clone(), summary, false);
-    wrapper.preserves_tempo = true;
-    (wrapper, flushed)
 }

@@ -205,6 +205,7 @@ impl Watcher for CoucouWatcher {
             tool_use_id: None,
             close_panel: false,
             create_panel: None,
+            create_dyn_panel: None,
             processed_already: false,
             kill_session: None,
             preserves_tempo: false,

@@ -5,7 +5,22 @@
 //! The spine module polls the registry and fires notifications when
 //! conditions are met.
 
+use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, TryRecvError};
+
 use crate::state::runtime::State;
+
+/// Placeholder in [`ToolOutput::content`] that gets replaced with the actual
+/// panel ID after [`DynPanel`] creation.  Used by async tools that create panels.
+pub const DYN_PANEL_ID_PLACEHOLDER: &str = "__PANEL_ID__";
+
+/// Prefix prepended to [`WatcherResult::description`] when the async tool failed.
+///
+/// `struct_excessive_bools` is `forbid`-level, so we can't add an `is_error` bool
+/// to [`WatcherResult`].  Instead, the async worker thread encodes error status
+/// in the description string, and `cleanup.rs` strips the prefix during sentinel
+/// replacement while setting `ToolResult::is_error = true`.
+pub const ASYNC_ERROR_PREFIX: &str = "__ASYNC_ERR__";
 
 /// Result of a satisfied watcher condition.
 #[derive(Debug)]
@@ -33,6 +48,9 @@ pub struct WatcherResult {
     /// Used by blocking watchers whose resolution did not create or modify any panel
     /// (e.g., `easy_bash` inline path with short output).
     pub preserves_tempo: bool,
+    /// If set, create a generic dynamic panel when this watcher fires.
+    /// Unlike `create_panel` (console-specific), this works for any panel type.
+    pub create_dyn_panel: Option<DynPanel>,
 }
 
 /// Info needed to create a console panel after a watcher fires.
@@ -52,6 +70,24 @@ pub struct DeferredPanel {
     pub callback_id: String,
     /// Display name of the callback.
     pub callback_name: String,
+}
+
+/// Info needed to create a generic dynamic panel when a watcher fires.
+///
+/// Unlike [`DeferredPanel`] (console-specific), this works for any panel type
+/// (brave results, firecrawl results, search results, etc.).
+/// Used by async tool execution to create panels after HTTP/subprocess completion.
+#[derive(Debug)]
+pub struct DynPanel {
+    /// Context type string (e.g., `"brave_result"`, `"firecrawl_result"`).
+    pub context_type: String,
+    /// Human-readable panel title.
+    pub display_name: String,
+    /// Key-value metadata to set via `Entry::set_meta`.
+    pub metadata: Vec<(String, String)>,
+    /// Panel content to set as `cached_content` immediately.
+    /// When set, the panel displays content without waiting for a cache restore cycle.
+    pub content: Option<String>,
 }
 
 /// A watcher monitors a condition and reports when it's satisfied.
@@ -245,5 +281,157 @@ impl WatcherRegistry {
     /// Panics if an internal invariant is violated.
     pub fn get_mut(state: &mut State) -> &mut Self {
         state.ext_mut::<Self>()
+    }
+}
+
+// ─── ChannelWatcher ─────────────────────────────────────────────────────────
+
+/// A watcher that polls an `mpsc::Receiver` for a result from a background thread.
+///
+/// Used by [`spawn_async_tool`](crate::tools::spawn_async_tool) to make tool
+/// execution non-blocking. The worker thread sends a [`WatcherResult`] when done;
+/// the main event loop picks it up via the existing watcher polling infrastructure.
+pub struct ChannelWatcher {
+    /// Unique ID for this watcher instance.
+    id: String,
+    /// Human-readable description for the Spine panel.
+    desc: String,
+    /// Tool use ID for sentinel replacement in blocking path.
+    tuid: String,
+    /// Receiver end of the channel from the worker thread.
+    /// Wrapped in `Mutex` for `Sync` (required by `dyn Watcher: Send + Sync`).
+    rx: Mutex<Receiver<WatcherResult>>,
+    /// Timestamp when this watcher was registered.
+    registered_at_ms: u64,
+    /// Absolute deadline in ms. Returns a timeout error after this point.
+    deadline_ms: u64,
+}
+
+impl std::fmt::Debug for ChannelWatcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelWatcher")
+            .field("id", &self.id)
+            .field("desc", &self.desc)
+            .field("tuid", &self.tuid)
+            .field("registered_at_ms", &self.registered_at_ms)
+            .field("deadline_ms", &self.deadline_ms)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ChannelWatcher {
+    /// Create a new channel watcher.
+    ///
+    /// * `description` — Shown in the Spine panel watchers list.
+    /// * `tool_use_id` — Matches the sentinel `ToolResult` for replacement.
+    ///   Also used to derive the watcher ID.
+    /// * `rx` — Receiving end of the channel from the worker thread.
+    /// * `timeout_ms` — How long to wait before returning a timeout error.
+    #[must_use]
+    pub fn new(description: &str, tool_use_id: &str, rx: Receiver<WatcherResult>, timeout_ms: u64) -> Self {
+        let now = crate::panels::now_ms();
+        Self {
+            id: format!("async_tool_{tool_use_id}"),
+            desc: description.to_string(),
+            tuid: tool_use_id.to_string(),
+            rx: Mutex::new(rx),
+            registered_at_ms: now,
+            deadline_ms: now.saturating_add(timeout_ms),
+        }
+    }
+}
+
+impl Watcher for ChannelWatcher {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn description(&self) -> &str {
+        &self.desc
+    }
+
+    fn is_blocking(&self) -> bool {
+        true
+    }
+
+    fn tool_use_id(&self) -> Option<&str> {
+        Some(&self.tuid)
+    }
+
+    fn check(&self, _state: &State) -> Option<WatcherResult> {
+        let Ok(rx) = self.rx.lock() else {
+            return Some(WatcherResult {
+                description: "Async tool watcher failed (lock poisoned)".to_string(),
+                panel_id: None,
+                tool_use_id: Some(self.tuid.clone()),
+                close_panel: false,
+                create_panel: None,
+                create_dyn_panel: None,
+                processed_already: false,
+                kill_session: None,
+                preserves_tempo: false,
+            });
+        };
+        match rx.try_recv() {
+            Ok(result) => Some(result),
+            Err(TryRecvError::Disconnected) => Some(WatcherResult {
+                description: "Async tool execution failed (worker thread panicked or dropped)".to_string(),
+                panel_id: None,
+                tool_use_id: Some(self.tuid.clone()),
+                close_panel: false,
+                create_panel: None,
+                create_dyn_panel: None,
+                processed_already: false,
+                kill_session: None,
+                preserves_tempo: false,
+            }),
+            Err(TryRecvError::Empty) => None,
+        }
+    }
+
+    fn check_timeout(&self) -> Option<WatcherResult> {
+        (crate::panels::now_ms() >= self.deadline_ms).then(|| {
+            let elapsed_secs =
+                crate::panels::time_arith::ms_to_secs(self.deadline_ms.saturating_sub(self.registered_at_ms));
+            WatcherResult {
+                description: format!("Async tool timed out after {elapsed_secs}s"),
+                panel_id: None,
+                tool_use_id: Some(self.tuid.clone()),
+                close_panel: false,
+                create_panel: None,
+                create_dyn_panel: None,
+                processed_already: false,
+                kill_session: None,
+                preserves_tempo: false,
+            }
+        })
+    }
+
+    fn registered_ms(&self) -> u64 {
+        self.registered_at_ms
+    }
+
+    fn source_tag(&self) -> &'static str {
+        "async_tool"
+    }
+
+    fn suicide(&self, _state: &State) -> bool {
+        false
+    }
+
+    fn is_easy_bash(&self) -> bool {
+        false
+    }
+
+    fn is_persistent(&self) -> bool {
+        false
+    }
+
+    fn fire_at_ms(&self) -> Option<u64> {
+        None
+    }
+
+    fn message(&self) -> Option<&str> {
+        None
     }
 }

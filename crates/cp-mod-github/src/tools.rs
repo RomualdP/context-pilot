@@ -7,6 +7,7 @@ use cp_base::modules::{run_with_timeout, truncate_output};
 use cp_base::panels::mark_panels_dirty;
 use cp_base::state::context::{Kind, make_default_entry};
 use cp_base::state::runtime::State;
+use cp_base::tools::async_exec::{ToolOutput, spawn_async_tool};
 use cp_base::tools::{ToolResult, ToolUse};
 
 use crate::types::GithubState;
@@ -76,17 +77,7 @@ pub(crate) fn execute_gh_command(tool: &ToolUse, state: &mut State) -> ToolResul
             }
         }
         CommandClass::Mutating => {
-            // Execute directly with timeout
-            let mut cmd = Command::new("gh");
-            let _r = cmd
-                .args(&args)
-                .env("GITHUB_TOKEN", &token)
-                .env("GH_TOKEN", &token)
-                .env("GH_PROMPT_DISABLED", "1")
-                .env("NO_COLOR", "1");
-            let result = run_with_timeout(cmd, GH_CMD_TIMEOUT_SECS);
-
-            // Invalidate affected panels using heuristics
+            // Pre-invalidate cached panels BEFORE spawning async (needs &mut State).
             let invalidations = super::cache_invalidation::find_invalidations(command);
             for ctx in &mut state.context {
                 if ctx.context_type.as_str() == Kind::GITHUB_RESULT {
@@ -101,23 +92,31 @@ pub(crate) fn execute_gh_command(tool: &ToolUse, state: &mut State) -> ToolResul
             // Always invalidate Git status (PRs/merges can affect it)
             mark_panels_dirty(state, Kind::GIT);
 
-            match result {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let combined = if stderr.trim().is_empty() {
-                        stdout.trim().to_string()
-                    } else if stdout.trim().is_empty() {
-                        stderr.trim().to_string()
-                    } else {
-                        format!("{}\n{}", stdout.trim(), stderr.trim())
-                    };
-                    let is_error = !output.status.success();
-                    let combined = redact_token(&combined, &token);
-                    let combined = truncate_output(&combined, constants::MAX_RESULT_CONTENT_BYTES);
-                    ToolResult::new(
-                        tool.id.clone(),
-                        if combined.is_empty() {
+            spawn_async_tool(state, tool, GH_CMD_TIMEOUT_SECS.saturating_add(5), move || {
+                let mut cmd = Command::new("gh");
+                let _r = cmd
+                    .args(&args)
+                    .env("GITHUB_TOKEN", &token)
+                    .env("GH_TOKEN", &token)
+                    .env("GH_PROMPT_DISABLED", "1")
+                    .env("NO_COLOR", "1");
+                let result = run_with_timeout(cmd, GH_CMD_TIMEOUT_SECS);
+
+                match result {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let combined = if stderr.trim().is_empty() {
+                            stdout.trim().to_string()
+                        } else if stdout.trim().is_empty() {
+                            stderr.trim().to_string()
+                        } else {
+                            format!("{}\n{}", stdout.trim(), stderr.trim())
+                        };
+                        let is_error = !output.status.success();
+                        let combined = redact_token(&combined, &token);
+                        let combined = truncate_output(&combined, constants::MAX_RESULT_CONTENT_BYTES);
+                        let content = if combined.is_empty() {
                             if is_error {
                                 "Command failed with no output".to_string()
                             } else {
@@ -125,19 +124,19 @@ pub(crate) fn execute_gh_command(tool: &ToolUse, state: &mut State) -> ToolResul
                             }
                         } else {
                             combined
-                        },
-                        is_error,
-                    )
+                        };
+                        ToolOutput { content, is_error, create_panel: None, preserves_tempo: false }
+                    }
+                    Err(e) => {
+                        let content = if e.kind() == std::io::ErrorKind::NotFound {
+                            "gh CLI not found. Install: https://cli.github.com".to_string()
+                        } else {
+                            format!("Error running gh: {e}")
+                        };
+                        ToolOutput { content, is_error: true, create_panel: None, preserves_tempo: false }
+                    }
                 }
-                Err(e) => {
-                    let content = if e.kind() == std::io::ErrorKind::NotFound {
-                        "gh CLI not found. Install: https://cli.github.com".to_string()
-                    } else {
-                        format!("Error running gh: {e}")
-                    };
-                    ToolResult::new(tool.id.clone(), content, true)
-                }
-            }
+            })
         }
     }
 }

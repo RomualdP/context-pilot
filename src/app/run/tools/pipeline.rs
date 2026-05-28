@@ -88,7 +88,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     app.state.flags.stream.phase.transition(StreamPhase::ExecutingTools);
     let mut tools = std::mem::take(&mut app.pending_tools);
     let mut tool_results: Vec<crate::infra::tools::ToolResult> = Vec::new();
-    let mut flushed_tools: Vec<super::cleanup::FlushedTool> = Vec::new();
+    let mut flushed_tools: Vec<super::queue_flush::FlushedTool> = Vec::new();
 
     // Finalize current assistant message
     if let Some(msg) = app.state.messages.last_mut()
@@ -110,7 +110,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                 crate::infra::tools::ToolResult::new(tool.id.clone(), trap_msg, false)
             } else {
                 // Queue flush: execute all queued calls, collect them for pipeline replay
-                let (summary_result, flushed) = super::cleanup::execute_queue_flush(tool, &mut app.state);
+                let (summary_result, flushed) = super::queue_flush::execute_queue_flush(tool, &mut app.state);
                 flushed_tools = flushed;
                 summary_result
             }

@@ -4,3 +4,5 @@ pub(crate) mod checks;
 pub(crate) mod cleanup;
 /// Tool execution pipeline: tool-call messages, pre-flight checks, queue intercept, callbacks.
 pub(crate) mod pipeline;
+/// Queue flush execution — dequeues and runs all queued tool calls.
+pub(crate) mod queue_flush;

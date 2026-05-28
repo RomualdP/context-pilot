@@ -143,7 +143,7 @@ pub(super) fn handle_reverie_tools(app: &mut App) {
             // Queue_execute needs special handling (flush lives in tool_cleanup, not the module)
             let result = if tool.name == "Queue_execute" {
                 // Reverie doesn't need flushed tools (no callbacks) — just the summary
-                super::tools::cleanup::execute_queue_flush(tool, &mut app.state).0
+                super::tools::queue_flush::execute_queue_flush(tool, &mut app.state).0
             } else if tool.name == "Queue_pause" {
                 if let Some(rev) = app.state.reveries.get_mut(&agent_id) {
                     rev.queue_active = false;

@@ -26,27 +26,6 @@ pub(crate) const SEARCH_PANEL_TYPE: &str = "search_result";
 /// Metadata key used to persist panel content across reloads.
 const META_CONTENT: &str = "result_content";
 
-/// Create a dynamic search-result panel with the given title and content.
-///
-/// Returns the panel ID string (e.g. `"P15"`).
-pub(crate) fn create(state: &mut State, title: &str, content: &str) -> String {
-    let panel_id = state.next_available_context_id();
-    let uid = format!("UID_{}_P", state.global_next_uid);
-    state.global_next_uid = state.global_next_uid.saturating_add(1);
-
-    let mut elem = cp_base::state::context::make_default_entry(&panel_id, Kind::new(SEARCH_PANEL_TYPE), title, false);
-    elem.uid = Some(uid);
-    elem.cached_content = Some(content.to_string());
-    elem.token_count = estimate_tokens(content);
-    elem.full_token_count = elem.token_count;
-    elem.total_pages = compute_total_pages(elem.token_count);
-    // Store in metadata so it survives reload
-    drop(elem.metadata.insert(META_CONTENT.to_string(), serde_json::Value::String(content.to_string())));
-
-    state.context.push(elem);
-    panel_id
-}
-
 /// Panel renderer for search result panels.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SearchResultPanel;

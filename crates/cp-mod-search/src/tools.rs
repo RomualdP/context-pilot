@@ -4,6 +4,8 @@
 //! dynamic result panels.
 
 use cp_base::state::runtime::State;
+use cp_base::state::watchers::{DYN_PANEL_ID_PLACEHOLDER, DynPanel};
+use cp_base::tools::async_exec::{ToolOutput, spawn_async_tool};
 use cp_base::tools::{ToolResult, ToolUse};
 
 use crate::meili::client::MeiliClient;
@@ -27,20 +29,7 @@ fn get_client(state: &State) -> Result<MeiliClient, String> {
     MeiliClient::new(ss.persist.port, &ss.persist.master_key)
 }
 
-/// Build a successful `ToolResult`.
-fn ok_result(tool: &ToolUse, content: String) -> ToolResult {
-    ToolResult {
-        tool_use_id: tool.id.clone(),
-        content,
-        display: None,
-        tldr: None,
-        is_error: false,
-        preserves_tempo: false,
-        tool_name: tool.name.clone(),
-    }
-}
-
-/// Build an error `ToolResult`.
+/// Build an error `ToolResult` for sync validation failures.
 fn err_result(tool: &ToolUse, content: String) -> ToolResult {
     ToolResult {
         tool_use_id: tool.id.clone(),
@@ -217,14 +206,20 @@ fn parse_log_hit(hit: &serde_json::Value) -> SearchResult {
     }
 }
 
+/// Async timeout for Meilisearch queries (seconds).
+/// Local server, but semantic search involves remote Voyage AI embedder calls.
+const ASYNC_TIMEOUT_SECS: u64 = 30;
+
 /// Execute the `search` tool.
+///
+/// Runs Meilisearch HTTP queries on a worker thread to avoid blocking the main event loop.
 fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
     let client = match get_client(state) {
         Ok(c) => c,
         Err(e) => return err_result(tool, e),
     };
 
-    // --- Extract parameters --------------------------------------------------
+    // --- Extract parameters (sync, needs State) ------------------------------
 
     let Some(query) = tool.input.get("query").and_then(serde_json::Value::as_str) else {
         return err_result(tool, "Missing required parameter 'query'".to_string());
@@ -256,116 +251,121 @@ fn exec_search(tool: &ToolUse, state: &mut State) -> ToolResult {
         .map_or(20_u32, |n| u32::try_from(n.min(50)).unwrap_or(50));
     let hide_contents = tool.input.get("hide_contents").and_then(serde_json::Value::as_bool).unwrap_or(false);
 
-    // --- Resolve index UIDs --------------------------------------------------
+    // --- Resolve index UIDs (needs State) ------------------------------------
 
     let project_hash = state.get_ext::<SearchState>().map(|s| s.persist.project_hash.clone()).unwrap_or_default();
-
     let files_uid = format!("cp_{project_hash}_files");
     let logs_uid = format!("cp_{project_hash}_logs");
 
-    // --- Search files --------------------------------------------------------
+    // --- Extract owned values for the closure --------------------------------
 
+    let query = query.to_string();
+    let semantic_query = semantic_query.to_string();
+    let effective_query = path_prefix.map_or_else(|| query.clone(), |prefix| format!("{prefix} {query}"));
     let search_files = scope == "all" || scope == "project";
     let search_logs = scope == "all" || scope == "logs";
+    let file_filter = build_file_filter(extension, from_date, to_date);
+    let log_filter = build_log_filter(from_date, to_date);
+    let file_sort = file_sort_string(sort);
+    let log_sort = log_sort_string(sort);
 
-    let mut file_results: Vec<SearchResult> = Vec::new();
-    let mut log_results: Vec<SearchResult> = Vec::new();
+    spawn_async_tool(state, tool, ASYNC_TIMEOUT_SECS, move || {
+        let mut file_results: Vec<SearchResult> = Vec::new();
+        let mut log_results: Vec<SearchResult> = Vec::new();
 
-    if search_files {
-        // Prepend path_prefix to query for relevance boost
-        let effective_query = path_prefix.map_or_else(|| query.to_string(), |prefix| format!("{prefix} {query}"));
+        // --- Search files ----------------------------------------------------
 
-        let file_filter = build_file_filter(extension, from_date, to_date);
-        let file_sort = file_sort_string(sort);
-
-        // Split search: keyword with `query`, semantic with `semantic_query`
-        let keyword_params = crate::meili::client::SearchParams {
-            uid: &files_uid,
-            query: &effective_query,
-            filter: file_filter.as_deref(),
-            sort: file_sort,
-            limit,
-            semantic_ratio: Some(0.0), // pure keyword
-        };
-        let semantic_params = crate::meili::client::SearchParams {
-            uid: &files_uid,
-            query: semantic_query,
-            filter: file_filter.as_deref(),
-            sort: file_sort,
-            limit,
-            semantic_ratio: Some(1.0), // pure semantic
-        };
-        match client.multi_search(&[keyword_params, semantic_params]) {
-            Ok(results) => {
-                for result_set in &results {
-                    if let Some(hits) = result_set.get("hits").and_then(|h| h.as_array()) {
-                        for hit in hits {
-                            file_results.push(parse_file_hit(hit));
+        if search_files {
+            let keyword_params = crate::meili::client::SearchParams {
+                uid: &files_uid,
+                query: &effective_query,
+                filter: file_filter.as_deref(),
+                sort: file_sort,
+                limit,
+                semantic_ratio: Some(0.0),
+            };
+            let semantic_params = crate::meili::client::SearchParams {
+                uid: &files_uid,
+                query: &semantic_query,
+                filter: file_filter.as_deref(),
+                sort: file_sort,
+                limit,
+                semantic_ratio: Some(1.0),
+            };
+            match client.multi_search(&[keyword_params, semantic_params]) {
+                Ok(results) => {
+                    for result_set in &results {
+                        if let Some(hits) = result_set.get("hits").and_then(|h| h.as_array()) {
+                            for hit in hits {
+                                file_results.push(parse_file_hit(hit));
+                            }
                         }
                     }
+                    dedup_by_score(&mut file_results, limit);
                 }
-                dedup_by_score(&mut file_results, limit);
+                Err(e) => log::warn!("File multi-search failed: {e}"),
             }
-            Err(e) => log::warn!("File multi-search failed: {e}"),
         }
-    }
 
-    // --- Search logs ---------------------------------------------------------
+        // --- Search logs -----------------------------------------------------
 
-    if search_logs {
-        let log_filter = build_log_filter(from_date, to_date);
-        let log_sort = log_sort_string(sort);
-
-        // Split search: keyword with `query`, semantic with `semantic_query`
-        let keyword_params = crate::meili::client::SearchParams {
-            uid: &logs_uid,
-            query,
-            filter: log_filter.as_deref(),
-            sort: log_sort,
-            limit,
-            semantic_ratio: Some(0.0),
-        };
-        let semantic_params = crate::meili::client::SearchParams {
-            uid: &logs_uid,
-            query: semantic_query,
-            filter: log_filter.as_deref(),
-            sort: log_sort,
-            limit,
-            semantic_ratio: Some(1.0),
-        };
-        match client.multi_search(&[keyword_params, semantic_params]) {
-            Ok(results) => {
-                for result_set in &results {
-                    if let Some(hits) = result_set.get("hits").and_then(|h| h.as_array()) {
-                        for hit in hits {
-                            log_results.push(parse_log_hit(hit));
+        if search_logs {
+            let keyword_params = crate::meili::client::SearchParams {
+                uid: &logs_uid,
+                query: &query,
+                filter: log_filter.as_deref(),
+                sort: log_sort,
+                limit,
+                semantic_ratio: Some(0.0),
+            };
+            let semantic_params = crate::meili::client::SearchParams {
+                uid: &logs_uid,
+                query: &semantic_query,
+                filter: log_filter.as_deref(),
+                sort: log_sort,
+                limit,
+                semantic_ratio: Some(1.0),
+            };
+            match client.multi_search(&[keyword_params, semantic_params]) {
+                Ok(results) => {
+                    for result_set in &results {
+                        if let Some(hits) = result_set.get("hits").and_then(|h| h.as_array()) {
+                            for hit in hits {
+                                log_results.push(parse_log_hit(hit));
+                            }
                         }
                     }
+                    dedup_by_score(&mut log_results, limit);
                 }
-                dedup_by_score(&mut log_results, limit);
+                Err(e) => log::warn!("Log multi-search failed: {e}"),
             }
-            Err(e) => log::warn!("Log multi-search failed: {e}"),
         }
-    }
 
-    // --- Build output --------------------------------------------------------
+        // --- Build output ----------------------------------------------------
 
-    let file_count = file_results.len();
-    let log_count = log_results.len();
-    let panel_content = format_results(query, &file_results, &log_results, hide_contents);
+        let file_count = file_results.len();
+        let log_count = log_results.len();
+        let panel_content = format_results(&query, &file_results, &log_results, hide_contents);
 
-    if hide_contents {
-        // Return compact metadata directly in tool result — no panel, preserves tempo.
-        let mut result = ok_result(tool, panel_content);
-        result.preserves_tempo = true;
-        return result;
-    }
+        if hide_contents {
+            return ToolOutput { content: panel_content, is_error: false, create_panel: None, preserves_tempo: true };
+        }
 
-    // Create dynamic panel — full content lives there, not in the tool result.
-    let panel_id = crate::panel::create(state, &format!("search: {query}"), &panel_content);
+        let dyn_panel = DynPanel {
+            context_type: crate::panel::SEARCH_PANEL_TYPE.to_string(),
+            display_name: format!("search: {query}"),
+            metadata: vec![("result_content".to_string(), panel_content.clone())],
+            content: Some(panel_content),
+        };
 
-    ok_result(
-        tool,
-        format!("Created panel {panel_id}: {file_count} file chunks, {log_count} logs for \"{query}\"{PANEL_WARNING}"),
-    )
+        ToolOutput {
+            content: format!(
+                "Created panel {DYN_PANEL_ID_PLACEHOLDER}: \
+                 {file_count} file chunks, {log_count} logs for \"{query}\"{PANEL_WARNING}",
+            ),
+            is_error: false,
+            create_panel: Some(dyn_panel),
+            preserves_tempo: false,
+        }
+    })
 }

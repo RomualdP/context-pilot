@@ -229,6 +229,7 @@ impl Watcher for ConsoleWatcher {
                     processed_already: false,
                     kill_session: Some(self.session_name.clone()),
                     preserves_tempo: true,
+                    create_dyn_panel: None,
                 });
             }
 
@@ -247,6 +248,7 @@ impl Watcher for ConsoleWatcher {
                     callback_id: String::new(),
                     callback_name: String::new(),
                 }),
+                create_dyn_panel: None,
                 processed_already: false,
                 kill_session: None,
                 preserves_tempo: false,
@@ -260,6 +262,7 @@ impl Watcher for ConsoleWatcher {
                 tool_use_id: self.tool_use_id.clone(),
                 close_panel: false,
                 create_panel: None,
+                create_dyn_panel: None,
                 processed_already: false,
                 kill_session: None,
                 preserves_tempo: false,
@@ -292,6 +295,7 @@ impl Watcher for ConsoleWatcher {
                     callback_id: String::new(),
                     callback_name: String::new(),
                 }),
+                create_dyn_panel: None,
                 processed_already: false,
                 kill_session: None,
                 preserves_tempo: false,
@@ -306,6 +310,7 @@ impl Watcher for ConsoleWatcher {
                 tool_use_id: self.tool_use_id.clone(),
                 close_panel: false,
                 create_panel: None,
+                create_dyn_panel: None,
                 processed_already: false,
                 kill_session: None,
                 preserves_tempo: false,

@@ -22,7 +22,10 @@ pub(crate) fn truncate_str(s: &str, max_bytes: usize) -> &str {
 
 /// Sentinel value returned when a blocking `console_wait` is registered.
 /// The binary's event loop replaces this with the real result when satisfied.
-pub const CONSOLE_WAIT_BLOCKING_SENTINEL: &str = "__CONSOLE_WAIT_BLOCKING__";
+///
+/// Defined as a const mirroring [`cp_base::tools::async_exec::BLOCKING_TOOL_SENTINEL`]
+/// to avoid `pub use` (forbidden by `clippy::pub_use`).
+pub const CONSOLE_WAIT_BLOCKING_SENTINEL: &str = cp_base::tools::async_exec::BLOCKING_TOOL_SENTINEL;
 
 /// Maximum execution time for `debug_bash` (blocking tool — must be short).
 const BASH_MAX_EXECUTION_SECS: u64 = 10;

@@ -7,6 +7,9 @@ use serde_json::{Value, json};
 /// Pre-flight validation for tool calls (parameter checks before execution).
 pub mod pre_flight;
 
+/// Async tool execution — spawn blocking I/O on worker threads.
+pub mod async_exec;
+
 // =============================================================================
 // YAML Tool Text — deserialized from yamls/tools/*.yaml
 // =============================================================================

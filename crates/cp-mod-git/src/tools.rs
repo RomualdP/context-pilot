@@ -5,6 +5,7 @@ use cp_base::config::constants;
 use cp_base::modules::{run_with_timeout, truncate_output};
 use cp_base::state::context::Kind;
 use cp_base::state::runtime::State;
+use cp_base::tools::async_exec::{ToolOutput, spawn_async_tool};
 use cp_base::tools::{ToolResult, ToolUse};
 
 use super::classify::{CommandClass, classify_git, validate_git_command};
@@ -56,35 +57,8 @@ pub(crate) fn execute_git_command(tool: &ToolUse, state: &mut State) -> ToolResu
             }
         }
         CommandClass::Mutating => {
-            // Execute directly with timeout
-            let mut cmd = Command::new("git");
-            let _ = cmd.args(&args).env("GIT_TERMINAL_PROMPT", "0");
-
-            // If GITHUB_TOKEN is available, create a temporary askpass script
-            // so git push/pull/fetch can authenticate via HTTPS automatically.
-            let github_token = std::env::var("GITHUB_TOKEN").ok();
-            let askpass_tempfile = github_token.as_ref().and_then(|token| {
-                let askpass_path = std::env::temp_dir().join(format!("cpilot_askpass_{}", std::process::id()));
-                let script = format!("#!/bin/sh\necho '{}'", token.replace('\'', "'\\''"));
-                std::fs::write(&askpass_path, &script).is_ok().then(|| {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt as _;
-                        let _ = std::fs::set_permissions(&askpass_path, std::fs::Permissions::from_mode(0o700)).ok();
-                    }
-                    let _ = cmd.env("GIT_ASKPASS", &askpass_path);
-                    askpass_path
-                })
-            });
-
-            let result = run_with_timeout(cmd, GIT_CMD_TIMEOUT_SECS);
-
-            // Clean up temp askpass script
-            if let Some(ref path) = askpass_tempfile {
-                let _ = std::fs::remove_file(path).ok();
-            }
-
-            // Heuristic-based cache invalidation for GitResult panels
+            // Pre-invalidate cached panels BEFORE spawning async (needs &mut State).
+            // Slightly eager (runs even if command fails), but safe — panels just refresh.
             let invalidations = super::cache_invalidation::find_invalidations(command);
             if invalidations.is_empty() {
                 // Unknown mutating command -> blanket invalidation (safe default)
@@ -99,24 +73,53 @@ pub(crate) fn execute_git_command(tool: &ToolUse, state: &mut State) -> ToolResu
                     }
                 }
             }
-            // P6 (Git) always invalidated via .git/ file watcher — no action needed here
 
-            match result {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let combined = if stderr.trim().is_empty() {
-                        stdout.trim().to_string()
-                    } else if stdout.trim().is_empty() {
-                        stderr.trim().to_string()
-                    } else {
-                        format!("{}\n{}", stdout.trim(), stderr.trim())
-                    };
-                    let is_error = !output.status.success();
-                    let combined = truncate_output(&combined, constants::MAX_RESULT_CONTENT_BYTES);
-                    ToolResult::new(
-                        tool.id.clone(),
-                        if combined.is_empty() {
+            // Extract owned params for the closure
+            let github_token = std::env::var("GITHUB_TOKEN").ok();
+
+            spawn_async_tool(state, tool, GIT_CMD_TIMEOUT_SECS.saturating_add(5), move || {
+                // Build Command inside closure (needs askpass temp file created here)
+                let mut cmd = Command::new("git");
+                let _ = cmd.args(&args).env("GIT_TERMINAL_PROMPT", "0");
+
+                // If GITHUB_TOKEN is available, create a temporary askpass script
+                // so git push/pull/fetch can authenticate via HTTPS automatically.
+                let askpass_tempfile = github_token.as_ref().and_then(|token| {
+                    let askpass_path = std::env::temp_dir().join(format!("cpilot_askpass_{}", std::process::id()));
+                    let script = format!("#!/bin/sh\necho '{}'", token.replace('\'', "'\\''"));
+                    std::fs::write(&askpass_path, &script).is_ok().then(|| {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt as _;
+                            let _ =
+                                std::fs::set_permissions(&askpass_path, std::fs::Permissions::from_mode(0o700)).ok();
+                        }
+                        let _ = cmd.env("GIT_ASKPASS", &askpass_path);
+                        askpass_path
+                    })
+                });
+
+                let result = run_with_timeout(cmd, GIT_CMD_TIMEOUT_SECS);
+
+                // Clean up temp askpass script
+                if let Some(ref path) = askpass_tempfile {
+                    let _ = std::fs::remove_file(path).ok();
+                }
+
+                match result {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let combined = if stderr.trim().is_empty() {
+                            stdout.trim().to_string()
+                        } else if stdout.trim().is_empty() {
+                            stderr.trim().to_string()
+                        } else {
+                            format!("{}\n{}", stdout.trim(), stderr.trim())
+                        };
+                        let is_error = !output.status.success();
+                        let combined = truncate_output(&combined, constants::MAX_RESULT_CONTENT_BYTES);
+                        let content = if combined.is_empty() {
                             if is_error {
                                 "Command failed with no output".to_string()
                             } else {
@@ -124,19 +127,19 @@ pub(crate) fn execute_git_command(tool: &ToolUse, state: &mut State) -> ToolResu
                             }
                         } else {
                             combined
-                        },
-                        is_error,
-                    )
+                        };
+                        ToolOutput { content, is_error, create_panel: None, preserves_tempo: false }
+                    }
+                    Err(e) => {
+                        let content = if e.kind() == std::io::ErrorKind::NotFound {
+                            "git not found. Ensure git is installed and on PATH.".to_string()
+                        } else {
+                            format!("Error running git: {e}")
+                        };
+                        ToolOutput { content, is_error: true, create_panel: None, preserves_tempo: false }
+                    }
                 }
-                Err(e) => {
-                    let content = if e.kind() == std::io::ErrorKind::NotFound {
-                        "git not found. Ensure git is installed and on PATH.".to_string()
-                    } else {
-                        format!("Error running git: {e}")
-                    };
-                    ToolResult::new(tool.id.clone(), content, true)
-                }
-            }
+            })
         }
     }
 }
