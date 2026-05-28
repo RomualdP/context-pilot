@@ -5,8 +5,6 @@
 //! exponential decay and presented as YAML in a fixed panel.
 //!
 //! See `docs/design-logs-panel.md` for the full design.
-//!
-//!
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -51,8 +49,6 @@ const RECENT_LOGS_COUNT: usize = 10;
 /// time — vacations, breaks, and coding intensity don't affect scoring.
 const HALF_LIFE_LOGS: f64 = 100.0;
 
-// ─── Scoring ────────────────────────────────────────────────────────────────
-
 /// A scored log result before dedup.
 struct ScoredResult {
     /// Unique log entry identifier (e.g. `"L42"`).
@@ -88,9 +84,7 @@ fn write_entry(yaml: &mut String, entry: &ScoredResult) {
     let _w4 = writeln!(yaml, "    score: {:.3}", entry.score);
 }
 
-/// Format a millisecond timestamp as an ISO 8601 datetime string.
-///
-/// Falls back to `"unknown"` if the timestamp is zero or out of range.
+/// Format a millisecond timestamp as ISO 8601, or `"unknown"` if zero/out-of-range.
 fn format_timestamp_ms(ms: u64) -> String {
     if ms == 0 {
         return "unknown".to_string();
@@ -106,16 +100,15 @@ fn get_radar_yaml(state: &State) -> String {
     state.get_ext::<SearchState>().map_or_else(
         || "# Context Radar — search module not initialized\n".to_string(),
         |ss| {
-            if ss.radar_cache.yaml.is_empty() {
+            let cache = ss.radar_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if cache.yaml.is_empty() {
                 "# Context Radar — no task signals yet\n".to_string()
             } else {
-                ss.radar_cache.yaml.clone()
+                cache.yaml.clone()
             }
         },
     )
 }
-
-// ─── Signal ingestion ───────────────────────────────────────────────────────
 
 /// Maximum character length for a task context signal.
 ///
@@ -123,10 +116,7 @@ fn get_radar_yaml(state: &State) -> String {
 /// longer almost certainly contains a leaked `thought_body`.
 const MAX_SIGNAL_LEN: usize = 300;
 
-/// Truncate and sanitize a signal string.
-///
-/// - Caps at [`MAX_SIGNAL_LEN`] characters (on a char boundary).
-/// - Strips XML/tool-call artifacts that indicate a leaked `thought_body`.
+/// Truncate and sanitize a signal string (cap at [`MAX_SIGNAL_LEN`], strip XML artifacts).
 pub(crate) fn sanitize_signal(raw: &str) -> String {
     // If the signal contains tool XML, it's a leaked thought_body — take only
     // the text before the XML starts.
@@ -170,60 +160,135 @@ pub(crate) fn push_signal(state: &mut State, content: &str) {
     }
 }
 
-// ─── Refresh ────────────────────────────────────────────────────────────────
-
-/// Recompute the Context Radar panel content.
+/// Recompute the Context Radar panel content on a background thread.
 ///
-/// Queries the Meilisearch logs index for each task signal, scores results
-/// with adaptive decay, deduplicates, and stores the YAML in
-/// [`SearchState::radar_cache`].
+/// Extracts all needed data from state synchronously (fast), then spawns
+/// a detached thread that queries the Meilisearch logs index, scores
+/// results with adaptive decay, and stores the YAML in the shared
+/// [`RadarCache`].  Returns immediately — the panel picks up the new
+/// content on the next render cycle.
 ///
 /// Called from the main binary's pipeline after:
 /// - Think (with `task_context`)
 /// - `log_create` / `Close_conversation_history`
 /// - Boot pre-population
-#[expect(clippy::cast_precision_loss, reason = "timestamp ms as f64 — decay math requires floating point")]
-pub(crate) fn refresh(state: &mut State) {
+pub(crate) fn refresh(state: &State) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
     // Current log count for distance-based decay
-    let current_log_count = u64::try_from(cp_mod_logs::types::LogsState::get(state).logs.len()).unwrap_or(0) as f64;
+    let logs_state = cp_mod_logs::types::LogsState::get(state);
+    let current_log_count = u64::try_from(logs_state.logs.len()).unwrap_or(0);
+
+    // Snapshot recent logs for the deterministic section (before releasing borrow)
+    let recent_count = RECENT_LOGS_COUNT.min(logs_state.logs.len());
+    let recent_logs: Vec<RecentLogSnapshot> = logs_state
+        .logs
+        .iter()
+        .rev()
+        .take(recent_count)
+        .map(|l| RecentLogSnapshot {
+            id: l.id.clone(),
+            datetime: l.datetime.clone(),
+            importance: l.importance.clone(),
+            tags: l.tags.clone(),
+            content: l.content.clone(),
+        })
+        .collect();
 
     // Read connection info + signals (snapshot to release borrow)
-    let (port, master_key, project_hash, signals) = {
-        let Some(ss) = state.get_ext::<SearchState>() else {
-            return;
-        };
-        if ss.persist.port == 0 || ss.persist.task_signals.is_empty() {
-            // No server or no signals — clear the cache
-            if let Some(ss_mut) = state.get_ext_mut::<SearchState>() {
-                ss_mut.radar_cache.yaml = String::from("# Context Radar — no task signals yet\n");
-                ss_mut.radar_cache.last_refresh_ms = now_ms;
-            }
-            return;
-        }
-        (
-            ss.persist.port,
-            ss.persist.master_key.clone(),
-            ss.persist.project_hash.clone(),
-            ss.persist.task_signals.clone(),
-        )
+    let Some(ss) = state.get_ext::<SearchState>() else {
+        return;
     };
 
-    let logs_uid = format!("cp_{project_hash}_logs");
+    if ss.persist.port == 0 || ss.persist.task_signals.is_empty() {
+        // No server or no signals — clear the cache via the shared Arc
+        let mut cache = ss.radar_cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache.yaml = String::from("# Context Radar — no task signals yet\n");
+        cache.last_refresh_ms = now_ms;
+        drop(cache);
+        return;
+    }
 
-    let Ok(client) = MeiliClient::new(port, &master_key) else {
+    let job = RefreshJob {
+        now_ms,
+        current_log_count,
+        recent_logs,
+        port: ss.persist.port,
+        master_key: ss.persist.master_key.clone(),
+        project_hash: ss.persist.project_hash.clone(),
+        signals: ss.persist.task_signals.clone(),
+        radar_cache: std::sync::Arc::clone(&ss.radar_cache),
+    };
+
+    // Spawn background thread — fire-and-forget.
+    // The thread does the expensive Meilisearch queries and writes the
+    // result to the shared RadarCache when done.
+    let _handle = std::thread::Builder::new().name("radar-refresh".into()).spawn(move || {
+        refresh_inner(&job);
+    });
+}
+
+/// Snapshot of a recent log entry for the deterministic radar section.
+///
+/// Avoids holding a borrow on `LogsState` across the async boundary.
+struct RecentLogSnapshot {
+    /// Unique log entry ID (e.g. `"L42"`).
+    id: String,
+    /// ISO 8601 datetime string.
+    datetime: String,
+    /// Importance level (e.g. `"high"`).
+    importance: String,
+    /// Freeform categorization tags.
+    tags: Vec<String>,
+    /// Log entry text.
+    content: String,
+}
+
+/// All data needed by the background refresh thread.
+///
+/// Bundles parameters extracted from `State` on the main thread so
+/// `refresh_inner` can run without any state reference.
+struct RefreshJob {
+    /// Unix timestamp (ms) when the refresh was requested.
+    now_ms: u64,
+    /// Total log count at refresh time (for distance-based decay).
+    current_log_count: u64,
+    /// Snapshots of the N most-recent logs for deterministic inclusion.
+    recent_logs: Vec<RecentLogSnapshot>,
+    /// Meilisearch server TCP port.
+    port: u16,
+    /// Meilisearch API master key.
+    master_key: String,
+    /// 8-char hash of the project path (for index naming).
+    project_hash: String,
+    /// Task context signals from the Think tool (ring buffer snapshot).
+    signals: Vec<crate::types::TaskSignal>,
+    /// Shared handle to the radar cache for writing results.
+    radar_cache: crate::types::SharedRadarCache,
+}
+
+/// Inner refresh logic — runs on a background thread.
+///
+/// Queries the Meilisearch logs index for each task signal, scores results
+/// with adaptive decay, deduplicates, and writes the YAML to the shared
+/// [`RadarCache`].
+#[expect(clippy::cast_precision_loss, reason = "timestamp ms as f64 — decay math requires floating point")]
+fn refresh_inner(job: &RefreshJob) {
+    let current_log_count_f = job.current_log_count as f64;
+    let logs_uid = format!("cp_{}_logs", job.project_hash);
+
+    let Ok(client) = MeiliClient::new(job.port, &job.master_key) else {
         return;
     };
 
     // Query logs index for each signal
     let mut all_results: Vec<ScoredResult> = Vec::new();
 
-    for signal in &signals {
+    for signal in &job.signals {
         // Log-count-based decay: distance = how many logs created since this signal
-        let q_distance = current_log_count - signal.log_count as f64;
+        let q_distance = current_log_count_f - signal.log_count as f64;
         let q_decay = decay(q_distance, HALF_LIFE_LOGS);
 
         let Ok(json) = client.search(&SearchParams {
@@ -251,7 +316,7 @@ pub(crate) fn refresh(state: &mut State) {
                 .and_then(|id| id.strip_prefix('L'))
                 .and_then(|n| n.parse::<u64>().ok())
                 .unwrap_or(0);
-            let r_distance = current_log_count - log_number as f64;
+            let r_distance = current_log_count_f - log_number as f64;
             let r_decay = decay(r_distance, HALF_LIFE_LOGS);
 
             let score = relevance * q_decay * r_decay;
@@ -285,23 +350,16 @@ pub(crate) fn refresh(state: &mut State) {
         }
     }
 
-    // Collect the N most-recent log IDs so we can reserve them for the
-    // deterministic section and prevent the semantic search from "stealing"
-    // their slots.
-    let logs_state = cp_mod_logs::types::LogsState::get(state);
-    let recent_count = RECENT_LOGS_COUNT.min(logs_state.logs.len());
-    let recent_ids: std::collections::HashSet<String> =
-        logs_state.logs.iter().rev().take(recent_count).map(|l| l.id.clone()).collect();
+    // Collect the recent log IDs so we can exclude them from the semantic pool
+    let recent_ids: std::collections::HashSet<String> = job.recent_logs.iter().map(|l| l.id.clone()).collect();
 
     // Sort descending by score, exclude recent-log IDs, take top K
     let mut ranked: Vec<ScoredResult> = best_by_id.into_values().filter(|r| !recent_ids.contains(&r.log_id)).collect();
     ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     ranked.truncate(MAX_FINAL_RESULTS);
 
-    // Inject the N most recent logs deterministically (not via Meilisearch).
-    // These are always included regardless of signal-based relevance scoring,
-    // because we excluded them from the semantic pool above.
-    for log in logs_state.logs.iter().rev().take(recent_count) {
+    // Inject the N most recent logs deterministically (from snapshot)
+    for log in &job.recent_logs {
         ranked.push(ScoredResult {
             log_id: log.id.clone(),
             datetime: log.datetime.clone(),
@@ -318,13 +376,13 @@ pub(crate) fn refresh(state: &mut State) {
 
     // Build YAML output
     let mut yaml = String::with_capacity(4096);
-    let _h0 = writeln!(yaml, "# Context Radar — {} results from {} signals", ranked.len(), signals.len());
+    let _h0 = writeln!(yaml, "# Context Radar — {} results from {} signals", ranked.len(), job.signals.len());
     let _h1 = writeln!(yaml, "# Half-life: {HALF_LIFE_LOGS:.0} logs");
 
     // Show all task signals as anchors with timestamps (most recent first)
-    if !signals.is_empty() {
+    if !job.signals.is_empty() {
         let _h2 = writeln!(yaml, "anchors:");
-        for sig in signals.iter().rev() {
+        for sig in job.signals.iter().rev() {
             let datetime = format_timestamp_ms(sig.timestamp_ms);
             let _h3 = writeln!(yaml, "  - time: \"{datetime}\"");
             let _h4 = writeln!(yaml, "    signal: \"{}\"", sig.content.replace('"', "\\\""));
@@ -340,14 +398,12 @@ pub(crate) fn refresh(state: &mut State) {
         }
     }
 
-    // Store in cache
-    if let Some(ss) = state.get_ext_mut::<SearchState>() {
-        ss.radar_cache.yaml = yaml;
-        ss.radar_cache.last_refresh_ms = now_ms;
+    // Store in shared cache — the panel picks this up on next render
+    if let Ok(mut cache) = job.radar_cache.lock() {
+        cache.yaml = yaml;
+        cache.last_refresh_ms = job.now_ms;
     }
 }
-
-// ─── Panel ──────────────────────────────────────────────────────────────────
 
 /// Fixed panel that shows Context Radar results.
 pub(crate) struct ContextRadarPanel;

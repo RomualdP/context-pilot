@@ -100,8 +100,9 @@ exceptions:
   - path: "crates/cp-mod-search/src/radar.rs"
     match: "timestamp ms as f64 — decay math requires floating point"
     reason: >
-      refresh() casts u64 timestamps to f64 for decay math and uses
-      sequential write!() calls to build the YAML output string.
+      refresh_inner() casts u64 timestamps and log counts to f64 for
+      exponential decay math and uses sequential write!() calls to build
+      the YAML output string.
     strategy: >
       Irreducible — f64 arithmetic is required for exponential decay.
 

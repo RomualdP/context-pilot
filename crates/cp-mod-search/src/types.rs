@@ -28,8 +28,12 @@ pub(crate) const MAX_TASK_SIGNALS: usize = 20;
 
 /// Cached Context Radar panel content.
 ///
-/// Updated by [`crate::radar::refresh`] after Think (with `task_context`)
-/// or log creation.  Read by [`crate::radar::ContextRadarPanel::context_content`].
+/// Updated by [`crate::radar::refresh`] on a background thread after
+/// Think (with `task_context`) or log creation.  Read by
+/// [`crate::radar::ContextRadarPanel::context_content`].
+///
+/// Wrapped in `Arc<Mutex<>>` so a background refresh thread can write
+/// results without blocking the main event loop.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RadarCache {
     /// Pre-computed YAML content for the panel.
@@ -37,6 +41,10 @@ pub(crate) struct RadarCache {
     /// Unix timestamp (ms) of last refresh.
     pub last_refresh_ms: u64,
 }
+
+/// Thread-safe handle to the radar cache, shared between the main thread
+/// and background refresh jobs.
+pub(crate) type SharedRadarCache = Arc<Mutex<RadarCache>>;
 
 /// Persisted search state — survives TUI reloads.
 ///
@@ -90,8 +98,9 @@ pub(crate) struct SearchState {
     /// Indexer metrics, shared with the indexer thread via `Arc`.
     /// Read by the Ctrl+I overlay and overview panel.
     pub metrics: Arc<Mutex<SearchMetrics>>,
-    /// Cached Context Radar panel content.  Updated by [`crate::radar::refresh`].
-    pub radar_cache: RadarCache,
+    /// Cached Context Radar panel content.  Shared with background refresh
+    /// threads via `Arc<Mutex<>>`.  Updated by [`crate::radar::refresh`].
+    pub radar_cache: SharedRadarCache,
 }
 
 impl std::fmt::Debug for SearchState {

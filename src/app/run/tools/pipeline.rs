@@ -240,7 +240,10 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
     // === LOGS → MEILISEARCH SYNC ===
     // Push new log entries to the search index AFTER tool execution.
     // Cannot use on_tool_complete (fires during streaming, before execution).
-    let logs_changed = tools.iter().any(|t| t.name == "log_create" || t.name == "Close_conversation_history");
+    // Only trigger when tools were actually executed — skip queued tools.
+    let logs_changed = tools.iter().zip(tool_results.iter()).any(|(t, r)| {
+        (t.name == "log_create" || t.name == "Close_conversation_history") && !r.content.starts_with("Queued as #")
+    });
     if logs_changed {
         cp_mod_search::sync_logs_to_meilisearch(&app.state);
     }
@@ -263,7 +266,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
 
     // Refresh Context Radar panel when signals or logs changed
     if radar_needs_refresh {
-        cp_mod_search::refresh_radar(&mut app.state);
+        cp_mod_search::refresh_radar(&app.state);
     }
 
     // === REVERIE TRIGGER ===

@@ -194,7 +194,13 @@ impl Module for SearchModule {
         let persist =
             SearchPersistData { port, master_key, project_hash, index_ready: false, ..SearchPersistData::default() };
 
-        state.set_ext(SearchState { persist, indexer_tx, watcher, metrics, radar_cache: types::RadarCache::default() });
+        state.set_ext(SearchState {
+            persist,
+            indexer_tx,
+            watcher,
+            metrics,
+            radar_cache: std::sync::Arc::new(std::sync::Mutex::new(types::RadarCache::default())),
+        });
     }
 
     fn reset_state(&self, state: &mut State) {
@@ -308,7 +314,7 @@ impl Module for SearchModule {
                 indexer_tx,
                 watcher,
                 metrics,
-                radar_cache: types::RadarCache::default(),
+                radar_cache: std::sync::Arc::new(std::sync::Mutex::new(types::RadarCache::default())),
             });
 
             // Backfill: push any existing logs to Meilisearch (idempotent upsert)
@@ -415,7 +421,7 @@ impl Module for SearchModule {
 /// - Think (with `task_context`)
 /// - `log_create` / `Close_conversation_history`
 /// - Boot pre-population (via `load_module_data`)
-pub fn refresh_radar(state: &mut State) {
+pub fn refresh_radar(state: &State) {
     radar::refresh(state);
 }
 
@@ -467,7 +473,8 @@ pub fn sync_logs_to_meilisearch(state: &State) {
         .collect();
 
     let Ok(client) = meili::client::MeiliClient::new(port, &master_key) else { return };
-    if let Ok(task) = client.add_documents(&logs_uid, &serde_json::Value::Array(docs)) {
-        let _r = meili::tasks::wait_for_task(&client, task);
-    }
+    // Fire-and-forget: Meilisearch processes the task asynchronously (including
+    // remote Voyage AI embedding calls).  No need to wait — the documents will
+    // appear in search results within seconds, and blocking here freezes the UI.
+    let _r = client.add_documents(&logs_uid, &serde_json::Value::Array(docs));
 }
