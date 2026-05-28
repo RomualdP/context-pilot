@@ -119,6 +119,9 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
         let is_loading = ctx.cached_content.is_none() && ctx.context_type.needs_cache();
 
         let is_fixed = ctx.context_type.is_fixed();
+        let is_console = ctx.context_type.as_str() == "console";
+        let is_running_console =
+            is_console && ctx.get_meta_str("console_status").is_some_and(|s| s.starts_with("running"));
 
         let badge = if is_fixed {
             fixed_panel_badge(ctx.context_type.as_str(), state)
@@ -131,24 +134,17 @@ fn build_entries(state: &State, collapsed: bool) -> Vec<SidebarEntry> {
         let shortcut = if is_fixed {
             // Don't show "0" — empty string hides the badge
             fixed_panel_badge(ctx.context_type.as_str(), state).filter(|s| s != "0").unwrap_or_default()
+        } else if is_running_console {
+            spinner().to_owned()
         } else {
             ctx.id.clone()
         };
 
-        let is_console = ctx.context_type.as_str() == "console";
-        let is_running_console = is_console && ctx.name.contains("(running)");
-
         let label = if collapsed {
             String::new()
-        } else if is_running_console {
-            let name = crate::ui::helpers::truncate_string(&ctx.name, 16);
-            format!("{} {name}", spinner(state.spinner_frame))
-        } else if is_console {
-            let name = crate::ui::helpers::truncate_string(&ctx.name, 16);
-            format!("  {name}")
         } else {
             let name = crate::ui::helpers::truncate_string(&ctx.name, 18);
-            if is_loading { format!("{name} {spin}", spin = spinner(state.spinner_frame)) } else { name }
+            if is_loading { format!("{name} {spin}", spin = spinner()) } else { name }
         };
 
         entries.push(SidebarEntry {

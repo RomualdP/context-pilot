@@ -54,7 +54,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &mut State) {
         return;
     };
     render_body(frame, state, body_area, &ir_frame);
-    ir::render_status_bar::render_status_bar_from_ir(frame, &ir_frame.status_bar, status_area, state.spinner_frame);
+    ir::render_status_bar::render_status_bar_from_ir(frame, &ir_frame.status_bar, status_area);
 
     // Render performance overlay if enabled
     if state.flags.ui.perf_enabled {

@@ -59,8 +59,6 @@ pub struct State {
     pub tools: Vec<ToolDefinition>,
     /// Active module IDs
     pub active_modules: std::collections::HashSet<String>,
-    /// Frame counter for spinner animations (wraps around)
-    pub spinner_frame: u64,
     /// Active theme ID (dnd, modern, futuristic, forest, sea, space)
     pub active_theme: String,
     /// Selected LLM provider
@@ -207,7 +205,6 @@ impl Default for State {
             global_next_uid: 1,
             tools: vec![],
             active_modules: std::collections::HashSet::new(),
-            spinner_frame: 0,
             config_selected_bar: 0,
             active_theme: crate::config::DEFAULT_THEME.to_string(),
             llm_provider: LlmProvider::default(),

@@ -136,9 +136,12 @@ pub(crate) use cp_base::ui::{Cell, render_table};
 /// Braille spinner frames (smooth 10-frame animation)
 const SPINNER_BRAILLE: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-/// Get a braille spinner frame for the given animation counter.
-pub(crate) fn spinner(frame: u64) -> &'static str {
-    SPINNER_BRAILLE.iter().copied().cycle().nth(frame.to_usize()).unwrap_or("⠋")
+/// Get a braille spinner frame derived from the current wall-clock time.
+/// Rotates at 10fps (100ms per frame), independent of any frame counter.
+pub(crate) fn spinner() -> &'static str {
+    let frame = cp_base::panels::now_ms().checked_div(100).unwrap_or(0);
+    let idx = frame.to_usize().checked_rem(SPINNER_BRAILLE.len()).unwrap_or(0);
+    SPINNER_BRAILLE.get(idx).copied().unwrap_or("⠋")
 }
 
 // ─── Syntax Highlighting ─────────────────────────────────────────────────────

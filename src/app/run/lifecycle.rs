@@ -358,25 +358,14 @@ impl App {
         );
     }
 
-    /// Update spinner animation frame if there's active loading/streaming.
+    /// Tick dirty flag so time-based spinners re-render.
     /// Throttled to 10fps (100ms) to avoid unnecessary re-renders.
     fn update_spinner_animation(&mut self) {
         let now = now_ms();
         if now.saturating_sub(self.last_spinner_ms) < 100 {
             return;
         }
-
-        // Check if there's any active operation that needs spinner animation
-        let has_active_spinner = self.state.flags.stream.phase.is_streaming()
-            || self.state.flags.lifecycle.api_check_in_progress
-            || self.state.context.iter().any(|c| c.cached_content.is_none() && c.context_type.needs_cache());
-
-        if has_active_spinner {
-            self.last_spinner_ms = now;
-            // Increment spinner frame (wraps around automatically with u64)
-            self.state.spinner_frame = self.state.spinner_frame.wrapping_add(1);
-            // Mark dirty to trigger re-render with new spinner frame
-            self.state.flags.ui.dirty = true;
-        }
+        self.last_spinner_ms = now;
+        self.state.flags.ui.dirty = true;
     }
 }

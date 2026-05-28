@@ -16,9 +16,9 @@ use crate::ui::{helpers::spinner, theme};
 use cp_base::cast::Safe as _;
 
 /// Render the status bar from its IR snapshot.
-pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBar, area: Rect, spinner_frame: u64) {
+pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBar, area: Rect) {
     let base_style = Style::default().bg(theme::bg_base()).fg(theme::text_muted());
-    let spin = spinner(spinner_frame);
+    let spin = spinner();
 
     let mut spans = vec![Span::styled(" ", base_style)];
 
