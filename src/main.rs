@@ -138,8 +138,10 @@ fn render_boot_screen(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ste
         let filled = u16::try_from(filled_usize).unwrap_or(gauge_width);
         let mut gauge_bar = "█".repeat(filled_usize);
         gauge_bar.push_str(&"░".repeat(usize::from(gauge_width.saturating_sub(filled))));
-        let gauge_line =
-            Line::from(vec![Span::styled(gauge_bar, Style::default().fg(theme::accent())), Span::raw(format!(" {pct}%"))]);
+        let gauge_line = Line::from(vec![
+            Span::styled(gauge_bar, Style::default().fg(theme::accent())),
+            Span::raw(format!(" {pct}%")),
+        ]);
         frame.render_widget(gauge_line, gauge_area);
     }));
 }

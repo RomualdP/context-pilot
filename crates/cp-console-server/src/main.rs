@@ -37,6 +37,8 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
+/// Process cleanup: reaper thread, graceful shutdown, signal handlers, FD limits.
+mod cleanup;
 /// JSON protocol types and escape-sequence helpers shared with the TUI client.
 mod protocol;
 use protocol::{Request, Response, SessionInfo, interpret_escapes};
@@ -50,18 +52,18 @@ static SHUTDOWN_REQUESTED: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new
 // ---------------------------------------------------------------------------
 
 /// State of a single managed child process.
-struct Session {
+pub(crate) struct Session {
     /// PID of the child process.
-    pid: u32,
+    pub(crate) pid: u32,
     /// Handle to the child's stdin pipe, used by `"send"` commands.
-    stdin: Option<std::process::ChildStdin>,
+    pub(crate) stdin: Option<std::process::ChildStdin>,
     /// Current lifecycle status of the child process.
-    status: SessionStatus,
+    pub(crate) status: SessionStatus,
 }
 
 /// Lifecycle status of a managed session.
 #[derive(Clone)]
-enum SessionStatus {
+pub(crate) enum SessionStatus {
     /// The child process is still running.
     Running,
     /// The child process has exited with the given exit code.
@@ -70,7 +72,7 @@ enum SessionStatus {
 
 impl Session {
     /// Check if the process has exited (non-blocking).
-    fn poll_status(&mut self) {
+    pub(crate) fn poll_status(&mut self) {
         if matches!(self.status, SessionStatus::Running) && !is_pid_alive(self.pid) {
             // Try to get exit code from /proc/{pid}/status or fall back to -1
             self.status = SessionStatus::Exited(-1);
@@ -94,13 +96,13 @@ impl Session {
     }
 
     /// Return `true` if the session has reached a terminal (exited) state.
-    const fn is_terminal(&self) -> bool {
+    pub(crate) const fn is_terminal(&self) -> bool {
         matches!(self.status, SessionStatus::Exited(_))
     }
 }
 
 /// Return `true` if the process with the given PID is still alive (non-blocking signal-0 probe).
-fn is_pid_alive(pid: u32) -> bool {
+pub(crate) fn is_pid_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stdout(Stdio::null())
@@ -401,22 +403,9 @@ impl ConnectionHandler {
 // Main: daemonize and listen
 // ---------------------------------------------------------------------------
 
-/// Raise the process file-descriptor soft limit. The console server holds
-/// pipes, sockets, and log files for every managed child — the macOS default
-/// of 256 FDs is easily exhausted. We raise to `min(hard_limit, 8192)`.
-fn raise_fd_limit() {
-    let Ok((soft, hard)) = rlimit::getrlimit(rlimit::Resource::NOFILE) else {
-        return;
-    };
-    let target = hard.min(8192);
-    if soft < target {
-        let _r = rlimit::setrlimit(rlimit::Resource::NOFILE, target, hard);
-    }
-}
-
 /// Entry point: parse arguments, bind the Unix socket, and start the accept loop.
 fn main() {
-    raise_fd_limit();
+    cleanup::raise_fd_limit();
     let Some(socket_path) = std::env::args().nth(1) else {
         drop(writeln!(std::io::stderr(), "Usage: cp-console-server <socket_path>"));
         return;
@@ -447,14 +436,14 @@ fn main() {
     let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
 
     // Install SIGTERM/SIGINT handlers — set flag, main loop polls it
-    install_signal_handlers();
+    cleanup::install_signal_handlers();
 
     // Spawn a background thread to auto-reap exited sessions.
     // Without this, sessions that exit but are never explicitly killed accumulate
     // forever — each holding a stdin pipe FD — until FD exhaustion.
     {
         let sessions = Arc::clone(&sessions);
-        drop(std::thread::spawn(move || reaper_loop(&sessions)));
+        drop(std::thread::spawn(move || cleanup::reaper_loop(&sessions)));
     }
 
     // Accept connections (one thread per connection)
@@ -479,94 +468,7 @@ fn main() {
     }
 
     // Cleanup: kill children, remove socket/pid files
-    kill_all_sessions(&sessions);
+    cleanup::kill_all_sessions(&sessions);
     let _: Option<()> = std::fs::remove_file(&socket_path).ok();
     let _: Option<()> = std::fs::remove_file(&pid_path).ok();
-}
-
-/// Register SIGINT and SIGHUP handlers via `signal-hook`.
-///
-/// Each handler atomically sets [`SHUTDOWN_REQUESTED`] — the main accept loop
-/// polls it and breaks cleanly.
-fn install_signal_handlers() {
-    for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGHUP] {
-        drop(signal_hook::flag::register(sig, Arc::clone(&SHUTDOWN_REQUESTED)));
-    }
-}
-
-/// Grace period (seconds) after a session exits before the reaper removes it.
-/// Gives the TUI time to read the final status and log output.
-const REAPER_GRACE_SECS: u64 = 30;
-
-/// Background thread that periodically removes exited sessions from the map.
-///
-/// Without this, sessions that complete but are never explicitly killed by the
-/// TUI accumulate indefinitely — each holding a stdin pipe FD. Over hundreds
-/// of callback invocations this exhausts the process file-descriptor limit.
-fn reaper_loop(sessions: &Sessions) {
-    /// Map from session key → first time we observed it as exited (seconds since epoch).
-    let mut exit_times: HashMap<String, u64> = HashMap::new();
-
-    loop {
-        if SHUTDOWN_REQUESTED.load(Ordering::Relaxed) {
-            break;
-        }
-
-        std::thread::sleep(std::time::Duration::from_secs(5));
-
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-
-        let mut map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
-
-        // Discover newly-exited sessions
-        for (key, session) in map.iter_mut() {
-            session.poll_status();
-            if session.is_terminal() {
-                let _prev = exit_times.entry(key.clone()).or_insert(now_secs);
-            }
-        }
-
-        // Remove sessions that have been exited long enough
-        let mut to_remove: Vec<String> = Vec::new();
-        for (key, &first_seen) in &exit_times {
-            if now_secs.saturating_sub(first_seen) >= REAPER_GRACE_SECS {
-                to_remove.push(key.clone());
-            }
-        }
-
-        for key in &to_remove {
-            if let Some(mut session) = map.remove(key) {
-                drop(session.stdin.take());
-            }
-            let _prev = exit_times.remove(key);
-        }
-
-        // Clean exit_times for sessions that were manually removed
-        exit_times.retain(|k, _| map.contains_key(k));
-
-        drop(map);
-    }
-}
-
-// Here be the last port of call — once ye enter, no process leaves alive.
-/// Kill all sessions — used during shutdown.
-fn kill_all_sessions(sessions: &Sessions) {
-    let mut map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut keys: Vec<_> = map.keys().cloned().collect();
-    keys.sort();
-    for key in &keys {
-        if let Some(session) = map.get_mut(key) {
-            if !session.is_terminal() {
-                drop(Command::new("kill").args([&session.pid.to_string()]).output());
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                if is_pid_alive(session.pid) {
-                    drop(Command::new("kill").args(["-9", &session.pid.to_string()]).output());
-                }
-            }
-            drop(session.stdin.take());
-        }
-    }
-    map.clear();
 }

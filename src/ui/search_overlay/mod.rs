@@ -9,7 +9,7 @@ mod display;
 pub(crate) mod text;
 
 use cp_render::Semantic;
-use cp_render::conversation::{
+use cp_render::overlay_ir::{
     SearchEmbeddings, SearchExtension, SearchIndex, SearchIndexOverlay, SearchRecentFile, SearchRecomputed,
     SearchServer, SearchSplitter, SearchTask,
 };

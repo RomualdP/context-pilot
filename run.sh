@@ -24,6 +24,10 @@ for arg in "$@"; do
     fi
 done
 
+# Build both binaries (TUI + console server) upfront
+cargo build --release -p cp-console-server
+cargo build --release
+
 while true; do
     # Run the TUI (CP_FLAMEGRAPH persists across reloads via env)
     cargo run --release -- "${ARGS[@]}"

@@ -138,9 +138,7 @@ impl Default for PerfMetrics {
             cpu_usage: AtomicU32::new(0),
             memory_bytes: AtomicU64::new(mem_bytes),
             open_fds: AtomicU32::new(0),
-            fd_limit_soft: AtomicU64::new(
-                rlimit::getrlimit(rlimit::Resource::NOFILE).map_or(0, |(soft, _)| soft),
-            ),
+            fd_limit_soft: AtomicU64::new(rlimit::getrlimit(rlimit::Resource::NOFILE).map_or(0, |(soft, _)| soft)),
         }
     }
 }
@@ -299,7 +297,7 @@ impl PerfMetrics {
         }
 
         // FD count (works on macOS and Linux via /dev/fd)
-        let fd_count = std::fs::read_dir("/dev/fd").map_or(0, |entries| entries.count());
+        let fd_count = std::fs::read_dir("/dev/fd").map_or(0, Iterator::count);
         self.open_fds.store(fd_count.to_u32(), Ordering::Relaxed);
     }
 

@@ -278,7 +278,7 @@ fn fd_semantic(open: u32, limit: u64) -> Semantic {
     if limit == 0 {
         return Semantic::Muted;
     }
-    let pct = f64::from(open) / limit as f64 * 100.0;
+    let pct = f64::from(open) / f64::from(u32::try_from(limit).unwrap_or(u32::MAX)) * 100.0;
     if pct < 50.0 {
         Semantic::Success
     } else if pct < 80.0 {

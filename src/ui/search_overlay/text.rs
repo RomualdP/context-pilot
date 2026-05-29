@@ -4,7 +4,7 @@
 //! IR data. Used by the `CopyIndexOverlay` action (Ctrl+C while the overlay
 //! is open).
 
-use cp_render::conversation::SearchIndexOverlay;
+use cp_render::overlay_ir::SearchIndexOverlay;
 
 /// Build the overlay content as plain text for clipboard copying.
 ///

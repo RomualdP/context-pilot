@@ -23,6 +23,8 @@ pub mod conversation;
 pub mod frame;
 /// Markdown-to-IR conversion utilities.
 pub mod markdown;
+/// Search index overlay IR types (Ctrl+I).
+pub mod overlay_ir;
 
 // ── Shared primitives ────────────────────────────────────────────────
 

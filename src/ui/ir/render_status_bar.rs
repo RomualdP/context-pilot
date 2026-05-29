@@ -82,7 +82,10 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
 
     // === Git branch + changes ===
     if let Some(ref git) = status.git {
-        spans.push(Span::styled(format!(" {} ", git.branch), Style::default().fg(theme::card_text()).bg(theme::accent())));
+        spans.push(Span::styled(
+            format!(" {} ", git.branch),
+            Style::default().fg(theme::card_text()).bg(theme::accent()),
+        ));
         spans.push(Span::styled(" ", base_style));
 
         if git.files_changed > 0 {

@@ -139,71 +139,21 @@ impl Module for SearchModule {
     }
 
     fn init_state(&self, state: &mut State) {
-        let project_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
-        let project_hash = meili::bootstrap::hash_project_path(&project_path);
-
-        // Try to start/reconnect to the global Meilisearch server
-        let (port, master_key) = match meili::server::ensure_server_running() {
-            Ok(info) => {
-                // Register this project for orphan cleanup
-                let _r = meili::server::register_project(&project_path, &project_hash);
-                // Clean up stale indexes from deleted projects
-                meili::server::cleanup_orphan_indexes(info.port, &info.master_key);
-                (info.port, info.master_key)
-            }
-            Err(e) => {
-                log::warn!("Meilisearch server not available: {e}");
-                (0, String::new())
-            }
-        };
-
-        // Create per-project indexes if the server is available
-        if port > 0
-            && let Err(e) = meili::bootstrap::ensure_indexes(port, &master_key, &project_hash)
-        {
-            log::warn!("Failed to create Meilisearch indexes: {e}");
-        }
-
-        // Start background indexer + file watcher
-        let metrics = std::sync::Arc::new(std::sync::Mutex::new(types::SearchMetrics::default()));
-
-        // Populate initial metrics from existing Meilisearch indexes
-        if port > 0 {
-            meili::bootstrap::populate_initial_metrics(port, &master_key, &project_hash, &metrics);
-        }
-
-        let (indexer_tx, watcher) = if port > 0 {
-            match indexer::start(indexer::IndexerParams {
-                port,
-                master_key: master_key.clone(),
-                project_hash: project_hash.clone(),
-                project_root: std::path::PathBuf::from(&project_path),
-                metrics: std::sync::Arc::clone(&metrics),
-                skip_initial_scan: false,
-            }) {
-                Ok((tx, w)) => (Some(tx), Some(types::WatcherHandle::new(w))),
-                Err(e) => {
-                    log::warn!("Failed to start search indexer: {e}");
-                    (None, None)
-                }
-            }
-        } else {
-            (None, None)
-        };
-
-        let persist =
-            SearchPersistData { port, master_key, project_hash, index_ready: false, ..SearchPersistData::default() };
-
+        // Lightweight defaults only — heavy server startup is deferred to
+        // load_module_data() which runs for both fresh-start and reload paths.
+        // This avoids the double-init problem where init_state() did expensive
+        // work that load_module_data() immediately discarded and redid.
         state.set_ext(SearchState {
-            persist,
-            indexer_tx,
-            watcher,
-            metrics,
+            persist: SearchPersistData::default(),
+            indexer_tx: None,
+            watcher: None,
+            metrics: std::sync::Arc::new(std::sync::Mutex::new(types::SearchMetrics::default())),
             radar_cache: std::sync::Arc::new(std::sync::Mutex::new(types::RadarCache::default())),
         });
     }
 
     fn reset_state(&self, state: &mut State) {
+        // Lightweight reset — same as init_state
         self.init_state(state);
     }
 
@@ -221,90 +171,96 @@ impl Module for SearchModule {
     }
 
     fn load_module_data(&self, data: &serde_json::Value, state: &mut State) {
-        if let Ok(mut persist) = serde_json::from_value::<SearchPersistData>(data.clone()) {
-            // Sanitize persisted signals — earlier versions could store leaked
-            // thought_body content.  Truncate + strip XML artifacts.
-            for sig in &mut persist.task_signals {
-                sig.content = radar::sanitize_signal(&sig.content);
-            }
+        // Unified bootstrap: handles both fresh-start (Null data) and reload
+        // (persisted data) paths. This is the ONLY place heavy I/O happens.
+        let mut persist = serde_json::from_value::<SearchPersistData>(data.clone()).unwrap_or_default();
 
-            // Re-validate server connection — the port may have changed if the
-            // Meilisearch process was killed and restarted between saves.
-            match meili::server::ensure_server_running() {
-                Ok(info) => {
-                    persist.port = info.port;
-                    persist.master_key = info.master_key;
-                }
-                Err(e) => {
-                    log::warn!("Meilisearch server not available on reload: {e}");
-                    persist.port = 0;
-                    persist.master_key = String::new();
-                }
-            }
-
-            // Ensure indexes + embedders exist (idempotent — skips if already configured).
-            // Needed because embedder settings may have been removed or the server
-            // was wiped between saves.
-            if persist.port > 0
-                && let Err(e) =
-                    meili::bootstrap::ensure_indexes(persist.port, &persist.master_key, &persist.project_hash)
-            {
-                log::warn!("Failed to ensure Meilisearch indexes on reload: {e}");
-            }
-
-            let metrics = std::sync::Arc::new(std::sync::Mutex::new(types::SearchMetrics::default()));
-
-            // Populate initial metrics from existing Meilisearch indexes
-            if persist.port > 0 {
-                meili::bootstrap::populate_initial_metrics(
-                    persist.port,
-                    &persist.master_key,
-                    &persist.project_hash,
-                    &metrics,
-                );
-            }
-
-            // Restore recompute tracking from persisted data
-            if let Ok(mut m) = metrics.lock() {
-                m.recompute_counts.clone_from(&persist.recompute_counts);
-                m.last_sent_ms.clone_from(&persist.last_sent_ms);
-            }
-
-            // Restart indexer + watcher if the server was available
-            let (indexer_tx, watcher) = if persist.port > 0 {
-                let project_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
-                match indexer::start(indexer::IndexerParams {
-                    port: persist.port,
-                    master_key: persist.master_key.clone(),
-                    project_hash: persist.project_hash.clone(),
-                    project_root: std::path::PathBuf::from(&project_path),
-                    metrics: std::sync::Arc::clone(&metrics),
-                    skip_initial_scan: true,
-                }) {
-                    Ok((tx, w)) => (Some(tx), Some(types::WatcherHandle::new(w))),
-                    Err(e) => {
-                        log::warn!("Failed to restart search indexer: {e}");
-                        (None, None)
-                    }
-                }
-            } else {
-                (None, None)
-            };
-
-            state.set_ext(SearchState {
-                persist,
-                indexer_tx,
-                watcher,
-                metrics,
-                radar_cache: std::sync::Arc::new(std::sync::Mutex::new(types::RadarCache::default())),
-            });
-
-            // Backfill: push any existing logs to Meilisearch (idempotent upsert)
-            sync_logs_to_meilisearch(state);
-
-            // Pre-populate Context Radar from persisted signals + logs
-            radar::refresh(state);
+        // Sanitize persisted signals — earlier versions could store leaked
+        // thought_body content.  Truncate + strip XML artifacts.
+        for sig in &mut persist.task_signals {
+            sig.content = radar::sanitize_signal(&sig.content);
         }
+
+        let project_path = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+        let project_hash = meili::bootstrap::hash_project_path(&project_path);
+        persist.project_hash.clone_from(&project_hash);
+
+        // Start or reconnect to the global Meilisearch server
+        match meili::server::ensure_server_running() {
+            Ok(info) => {
+                persist.port = info.port;
+                persist.master_key = info.master_key;
+                // Register this project for orphan cleanup
+                let _r = meili::server::register_project(&project_path, &project_hash);
+                // Clean up stale indexes from deleted projects
+                meili::server::cleanup_orphan_indexes(persist.port, &persist.master_key);
+            }
+            Err(e) => {
+                log::warn!("Meilisearch server not available: {e}");
+                persist.port = 0;
+                persist.master_key = String::new();
+            }
+        }
+
+        // Ensure indexes + embedders exist (idempotent)
+        if persist.port > 0
+            && let Err(e) = meili::bootstrap::ensure_indexes(persist.port, &persist.master_key, &persist.project_hash)
+        {
+            log::warn!("Failed to ensure Meilisearch indexes: {e}");
+        }
+
+        let metrics = std::sync::Arc::new(std::sync::Mutex::new(types::SearchMetrics::default()));
+
+        // Populate initial metrics from existing Meilisearch indexes
+        if persist.port > 0 {
+            meili::bootstrap::populate_initial_metrics(
+                persist.port,
+                &persist.master_key,
+                &persist.project_hash,
+                &metrics,
+            );
+        }
+
+        // Restore recompute tracking from persisted data
+        if let Ok(mut m) = metrics.lock() {
+            m.recompute_counts.clone_from(&persist.recompute_counts);
+            m.last_sent_ms.clone_from(&persist.last_sent_ms);
+        }
+
+        // Start indexer + watcher (skip initial scan on reload, full scan on fresh start)
+        let is_reload = data != &serde_json::Value::Null;
+        let (indexer_tx, watcher) = if persist.port > 0 {
+            match indexer::start(indexer::IndexerParams {
+                port: persist.port,
+                master_key: persist.master_key.clone(),
+                project_hash: persist.project_hash.clone(),
+                project_root: std::path::PathBuf::from(&project_path),
+                metrics: std::sync::Arc::clone(&metrics),
+                skip_initial_scan: is_reload,
+            }) {
+                Ok((tx, w)) => (Some(tx), Some(types::WatcherHandle::new(w))),
+                Err(e) => {
+                    log::warn!("Failed to start search indexer: {e}");
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        state.set_ext(SearchState {
+            persist,
+            indexer_tx,
+            watcher,
+            metrics,
+            radar_cache: std::sync::Arc::new(std::sync::Mutex::new(types::RadarCache::default())),
+        });
+
+        // Backfill: push any existing logs to Meilisearch (idempotent upsert)
+        sync_logs_to_meilisearch(state);
+
+        // Pre-populate Context Radar from persisted signals + logs
+        radar::refresh(state);
     }
 
     fn save_worker_data(&self, _state: &State) -> serde_json::Value {

@@ -4,7 +4,7 @@
 //! for the two-column layout (left: server/database/index/extensions,
 //! right: splitter/embeddings/tasks/recomputed/recent).
 
-use cp_render::conversation::SearchIndexOverlay;
+use cp_render::overlay_ir::SearchIndexOverlay;
 use ratatui::prelude::Style;
 use ratatui::text::{Line, Span};
 
