@@ -1,19 +1,16 @@
 //! Shared UI helpers for panel rendering.
 //!
-//! Provides Cell, Align, and render_table so that extracted module crates
-//! can render tables without depending on the main binary.
+//! Provides plain-text table rendering for LLM context output and
+//! utility functions for tree output parsing.
 
-use ratatui::prelude::{Line, Span, Style};
 use unicode_width::UnicodeWidthStr;
-
-use crate::config::accessors::theme;
 
 /// Interactive question form types (ask_user_question tool).
 pub mod question_form;
 /// Render cache types for conversation panel performance.
 pub mod render_cache;
 
-/// Column alignment for table cells
+/// Column alignment for table cells.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Align {
     #[default]
@@ -21,131 +18,6 @@ pub enum Align {
     Left,
     /// Align text to the right, padding with leading spaces.
     Right,
-}
-
-/// A single table cell with text, style, and alignment
-#[derive(Debug)]
-pub struct Cell {
-    /// Display text content.
-    pub text: String,
-    /// Ratatui style (fg/bg/modifiers).
-    pub style: Style,
-    /// Column alignment.
-    pub align: Align,
-}
-
-impl Cell {
-    /// Create a left-aligned cell with the given text and style.
-    pub fn new<T: Into<String>>(text: T, style: Style) -> Self {
-        Self { text: text.into(), style, align: Align::Left }
-    }
-    /// Create a right-aligned cell with the given text and style.
-    pub fn right<T: Into<String>>(text: T, style: Style) -> Self {
-        Self { text: text.into(), style, align: Align::Right }
-    }
-}
-
-/// Pad a string to a target display width using spaces, respecting alignment.
-fn pad_to_width(text: &str, target: usize, align: Align) -> String {
-    let w = UnicodeWidthStr::width(text);
-    let deficit = target.saturating_sub(w);
-    match align {
-        Align::Left => format!("{}{}", text, " ".repeat(deficit)),
-        Align::Right => format!("{}{}", " ".repeat(deficit), text),
-    }
-}
-
-/// Render a table with Unicode box-drawing separators.
-///
-/// - `header`: column headers (bold, accent-colored)
-/// - `rows`: data rows as `Vec<Vec<Cell>>`
-/// - `footer`: optional footer row (rendered bold, preceded by a separator)
-/// - `indent`: number of leading spaces before each row
-///
-/// Returns `Vec<Line>` with aligned columns using ` │ ` separators and `─┼─` header underline.
-#[must_use]
-pub fn render_table(header: &[Cell], rows: &[Vec<Cell>], footer: Option<&[Cell]>, indent: usize) -> Vec<Line<'static>> {
-    let num_cols = header.len();
-
-    // Compute column widths from header + all rows + footer using display width
-    let mut col_widths: Vec<usize> = header.iter().map(|c| UnicodeWidthStr::width(c.text.as_str())).collect();
-    col_widths.resize(num_cols, 0);
-
-    for row in rows {
-        for (col, cell) in row.iter().enumerate() {
-            if let Some(w) = col_widths.get_mut(col) {
-                *w = (*w).max(UnicodeWidthStr::width(cell.text.as_str()));
-            }
-        }
-    }
-    if let Some(f) = footer {
-        for (col, cell) in f.iter().enumerate() {
-            if let Some(w) = col_widths.get_mut(col) {
-                *w = (*w).max(UnicodeWidthStr::width(cell.text.as_str()));
-            }
-        }
-    }
-
-    let pad = " ".repeat(indent);
-    let mut lines: Vec<Line<'_>> = Vec::new();
-
-    let separator = || -> Line<'static> {
-        let mut spans: Vec<Span<'static>> = vec![Span::raw(pad.clone())];
-        for (col, width) in col_widths.iter().enumerate() {
-            if col > 0 {
-                spans.push(Span::styled("─┼─", Style::default().fg(theme::border())));
-            }
-            spans.push(Span::styled("─".repeat(*width), Style::default().fg(theme::border())));
-        }
-        Line::from(spans)
-    };
-
-    let render_row = |cells: &[Cell], bold: bool| -> Line<'static> {
-        let mut spans: Vec<Span<'static>> = vec![Span::raw(pad.clone())];
-        for (col, col_w) in col_widths.iter().enumerate().take(num_cols) {
-            if col > 0 {
-                spans.push(Span::styled(" │ ", Style::default().fg(theme::border())));
-            }
-            if let Some(cell) = cells.get(col) {
-                let padded = pad_to_width(&cell.text, *col_w, cell.align);
-                let style = if bold { cell.style.bold() } else { cell.style };
-                spans.push(Span::styled(padded, style));
-            } else {
-                spans.push(Span::styled(" ".repeat(*col_w), Style::default()));
-            }
-        }
-        Line::from(spans)
-    };
-
-    // Header row (bold accent)
-    {
-        let mut spans: Vec<Span<'static>> = vec![Span::raw(pad.clone())];
-        for (col, hdr) in header.iter().enumerate() {
-            if col > 0 {
-                spans.push(Span::styled(" │ ", Style::default().fg(theme::border())));
-            }
-            let w = col_widths.get(col).copied().unwrap_or(0);
-            let padded = pad_to_width(&hdr.text, w, hdr.align);
-            spans.push(Span::styled(padded, Style::default().fg(theme::accent()).bold()));
-        }
-        lines.push(Line::from(spans));
-    }
-
-    // Header separator
-    lines.push(separator());
-
-    // Data rows
-    for row in rows {
-        lines.push(render_row(row, false));
-    }
-
-    // Footer (separator + bold row)
-    if let Some(f) = footer {
-        lines.push(separator());
-        lines.push(render_row(f, true));
-    }
-
-    lines
 }
 
 /// Simple text-cell for `render_table_text`. Style-free, just text + alignment.
