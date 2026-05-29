@@ -5,7 +5,8 @@
 //! installed to `~/.context-pilot/bin/tuwunel` and reused across all
 //! projects on the same machine.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use crate::server;
 
@@ -24,11 +25,18 @@ const VERSION_PLACEHOLDER: &str = "VERSION_PLACEHOLDER";
 /// Placeholder token for the architecture in [`TUWUNEL_URL_TEMPLATE`].
 const ARCH_PLACEHOLDER: &str = "ARCH_PLACEHOLDER";
 
+/// How long to cache a download failure before retrying.
+const DOWNLOAD_RETRY_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
 /// Ensure the Tuwunel binary exists at `~/.context-pilot/bin/tuwunel`.
 ///
 /// If absent, downloads the pinned release from GitHub and decompresses
 /// it with `zstd`. The download is ~26 MB (compressed) / ~87 MB (binary).
 /// This runs once per machine; subsequent calls are a no-op.
+///
+/// Download failures (HTTP 404, network errors) are cached in a marker
+/// file for 24 hours to avoid wasting 2–5 s on every boot retrying a
+/// request that is known to fail.
 ///
 /// # Errors
 ///
@@ -40,6 +48,13 @@ pub(crate) fn ensure_binary() -> Result<(), String> {
         return Ok(());
     }
 
+    // Check if a recent download attempt already failed — skip the HTTP
+    // roundtrip entirely until the retry interval expires.
+    let marker = download_failure_marker(&bin_path);
+    if let Some(reason) = is_download_recently_failed(&marker) {
+        return Err(reason);
+    }
+
     let bin_dir = bin_path.parent().ok_or("Invalid binary path")?;
     std::fs::create_dir_all(bin_dir).map_err(|e| format!("Cannot create {}: {e}", bin_dir.display()))?;
 
@@ -48,11 +63,15 @@ pub(crate) fn ensure_binary() -> Result<(), String> {
     let url = build_download_url()?;
     let zst_path = bin_path.with_extension("zst");
 
-    download_file(&url, &zst_path)?;
+    if let Err(e) = download_file(&url, &zst_path) {
+        write_download_failure(&marker, &e);
+        return Err(e);
+    }
+
     decompress_zstd(&zst_path, &bin_path)?;
 
     // Clean up the compressed archive
-    let _r = std::fs::remove_file(&zst_path);
+    drop(std::fs::remove_file(&zst_path));
 
     // Make the binary executable
     #[cfg(unix)]
@@ -61,6 +80,9 @@ pub(crate) fn ensure_binary() -> Result<(), String> {
         let perms = std::fs::Permissions::from_mode(0o755);
         std::fs::set_permissions(&bin_path, perms).map_err(|e| format!("Cannot set executable permission: {e}"))?;
     }
+
+    // Clear any stale failure marker on success
+    drop(std::fs::remove_file(&marker));
 
     log::info!("Tuwunel {TUWUNEL_VERSION} installed at {}", bin_path.display());
     Ok(())
@@ -119,4 +141,46 @@ fn decompress_zstd(src: &Path, dest: &Path) -> Result<(), String> {
     } else {
         Err(format!("zstd decompression failed (exit code: {})", status.code().unwrap_or(-1)))
     }
+}
+
+// -- Download failure caching ------------------------------------------------
+
+/// Marker file path for a failed download: `<binary_path>.download-failed`.
+fn download_failure_marker(bin_path: &Path) -> PathBuf {
+    let mut marker = bin_path.as_os_str().to_owned();
+    marker.push(".download-failed");
+    PathBuf::from(marker)
+}
+
+/// Check if a recent download failure was cached.
+///
+/// Returns `Some(reason)` if the marker exists and is younger than
+/// [`DOWNLOAD_RETRY_INTERVAL`], indicating we should skip the download.
+/// Returns `None` if we should attempt the download (no marker, stale
+/// marker, or unreadable marker).
+fn is_download_recently_failed(marker: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(marker).ok()?;
+    let first_line = content.lines().next()?;
+    let ts_secs: u64 = first_line.parse().ok()?;
+
+    let failed_at = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(ts_secs))?;
+    let age = SystemTime::now().duration_since(failed_at).ok()?;
+
+    if age < DOWNLOAD_RETRY_INTERVAL {
+        let reason = content.lines().nth(1).unwrap_or("download previously failed");
+        let hours_left = DOWNLOAD_RETRY_INTERVAL.saturating_sub(age).as_secs().checked_div(3600).unwrap_or(0);
+        Some(format!("Download skipped (cached failure, retry in ~{hours_left}h): {reason}"))
+    } else {
+        // Marker is stale — remove it and retry
+        let _r = std::fs::remove_file(marker);
+        None
+    }
+}
+
+/// Write a download failure marker with the current timestamp and error.
+fn write_download_failure(marker: &Path, error: &str) {
+    let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let content = format!("{ts}\n{error}\n");
+    // Best-effort — if the directory doesn't exist, just skip
+    let _r = std::fs::write(marker, content);
 }
