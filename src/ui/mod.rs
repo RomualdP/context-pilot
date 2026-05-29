@@ -85,9 +85,11 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &mut State) {
         help::config_overlay::render_config_overlay(frame, config_overlay, area);
     }
 
-    // Render Meilisearch indexing status overlay if open
-    if state.flags.overlays.index_status {
-        search_overlay::render_index_overlay(frame, state, area);
+    // Render Meilisearch indexing status overlay if active (from IR overlays)
+    if let Some(search_overlay) = ir_frame.overlays.iter().find_map(|o| {
+        if let cp_render::conversation::Overlay::SearchIndex(ref s) = *o { Some(s.as_ref()) } else { None }
+    }) {
+        search_overlay::render_search_index_overlay(frame, search_overlay, area);
     }
 
     PERF.frame_end();

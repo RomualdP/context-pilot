@@ -182,6 +182,11 @@ pub(crate) fn build_overlays(state: &State) -> Vec<Overlay> {
         overlays.push(Overlay::Perf(build_perf_overlay(state)));
     }
 
+    // Search index overlay
+    if state.flags.overlays.index_status {
+        overlays.push(Overlay::SearchIndex(Box::new(crate::ui::search_overlay::build_search_index_overlay(state))));
+    }
+
     overlays
 }
 

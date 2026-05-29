@@ -289,7 +289,8 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             ActionResult::Nothing
         }
         Action::CopyIndexOverlay => {
-            let text = crate::ui::search_overlay::text::build_overlay_text(state);
+            let ir = crate::ui::search_overlay::build_search_index_overlay(state);
+            let text = crate::ui::search_overlay::text::build_overlay_text(&ir);
             // Copy to clipboard via pbcopy (macOS)
             if let Ok(mut child) = std::process::Command::new("pbcopy").stdin(std::process::Stdio::piped()).spawn() {
                 if let Some(mut stdin) = child.stdin.take() {

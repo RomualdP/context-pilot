@@ -1,11 +1,18 @@
 //! Ctrl+I Meilisearch indexing status overlay.
 //!
-//! Renders a floating, centered info box showing the Meilisearch server
-//! status, indexing metrics, and extension breakdown.
+//! Builder produces [`SearchIndexOverlay`] IR from application state.
+//! Adapter renders the IR to ratatui widgets.
 
+/// Display column builders for the two-column overlay layout.
+mod display;
 /// Plain-text export of the indexing overlay for clipboard copy.
 pub(crate) mod text;
 
+use cp_render::Semantic;
+use cp_render::conversation::{
+    SearchEmbeddings, SearchExtension, SearchIndex, SearchIndexOverlay, SearchRecentFile, SearchRecomputed,
+    SearchServer, SearchSplitter, SearchTask,
+};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::prelude::{Rect, Style};
@@ -15,32 +22,220 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use crate::state::State;
 use crate::ui::theme;
 
+// ── Builder ──────────────────────────────────────────────────────────
+
+/// Build the search index overlay IR data from application state.
+#[must_use]
+pub(crate) fn build_search_index_overlay(state: &State) -> SearchIndexOverlay {
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let now_u64 = u64::try_from(now_ms).unwrap_or(u64::MAX);
+    let flash_active =
+        state.flags.overlays.copied_flash_ms > 0 && now_u64.saturating_sub(state.flags.overlays.copied_flash_ms) < 1500;
+    let title = if flash_active { " ✓ Copied! ".into() } else { " Indexing Status ".into() };
+
+    let Some(info) = cp_mod_search::overlay_info(state) else {
+        return SearchIndexOverlay {
+            title,
+            footer: " Ctrl+C copy · Ctrl+I or Esc to dismiss ".into(),
+            server: SearchServer {
+                url: String::new(),
+                online: false,
+                version: String::new(),
+                cpu_pct: None,
+                cpu_semantic: Semantic::Muted,
+                memory_display: None,
+            },
+            index: SearchIndex {
+                files_indexed: 0,
+                chunks_indexed: 0,
+                queue_depth: 0,
+                error_count: 0,
+                index_ready: false,
+                last_activity: "never".into(),
+                disk_used: String::new(),
+                disk_total: String::new(),
+                docs_display: String::new(),
+                avg_chunk: None,
+            },
+            extensions: Vec::new(),
+            splitter: None,
+            embeddings: None,
+            recent_tasks: Vec::new(),
+            top_recomputed: Vec::new(),
+            recently_sent: Vec::new(),
+        };
+    };
+
+    let server = build_server(&info);
+    let index = build_index(&info);
+    let extensions = build_extensions(&info);
+    let splitter = build_splitter(&info);
+    let embeddings = build_embeddings(&info);
+    let recent_tasks = build_tasks(&info);
+    let top_recomputed = build_recomputed(&info);
+    let recently_sent = build_recently_sent(&info);
+
+    SearchIndexOverlay {
+        title,
+        footer: " Ctrl+C copy · Ctrl+I or Esc to dismiss ".into(),
+        server,
+        index,
+        extensions,
+        splitter,
+        embeddings,
+        recent_tasks,
+        top_recomputed,
+        recently_sent,
+    }
+}
+
+/// Build server status from overlay info.
+fn build_server(info: &cp_mod_search::types::SearchOverlayInfo) -> SearchServer {
+    let online = info.port > 0;
+    let cpu_semantic = if info.meili_cpu_pct < 25.0 {
+        Semantic::Success
+    } else if info.meili_cpu_pct < 50.0 {
+        Semantic::Warning
+    } else {
+        Semantic::Error
+    };
+    let has_process = info.meili_memory_bytes > 0 || info.meili_cpu_pct > 0.0;
+    SearchServer {
+        url: format!("http://127.0.0.1:{}", info.port),
+        online,
+        version: if info.meili_version.is_empty() { String::new() } else { format!("v{}", info.meili_version) },
+        cpu_pct: has_process.then(|| f64::from(info.meili_cpu_pct)),
+        cpu_semantic,
+        memory_display: has_process.then(|| format_bytes(info.meili_memory_bytes)),
+    }
+}
+
+/// Build core index statistics from overlay info.
+fn build_index(info: &cp_mod_search::types::SearchOverlayInfo) -> SearchIndex {
+    let last = if info.last_activity_ms > 0 { format_ago(info.last_activity_ms) } else { "never".to_string() };
+    SearchIndex {
+        files_indexed: info.files_indexed,
+        chunks_indexed: info.chunks_indexed,
+        queue_depth: info.queue_depth,
+        error_count: info.error_count,
+        index_ready: info.index_ready,
+        last_activity: last,
+        disk_used: format_bytes(info.used_database_size_bytes),
+        disk_total: format_bytes(info.database_size_bytes),
+        docs_display: format_bytes(info.raw_document_db_size),
+        avg_chunk: (info.avg_document_size > 0).then(|| format_bytes(info.avg_document_size)),
+    }
+}
+
+/// Build extension breakdown from overlay info.
+fn build_extensions(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<SearchExtension> {
+    if info.top_extensions.is_empty() {
+        return Vec::new();
+    }
+    let max_count = info.top_extensions.first().map_or(1, |e| e.1.max(1));
+    let total_files: u64 = info.top_extensions.iter().map(|e| e.1).sum();
+    let bar_max_width: u64 = 28;
+    info.top_extensions
+        .iter()
+        .map(|(ext, count)| {
+            let bar_len = count.saturating_mul(bar_max_width).checked_div(max_count).unwrap_or(0);
+            let bar_usize = usize::try_from(bar_len).unwrap_or(0).max(1);
+            let pct = if total_files > 0 { count.saturating_mul(100).checked_div(total_files).unwrap_or(0) } else { 0 };
+            SearchExtension { name: ext.clone(), count: *count, bar_width: bar_usize, pct }
+        })
+        .collect()
+}
+
+/// Build splitter statistics from overlay info.
+fn build_splitter(info: &cp_mod_search::types::SearchOverlayInfo) -> Option<SearchSplitter> {
+    let total = info.tree_sitter_chunks.saturating_add(info.fallback_chunks);
+    if total == 0 {
+        return None;
+    }
+    let ts_pct = info.tree_sitter_chunks.saturating_mul(100).checked_div(total).unwrap_or(0);
+    Some(SearchSplitter {
+        tree_sitter_chunks: info.tree_sitter_chunks,
+        tree_sitter_pct: ts_pct,
+        fallback_chunks: info.fallback_chunks,
+        fallback_pct: 100_u64.saturating_sub(ts_pct),
+    })
+}
+
+/// Build embedding statistics from overlay info.
+fn build_embeddings(info: &cp_mod_search::types::SearchOverlayInfo) -> Option<SearchEmbeddings> {
+    if info.embedding_model.is_empty() && info.files_embedding_count == 0 {
+        return None;
+    }
+    let coverage_pct =
+        info.files_embedded_doc_count.saturating_mul(100).checked_div(info.files_total_doc_count).unwrap_or(0);
+    let coverage_semantic = if coverage_pct >= 100 { Semantic::Success } else { Semantic::Warning };
+    Some(SearchEmbeddings {
+        model: info.embedding_model.clone(),
+        vector_count: info.files_embedding_count,
+        is_indexing: info.files_is_indexing,
+        embedded_docs: info.files_embedded_doc_count,
+        total_docs: info.files_total_doc_count,
+        coverage_pct,
+        coverage_semantic,
+        logs_doc_count: info.logs_doc_count,
+    })
+}
+
+/// Build recent task entries from overlay info.
+fn build_tasks(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<SearchTask> {
+    info.recent_tasks
+        .iter()
+        .map(|t| {
+            let status_semantic = match t.status.as_str() {
+                "succeeded" => Semantic::Success,
+                "failed" => Semantic::Error,
+                "processing" => Semantic::Warning,
+                _ => Semantic::Muted,
+            };
+            SearchTask {
+                uid: t.uid,
+                task_type: t.task_type.clone(),
+                status: t.status.clone(),
+                status_semantic,
+                duration: t.duration.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Build top-recomputed file entries from overlay info.
+fn build_recomputed(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<SearchRecomputed> {
+    info.top_recomputed.iter().map(|(p, c)| SearchRecomputed { path: truncate_path(p, 46), count: *c }).collect()
+}
+
+/// Build recently-sent file entries from overlay info.
+fn build_recently_sent(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<SearchRecentFile> {
+    info.recently_sent
+        .iter()
+        .map(|(p, ts_ms)| {
+            let ago = if *ts_ms > 0 { format_ago(*ts_ms) } else { "?".to_string() };
+            SearchRecentFile { path: truncate_path(p, 42), ago }
+        })
+        .collect()
+}
+
+// ── Adapter ──────────────────────────────────────────────────────────
+
 /// Overlay width in terminal cells (two-column layout).
 const OVERLAY_WIDTH: u16 = 120;
 
-/// Render the Meilisearch indexing status overlay.
-///
-/// Displays server status, index metrics, extension breakdown, splitter
-/// stats, and embedding info in a centered, bordered box.
-pub(crate) fn render_index_overlay(frame: &mut Frame<'_>, state: &State, area: Rect) {
-    let (left_lines, right_lines) = build_overlay_columns(state);
+/// Render the search index overlay from IR data.
+pub(crate) fn render_search_index_overlay(frame: &mut Frame<'_>, overlay: &SearchIndexOverlay, area: Rect) {
+    let (left_lines, right_lines) = display::build_display_columns(overlay);
 
     let left_len = u16::try_from(left_lines.len().saturating_add(2)).unwrap_or(30);
     let right_len = u16::try_from(right_lines.len().saturating_add(2)).unwrap_or(30);
     let height = left_len.max(right_len).min(area.height);
     let popup = centered_rect(OVERLAY_WIDTH, height, area);
 
-    // Show "✓ Copied!" flash in title for 1.5 seconds after copy
-    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
-    let now_u64 = u64::try_from(now_ms).unwrap_or(u64::MAX);
-    let flash_active =
-        state.flags.overlays.copied_flash_ms > 0 && now_u64.saturating_sub(state.flags.overlays.copied_flash_ms) < 1500;
-    let title = if flash_active { " ✓ Copied! " } else { " Indexing Status " };
-    let footer = " Ctrl+C copy · Ctrl+I or Esc to dismiss ";
-
     let block = Block::default()
-        .title(title)
-        .title_bottom(footer)
+        .title(overlay.title.as_str())
+        .title_bottom(overlay.footer.as_str())
         .borders(Borders::ALL)
         .style(Style::default().bg(theme::bg_base()).fg(theme::text()));
 
@@ -48,13 +243,11 @@ pub(crate) fn render_index_overlay(frame: &mut Frame<'_>, state: &State, area: R
     frame.render_widget(Clear, popup);
     frame.render_widget(block, popup);
 
-    // Split inner area into left | separator | right
     let columns = Layout::horizontal([Constraint::Fill(1), Constraint::Length(1), Constraint::Fill(1)]).split(inner);
 
     let left_para = Paragraph::new(left_lines);
     let right_para = Paragraph::new(right_lines);
 
-    // Vertical separator
     let sep_height = usize::from(inner.height);
     let sep_lines: Vec<Line<'_>> =
         std::iter::repeat_with(|| Line::from(Span::styled("│", Style::default().fg(theme::text_muted()))))
@@ -72,239 +265,7 @@ pub(crate) fn render_index_overlay(frame: &mut Frame<'_>, state: &State, area: R
     frame.render_widget(right_para, right_col);
 }
 
-/// Build overlay content as two columns: (left, right).
-///
-/// Left column: server, database, core stats, extensions.
-/// Right column: splitter, embeddings, recent tasks, recomputed, recently sent.
-fn build_overlay_columns(state: &State) -> (Vec<Line<'static>>, Vec<Line<'static>>) {
-    let Some(info) = cp_mod_search::overlay_info(state) else {
-        let fallback = vec![Line::from(""), Line::from("  Search module not initialized.")];
-        return (fallback, Vec::new());
-    };
-
-    let left = build_left_column(&info);
-    let right = build_right_column(&info);
-    (left, right)
-}
-
-/// Build the left column: server, database, core stats, extensions.
-fn build_left_column(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<Line<'static>> {
-    let mut lines = Vec::with_capacity(24);
-
-    // ── Server ──
-    let server_url = format!("http://127.0.0.1:{}", info.port);
-    let (status_label, status_color) =
-        if info.port > 0 { ("● online", theme::success()) } else { ("○ offline", theme::error()) };
-
-    lines.push(Line::from(""));
-    let version_label =
-        if info.meili_version.is_empty() { String::new() } else { format!("  v{}", info.meili_version) };
-    lines.push(Line::from(vec![
-        Span::raw("  Server  "),
-        Span::styled(server_url, Style::default().fg(theme::text())),
-        Span::raw("  "),
-        Span::styled(status_label, Style::default().fg(status_color)),
-        Span::styled(version_label, Style::default().fg(theme::text_muted())),
-    ]));
-
-    // ── Process ──
-    if info.meili_memory_bytes > 0 || info.meili_cpu_pct > 0.0 {
-        let cpu_color = if info.meili_cpu_pct < 25.0 {
-            theme::success()
-        } else if info.meili_cpu_pct < 50.0 {
-            theme::warning()
-        } else {
-            theme::error()
-        };
-        lines.push(Line::from(vec![
-            Span::raw("  Process "),
-            Span::styled(format!("CPU {:.1}%", info.meili_cpu_pct), Style::default().fg(cpu_color)),
-            Span::raw("    "),
-            Span::styled(format!("RAM {}", format_bytes(info.meili_memory_bytes)), Style::default().fg(theme::text())),
-        ]));
-    }
-
-    // ── Database ──
-    if info.database_size_bytes > 0 {
-        lines.push(Line::from(""));
-        lines.push(section_header("Database"));
-        lines.push(Line::from(vec![
-            Span::raw("  Disk  "),
-            Span::styled(format_bytes(info.used_database_size_bytes), Style::default().fg(theme::text())),
-            Span::styled(" / ", Style::default().fg(theme::text_muted())),
-            Span::styled(format_bytes(info.database_size_bytes), Style::default().fg(theme::text_muted())),
-            Span::raw("    "),
-            Span::styled("Docs  ", Style::default().fg(theme::text_muted())),
-            Span::styled(format_bytes(info.raw_document_db_size), Style::default().fg(theme::text())),
-        ]));
-        if info.avg_document_size > 0 {
-            lines.push(Line::from(vec![
-                Span::raw("  Avg chunk  "),
-                Span::styled(format_bytes(info.avg_document_size), Style::default().fg(theme::text())),
-            ]));
-        }
-    }
-
-    // ── Core Stats ──
-    lines.push(Line::from(""));
-    lines.push(section_header("Index"));
-    lines.push(Line::from(format!("  Files  {:<10} Chunks  {}", info.files_indexed, info.chunks_indexed)));
-    lines.push(Line::from(format!(
-        "  Queue  {:<10} Errors  {}",
-        format!("{} pending", info.queue_depth),
-        info.error_count,
-    )));
-    let last = if info.last_activity_ms > 0 { format_ago(info.last_activity_ms) } else { "never".to_string() };
-    let ready = if info.index_ready { "Ready" } else { "Scanning…" };
-    lines.push(Line::from(format!("  Status {ready:<10} Last    {last}")));
-
-    // ── Extensions ──
-    if !info.top_extensions.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(section_header("Extensions"));
-
-        let max_count = info.top_extensions.first().map_or(1, |e| e.1.max(1));
-        let total_files: u64 = info.top_extensions.iter().map(|e| e.1).sum();
-        let bar_max_width: u64 = 28;
-
-        for (ext, count) in &info.top_extensions {
-            let bar_len = count.saturating_mul(bar_max_width).checked_div(max_count).unwrap_or(0);
-            let bar_usize = usize::try_from(bar_len).unwrap_or(0).max(1);
-            let fill = "█".repeat(bar_usize);
-            let pct = if total_files > 0 { count.saturating_mul(100).checked_div(total_files).unwrap_or(0) } else { 0 };
-            lines.push(Line::from(vec![
-                Span::raw(format!("  {ext:<6} {count:>4}  ")),
-                Span::styled(fill, Style::default().fg(theme::accent())),
-                Span::styled(format!("  {pct}%"), Style::default().fg(theme::text_muted())),
-            ]));
-        }
-    }
-
-    lines
-}
-
-/// Build the right column: splitter, embeddings, tasks, recomputed, recently sent.
-fn build_right_column(info: &cp_mod_search::types::SearchOverlayInfo) -> Vec<Line<'static>> {
-    let mut lines = Vec::with_capacity(32);
-
-    // ── Splitter ──
-    let total_chunks = info.tree_sitter_chunks.saturating_add(info.fallback_chunks);
-    if total_chunks > 0 {
-        lines.push(Line::from(""));
-        lines.push(section_header("Splitter"));
-
-        let ts_pct = info.tree_sitter_chunks.saturating_mul(100).checked_div(total_chunks).unwrap_or(0);
-        let fb_pct = 100_u64.saturating_sub(ts_pct);
-
-        lines.push(Line::from(vec![
-            Span::raw("  Tree-sitter  "),
-            Span::styled(format!("{} chunks", info.tree_sitter_chunks), Style::default().fg(theme::success())),
-            Span::styled(format!("  ({ts_pct}%)"), Style::default().fg(theme::text_muted())),
-        ]));
-        lines.push(Line::from(vec![
-            Span::raw("  Fallback     "),
-            Span::styled(format!("{} chunks", info.fallback_chunks), Style::default().fg(theme::warning())),
-            Span::styled(format!("  ({fb_pct}%)"), Style::default().fg(theme::text_muted())),
-        ]));
-    }
-
-    // ── Embeddings ──
-    if !info.embedding_model.is_empty() || info.files_embedding_count > 0 {
-        lines.push(Line::from(""));
-        lines.push(section_header("Embeddings"));
-
-        if !info.embedding_model.is_empty() {
-            lines.push(Line::from(vec![
-                Span::raw("  Model   "),
-                Span::styled(info.embedding_model.clone(), Style::default().fg(theme::text())),
-            ]));
-        }
-
-        let emb_status =
-            if info.files_is_indexing { ("● generating", theme::warning()) } else { ("✓ ready", theme::success()) };
-        lines.push(Line::from(vec![
-            Span::raw(format!("  Vectors {:>4}  ", info.files_embedding_count)),
-            Span::styled(emb_status.0, Style::default().fg(emb_status.1)),
-        ]));
-
-        if info.files_total_doc_count > 0 {
-            let coverage_pct =
-                info.files_embedded_doc_count.saturating_mul(100).checked_div(info.files_total_doc_count).unwrap_or(0);
-            let cov_color = if coverage_pct >= 100 { theme::success() } else { theme::warning() };
-            lines.push(Line::from(vec![
-                Span::raw("  Coverage "),
-                Span::styled(
-                    format!("{}/{}", info.files_embedded_doc_count, info.files_total_doc_count),
-                    Style::default().fg(cov_color),
-                ),
-                Span::styled(format!("  ({coverage_pct}%)"), Style::default().fg(theme::text_muted())),
-            ]));
-        }
-
-        if info.logs_doc_count > 0 {
-            lines.push(Line::from(format!("  Logs    {} documents", info.logs_doc_count)));
-        }
-    }
-
-    // ── Recent Tasks ──
-    if !info.recent_tasks.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(section_header("Recent Tasks"));
-        for task in &info.recent_tasks {
-            let task_color = match task.status.as_str() {
-                "succeeded" => theme::success(),
-                "failed" => theme::error(),
-                "processing" => theme::warning(),
-                _ => theme::text_muted(),
-            };
-            lines.push(Line::from(vec![
-                Span::styled(format!("  #{:<6}", task.uid), Style::default().fg(theme::text_muted())),
-                Span::raw(format!("{:<10} ", task.task_type)),
-                Span::styled(format!("{:<10} ", task.status), Style::default().fg(task_color)),
-                Span::styled(task.duration.clone(), Style::default().fg(theme::text_muted())),
-            ]));
-        }
-    }
-
-    // ── Top Recomputed ──
-    if !info.top_recomputed.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(section_header("Top Recomputed"));
-        for (path, count) in &info.top_recomputed {
-            let short = truncate_path(path, 46);
-            lines.push(Line::from(vec![
-                Span::styled(format!("  {count:>4}×  "), Style::default().fg(theme::warning())),
-                Span::styled(short, Style::default().fg(theme::text())),
-            ]));
-        }
-    }
-
-    // ── Recently Sent ──
-    if !info.recently_sent.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(section_header("Recently Sent"));
-        for (path, ts_ms) in &info.recently_sent {
-            let short = truncate_path(path, 42);
-            let ago = if *ts_ms > 0 { format_ago(*ts_ms) } else { "?".to_string() };
-            lines.push(Line::from(vec![
-                Span::styled(format!("  {ago:>8}  "), Style::default().fg(theme::text_muted())),
-                Span::styled(short, Style::default().fg(theme::text())),
-            ]));
-        }
-    }
-
-    lines
-}
-
-/// Render a section header line with dashes.
-fn section_header(title: &str) -> Line<'static> {
-    let dashes = "─".repeat(48_usize.saturating_sub(title.len()).saturating_sub(4));
-    Line::from(vec![
-        Span::styled(format!("  ── {title} "), Style::default().fg(theme::accent())),
-        Span::styled(dashes, Style::default().fg(theme::text_muted())),
-    ])
-}
-
+// ── Helpers ──────────────────────────────────────────────────────────
 /// Compute a centered rectangle within the given area.
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let eff_w = width.min(area.width);
@@ -329,9 +290,6 @@ pub(crate) fn format_ago(ms_then: u64) -> String {
 }
 
 /// Truncate a file path to fit within `max_len` characters.
-///
-/// If the path is longer, keeps the last `max_len - 1` characters
-/// prefixed with `…` so the filename is always visible.
 fn truncate_path(path: &str, max_len: usize) -> String {
     if path.len() <= max_len {
         return path.to_string();
