@@ -105,6 +105,8 @@ pub enum Overlay {
     Perf(PerfOverlay),
     /// Configuration overlay (Ctrl+H).
     Config(ConfigOverlay),
+    /// Command palette overlay (Ctrl+P / Ctrl+K).
+    CommandPalette(PaletteOverlay),
 }
 
 /// A question form overlay (`ask_user_question`).
@@ -287,6 +289,28 @@ pub struct ConfigToggle {
     pub key_hint: String,
     /// Optional second key for adjustment (e.g. `[` and `]`).
     pub adjust_keys: Option<(String, String)>,
+}
+
+/// Command palette overlay (Ctrl+P / Ctrl+K).
+#[derive(Debug, Clone, Serialize)]
+pub struct PaletteOverlay {
+    /// Current search query.
+    pub query: String,
+    /// Cursor byte position in query.
+    pub cursor: usize,
+    /// Filtered command entries.
+    pub entries: Vec<PaletteEntry>,
+    /// Index of the selected entry.
+    pub selected_index: usize,
+}
+
+/// A single command palette entry.
+#[derive(Debug, Clone, Serialize)]
+pub struct PaletteEntry {
+    /// Command label (e.g. "Close panel").
+    pub label: String,
+    /// Short description.
+    pub description: String,
 }
 
 /// File path autocomplete popup.
