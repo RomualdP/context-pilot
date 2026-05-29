@@ -233,6 +233,7 @@ fn main() -> ExitCode {
 
     init_file_logger();
     raise_fd_limit();
+    infra::flame::init();
 
     // Parse CLI args
     let args: Vec<String> = std::env::args().collect();
@@ -395,6 +396,7 @@ fn main() -> ExitCode {
     let _r_raw_off = disable_raw_mode();
     let _r_paste_off = io::stdout().execute(DisableBracketedPaste);
     let _r_leave = io::stdout().execute(LeaveAlternateScreen);
+    infra::flame::flush();
 
     if let Err(e) = run_result {
         drop(writeln!(io::stderr(), "Fatal: {e}"));

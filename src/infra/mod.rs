@@ -4,6 +4,8 @@ pub(crate) mod api;
 pub(crate) mod config;
 /// Application-wide constants (colors, icons, prompts, layout values).
 pub(crate) mod constants;
+/// Flame graph telemetry — zero overhead when disabled.
+pub(crate) mod flame;
 /// GitHub webhook / event watcher.
 pub(crate) mod gh_watcher;
 /// Simple profiler for identifying slow operations.

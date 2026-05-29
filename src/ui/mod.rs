@@ -31,6 +31,7 @@ use crate::ui::perf::PERF;
 pub(crate) fn render(frame: &mut Frame<'_>, state: &mut State) {
     PERF.frame_start();
     let _guard = crate::profile!("ui::render");
+    let _fg = crate::flame!("render");
     let area = frame.area();
 
     // Build the IR frame snapshot (Phase 4 integration point).
