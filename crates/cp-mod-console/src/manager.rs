@@ -141,12 +141,19 @@ pub fn find_or_create_server() -> Result<(), String> {
 
     drop(cmd.spawn().map_err(|e| format!("Failed to spawn console server: {e}"))?);
 
-    // Wait for socket to appear (up to 3 seconds)
-    for _ in 0..30 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    // Wait for socket to appear — geometric backoff (25ms → 500ms cap, 3s budget)
+    let mut interval = std::time::Duration::from_millis(25);
+    let max_interval = std::time::Duration::from_millis(500);
+    let deadline = std::time::Instant::now().checked_add(std::time::Duration::from_secs(3));
+    loop {
+        std::thread::sleep(interval);
         if server_request(&ping).is_ok() {
             return Ok(());
         }
+        if deadline.is_some_and(|d| std::time::Instant::now() >= d) {
+            break;
+        }
+        interval = interval.saturating_mul(2).min(max_interval);
     }
 
     Err("Console server failed to start within 3 seconds".to_string())

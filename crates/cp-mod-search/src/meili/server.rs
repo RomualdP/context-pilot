@@ -206,14 +206,17 @@ fn health_check(port: u16, key: &str) -> Result<(), String> {
 
 /// Poll the health endpoint until the server responds or timeout expires.
 ///
-/// Retries every 500ms for up to 15 seconds.
+/// Uses geometric backoff (50 ms → 100 → 200 → 400 → 500 ms cap) so
+/// fast startups are detected within ~100 ms instead of the old flat
+/// 500 ms interval.  Total budget is still 15 s.
 ///
 /// # Errors
 ///
 /// Returns an error if the server does not become healthy within the timeout.
 fn wait_for_health(port: u16, key: &str) -> Result<(), String> {
     let timeout = Duration::from_secs(15);
-    let interval = Duration::from_millis(500);
+    let max_interval = Duration::from_millis(500);
+    let mut interval = Duration::from_millis(50);
     let deadline = Instant::now().checked_add(timeout);
 
     loop {
@@ -224,6 +227,7 @@ fn wait_for_health(port: u16, key: &str) -> Result<(), String> {
             return Err(format!("Meilisearch did not become healthy within {timeout:?}"));
         }
         std::thread::sleep(interval);
+        interval = (interval.saturating_mul(2)).min(max_interval);
     }
 }
 

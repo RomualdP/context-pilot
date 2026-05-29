@@ -26,9 +26,6 @@ use crate::types::{ChatState, ServerStatus};
 /// Maximum time to wait for the server to become healthy after start.
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Interval between health check retries during startup.
-const HEALTH_CHECK_INTERVAL: Duration = Duration::from_millis(500);
-
 // -- Global paths ------------------------------------------------------------
 
 /// Root of all global Matrix data: `~/.context-pilot/matrix/`.
@@ -445,7 +442,13 @@ pub(crate) fn health_check() -> Result<(), String> {
 }
 
 /// Poll the health endpoint until it responds or the timeout expires.
+///
+/// Uses geometric backoff (50 ms → 100 → 200 → 400 → 500 ms cap) so
+/// fast startups are detected within ~100 ms instead of the old flat
+/// 500 ms interval.  Total budget is still 15 s.
 fn wait_for_health() -> Result<(), String> {
+    let max_interval = Duration::from_millis(500);
+    let mut interval = Duration::from_millis(50);
     let deadline = Instant::now().checked_add(HEALTH_CHECK_TIMEOUT);
     loop {
         if health_check().is_ok() {
@@ -454,7 +457,8 @@ fn wait_for_health() -> Result<(), String> {
         if deadline.is_some_and(|d| Instant::now() >= d) {
             return Err(format!("Tuwunel did not become healthy within {}s", HEALTH_CHECK_TIMEOUT.as_secs()));
         }
-        std::thread::sleep(HEALTH_CHECK_INTERVAL);
+        std::thread::sleep(interval);
+        interval = (interval.saturating_mul(2)).min(max_interval);
     }
 }
 
