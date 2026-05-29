@@ -28,9 +28,9 @@ use std::process::ExitCode;
 use std::sync::Mutex;
 use std::sync::mpsc;
 
-use ratatui::prelude::{
-    Color, Constraint, CrosstermBackend, Direction, Layout, Line, Modifier, Rect, Span, Style, Terminal,
-};
+use ratatui::prelude::{Constraint, CrosstermBackend, Direction, Layout, Line, Modifier, Rect, Span, Style, Terminal};
+
+use infra::constants::theme;
 
 // ─── Boot Screen ────────────────────────────────────────────────────────────
 // Phased loading with visual progress — no more black void on startup.
@@ -102,8 +102,8 @@ fn render_boot_screen(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ste
 
         // Title
         let title = Line::from(vec![
-            Span::styled("⚓ ", Style::default().fg(Color::Cyan)),
-            Span::styled("Context Pilot", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("⚓ ", Style::default().fg(theme::accent())),
+            Span::styled("Context Pilot", Style::default().fg(theme::text()).add_modifier(Modifier::BOLD)),
         ]);
         frame.render_widget(title, title_area);
 
@@ -113,11 +113,11 @@ fn render_boot_screen(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ste
             .enumerate()
             .map(|(i, step)| {
                 let (icon, style) = if step.done {
-                    ("  ✓ ", Style::default().fg(Color::Green))
+                    ("  ✓ ", Style::default().fg(theme::success()))
                 } else if i == done_count {
-                    ("  ▸ ", Style::default().fg(Color::Yellow))
+                    ("  ▸ ", Style::default().fg(theme::warning()))
                 } else {
-                    ("    ", Style::default().fg(Color::DarkGray))
+                    ("    ", Style::default().fg(theme::text_muted()))
                 };
                 let detail = step.detail.as_deref().unwrap_or("");
                 let text = if detail.is_empty() {
@@ -139,7 +139,7 @@ fn render_boot_screen(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ste
         let mut gauge_bar = "█".repeat(filled_usize);
         gauge_bar.push_str(&"░".repeat(usize::from(gauge_width.saturating_sub(filled))));
         let gauge_line =
-            Line::from(vec![Span::styled(gauge_bar, Style::default().fg(Color::Cyan)), Span::raw(format!(" {pct}%"))]);
+            Line::from(vec![Span::styled(gauge_bar, Style::default().fg(theme::accent())), Span::raw(format!(" {pct}%"))]);
         frame.render_widget(gauge_line, gauge_area);
     }));
 }
