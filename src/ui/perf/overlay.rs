@@ -7,7 +7,7 @@
 use cp_render::Semantic;
 use cp_render::conversation::PerfOverlay;
 use ratatui::Frame;
-use ratatui::prelude::{Color, Line, Rect, Span, Style};
+use ratatui::prelude::{Line, Rect, Span, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
 use crate::ui::ir::semantic_to_style;
@@ -77,7 +77,7 @@ pub(crate) fn render_perf_overlay_from_ir(frame: &mut Frame<'_>, area: Rect, per
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme::border()))
-        .style(Style::default().bg(Color::Rgb(20, 20, 28)))
+        .style(Style::default().bg(theme::bg_base()))
         .title(Span::styled(" Perf ", Style::default().fg(theme::accent()).bold()));
 
     let paragraph = Paragraph::new(lines).block(block);

@@ -131,24 +131,17 @@ pub(crate) fn render_message_blocks(msg: &Message, opts: &MessageBlockOpts) -> V
                         | Block::Separator
                         | Block::KeyValue(_)
                         | _ => {
-                            // For complex blocks (tables etc), convert to lines first
-                            let lines = crate::ui::ir::blocks_to_lines(std::slice::from_ref(vis_block));
-                            for line in lines {
-                                let spans: Vec<Span> = line.spans.iter().map(ratatui_span_to_ir).collect();
-                                if is_first {
-                                    let mut full = vec![
-                                        Span::styled(status_icon.clone(), status_semantic),
-                                        Span::new(" ".to_owned()),
-                                    ];
-                                    full.extend(spans);
-                                    blocks.push(Block::line(full));
-                                    is_first = false;
-                                } else {
-                                    let mut full = vec![Span::new(" ".repeat(prefix_width))];
-                                    full.extend(spans);
-                                    blocks.push(Block::line(full));
-                                }
+                            // Complex blocks — pass through without inline prefix.
+                            // No current visualizer produces these; if one does,
+                            // add dedicated handling.
+                            if is_first {
+                                blocks.push(Block::line(vec![
+                                    Span::styled(status_icon.clone(), status_semantic),
+                                    Span::new(" ".to_owned()),
+                                ]));
+                                is_first = false;
                             }
+                            blocks.push(vis_block.clone());
                         }
                     }
                 }
@@ -434,19 +427,6 @@ fn render_param_blocks(blocks: &mut Vec<Block>, ctx: &ParamCtx<'_>, key: &str, v
             Span::styled(format!("{key}: "), Semantic::Accent),
         ]));
     }
-}
-
-/// Convert a ratatui `Span` back to an IR `Span` (for visualizer block fallback).
-fn ratatui_span_to_ir(span: &ratatui::prelude::Span<'_>) -> Span {
-    let text = span.content.to_string();
-
-    // Try to extract RGB colour from the ratatui style
-    if let Some(ratatui::style::Color::Rgb(r, g, b)) = span.style.fg {
-        return Span::rgb(text, r, g, b);
-    }
-
-    // Fallback: map common ratatui colors to semantics
-    Span::new(text)
 }
 
 // ── Markdown table → IR spans ────────────────────────────────────────
