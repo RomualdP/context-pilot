@@ -13,9 +13,20 @@ if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
 fi
 
+# Parse --telemetry flag: enable flame graph instrumentation
+ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "--telemetry" ]; then
+        export CP_FLAMEGRAPH=1
+        echo "🔥 Telemetry mode: flame graph instrumentation enabled"
+    else
+        ARGS+=("$arg")
+    fi
+done
+
 while true; do
-    # Run the TUI
-    cargo run --release -- "$@"
+    # Run the TUI (CP_FLAMEGRAPH persists across reloads via env)
+    cargo run --release -- "${ARGS[@]}"
 
     # Check if reload was requested
     if [ -f "$CONFIG_FILE" ]; then
@@ -25,8 +36,8 @@ while true; do
             # Small delay to ensure file is fully written
             sleep 0.2
             # Add --resume-stream if not already present
-            if [[ ! " $* " =~ " --resume-stream " ]]; then
-                set -- "$@" --resume-stream
+            if [[ ! " ${ARGS[*]} " =~ " --resume-stream " ]]; then
+                ARGS+=("--resume-stream")
             fi
             continue
         fi
