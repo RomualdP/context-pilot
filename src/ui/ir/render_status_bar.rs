@@ -7,7 +7,7 @@ use cp_render::Semantic;
 use cp_render::frame::{
     AgentCard, AutoContinue, Badge, GitChanges, QueueCard, ReverieCard, SkillCard, StatusBar, StopReason, ThinkCard,
 };
-use ratatui::prelude::{Color, Frame, Line, Rect, Span, Style};
+use ratatui::prelude::{Frame, Line, Rect, Span, Style};
 use ratatui::widgets::Paragraph;
 
 use crate::infra::config::normalize_icon;
@@ -66,7 +66,7 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
     if let Some(ref agent) = status.agent {
         spans.push(Span::styled(
             format!(" 🤖 {} ", agent.name),
-            Style::default().fg(Color::White).bg(Color::Rgb(130, 80, 200)).bold(),
+            Style::default().fg(theme::card_text()).bg(theme::card_agent_bg()).bold(),
         ));
         spans.push(Span::styled(" ", base_style));
     }
@@ -82,7 +82,7 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
 
     // === Git branch + changes ===
     if let Some(ref git) = status.git {
-        spans.push(Span::styled(format!(" {} ", git.branch), Style::default().fg(Color::White).bg(Color::Blue)));
+        spans.push(Span::styled(format!(" {} ", git.branch), Style::default().fg(theme::card_text()).bg(theme::accent())));
         spans.push(Span::styled(" ", base_style));
 
         if git.files_changed > 0 {
@@ -120,7 +120,7 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
         let rev_spin = format!("{spin} ");
         spans.push(Span::styled(
             format!(" {rev_spin}🧠 {} ({} tools) ", rev.agent, rev.tool_count),
-            Style::default().fg(Color::White).bg(Color::Rgb(100, 60, 160)).bold(),
+            Style::default().fg(theme::card_text()).bg(theme::card_reverie_bg()).bold(),
         ));
         spans.push(Span::styled(" ", base_style));
     }
@@ -129,7 +129,7 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
     if let Some(ref queue) = status.queue {
         spans.push(Span::styled(
             format!(" ⏳ Queue ({}) ", queue.count),
-            Style::default().fg(Color::White).bg(Color::Rgb(180, 120, 40)).bold(),
+            Style::default().fg(theme::card_text()).bg(theme::card_queue_bg()).bold(),
         ));
         spans.push(Span::styled(" ", base_style));
     }
@@ -138,7 +138,7 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
     if let Some(ref think) = status.think {
         spans.push(Span::styled(
             format!(" 🧠 Think ({}) ", think.balance),
-            Style::default().fg(Color::White).bg(Color::Rgb(180, 60, 60)).bold(),
+            Style::default().fg(theme::card_text()).bg(theme::card_think_bg()).bold(),
         ));
         spans.push(Span::styled(" ", base_style));
     }
@@ -161,13 +161,13 @@ pub(crate) fn render_status_bar_from_ir(frame: &mut Frame<'_>, status: &StatusBa
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /// Map a badge semantic to (foreground, background) colours.
-fn badge_colors(semantic: Semantic, _spin: &str) -> (Color, Color) {
+fn badge_colors(semantic: Semantic, _spin: &str) -> (ratatui::style::Color, ratatui::style::Color) {
     match semantic {
         Semantic::Success => (theme::bg_base(), theme::success()),
-        Semantic::Info => (Color::White, Color::Blue),
+        Semantic::Info => (theme::card_text(), theme::accent()),
         Semantic::Warning => (theme::bg_base(), theme::warning()),
         Semantic::Error => (theme::bg_base(), theme::error()),
-        Semantic::AccentDim => (Color::White, Color::Magenta),
+        Semantic::AccentDim => (theme::card_text(), theme::accent_dim()),
         // Muted = READY, Default = fallback
         Semantic::Default
         | Semantic::Muted

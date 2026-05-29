@@ -193,6 +193,30 @@ pub(crate) mod theme {
     pub(crate) fn assistant() -> Color {
         rgb(active_theme().colors.assistant)
     }
+
+    // Status-bar card colors — fixed design tokens (not theme-dependent).
+    // Named here so they're discoverable and easy to make theme-able later.
+
+    /// High-contrast text on colored card backgrounds.
+    pub(crate) const fn card_text() -> Color {
+        Color::Rgb(255, 255, 255)
+    }
+    /// Agent card background — purple.
+    pub(crate) const fn card_agent_bg() -> Color {
+        Color::Rgb(130, 80, 200)
+    }
+    /// Reverie card background — dark purple.
+    pub(crate) const fn card_reverie_bg() -> Color {
+        Color::Rgb(100, 60, 160)
+    }
+    /// Queue card background — amber.
+    pub(crate) const fn card_queue_bg() -> Color {
+        Color::Rgb(180, 120, 40)
+    }
+    /// Think balance card background — muted red.
+    pub(crate) const fn card_think_bg() -> Color {
+        Color::Rgb(180, 60, 60)
+    }
 }
 
 // =============================================================================
