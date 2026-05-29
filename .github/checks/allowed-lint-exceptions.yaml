@@ -120,5 +120,27 @@ exceptions:
       depends on state from previous phases (byte offsets, selection range).
       The linear flow is clearer than scattered helpers.
 
+  # ── cp-base test functions: panic for clear assertion messages ────
+
+  - path: "crates/cp-base/src/lib.rs"
+    match: 'test assertions use panic for tool YAML validation'
+    reason: >
+      tool_yaml_deserialization() uses unwrap_or_else(|e| panic!(...)) to
+      give clear schema-mismatch messages. The forbid-level expect_used
+      lint prevents .expect(), so panic! via unwrap_or_else is the only
+      way to get descriptive test failures.
+    strategy: >
+      Irreducible — expect_used is forbid-level so .expect() cannot be used.
+
+  - path: "crates/cp-base/src/lib.rs"
+    match: 'test assertions use panic for config YAML validation'
+    reason: >
+      config_yaml_direct_parse() uses unwrap_or_else(|e| panic!(...)) to
+      give clear schema-mismatch messages. The forbid-level expect_used
+      lint prevents .expect(), so panic! via unwrap_or_else is the only
+      way to get descriptive test failures.
+    strategy: >
+      Irreducible — expect_used is forbid-level so .expect() cannot be used.
+
 
 

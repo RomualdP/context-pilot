@@ -211,6 +211,7 @@ mod tests {
 
     /// Validate every tool YAML file parses into `ToolTexts`.
     #[test]
+    #[expect(clippy::panic, reason = "test assertions use panic for tool YAML validation")]
     fn tool_yaml_deserialization() {
         let yamls: Vec<(&str, &str)> = vec![
             ("brave", include_str!("../../../yamls/tools/brave.yaml")),
@@ -246,27 +247,31 @@ mod tests {
     /// Validate config YAML files parse into their specific types directly
     /// (not via `LazyLock` — catches type mismatches even if statics change).
     #[test]
+    #[expect(clippy::panic, reason = "test assertions use panic for config YAML validation")]
     fn config_yaml_direct_parse() {
         drop(
             serde_yaml::from_str::<Prompts>(include_str!("../../../yamls/prompts.yaml"))
-                .expect("prompts.yaml schema mismatch"),
+                .unwrap_or_else(|e| panic!("prompts.yaml schema mismatch: {e}")),
         );
         drop(
             serde_yaml::from_str::<Library>(include_str!("../../../yamls/library.yaml"))
-                .expect("library.yaml schema mismatch"),
+                .unwrap_or_else(|e| panic!("library.yaml schema mismatch: {e}")),
         );
-        drop(serde_yaml::from_str::<Ui>(include_str!("../../../yamls/ui.yaml")).expect("ui.yaml schema mismatch"));
+        drop(
+            serde_yaml::from_str::<Ui>(include_str!("../../../yamls/ui.yaml"))
+                .unwrap_or_else(|e| panic!("ui.yaml schema mismatch: {e}")),
+        );
         drop(
             serde_yaml::from_str::<Themes>(include_str!("../../../yamls/themes.yaml"))
-                .expect("themes.yaml schema mismatch"),
+                .unwrap_or_else(|e| panic!("themes.yaml schema mismatch: {e}")),
         );
         drop(
             serde_yaml::from_str::<Injections>(include_str!("../../../yamls/injections.yaml"))
-                .expect("injections.yaml schema mismatch"),
+                .unwrap_or_else(|e| panic!("injections.yaml schema mismatch: {e}")),
         );
         drop(
             serde_yaml::from_str::<Reverie>(include_str!("../../../yamls/reverie.yaml"))
-                .expect("reverie.yaml schema mismatch"),
+                .unwrap_or_else(|e| panic!("reverie.yaml schema mismatch: {e}")),
         );
     }
 }

@@ -2,12 +2,12 @@
 //!
 //! Extracted from `main.rs` to keep it under the 500-line limit.
 
-use std::collections::HashMap;
-use std::process::{Command, Stdio};
+use std::collections::BTreeMap;
+use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 
-use crate::{SHUTDOWN_REQUESTED, SessionStatus, Sessions, is_pid_alive};
+use crate::{SHUTDOWN_REQUESTED, Sessions, is_pid_alive};
 
 /// Raise the process file-descriptor soft limit. The console server holds
 /// pipes, sockets, and log files for every managed child — the macOS default
@@ -43,7 +43,7 @@ const REAPER_GRACE_SECS: u64 = 30;
 /// of callback invocations this exhausts the process file-descriptor limit.
 pub(crate) fn reaper_loop(sessions: &Sessions) {
     // Map from session key → first time we observed it as exited (seconds since epoch).
-    let mut exit_times: HashMap<String, u64> = HashMap::new();
+    let mut exit_times: BTreeMap<String, u64> = BTreeMap::new();
 
     loop {
         if SHUTDOWN_REQUESTED.load(Ordering::Relaxed) {
@@ -90,19 +90,15 @@ pub(crate) fn reaper_loop(sessions: &Sessions) {
 /// Kill all sessions — used during shutdown.
 pub(crate) fn kill_all_sessions(sessions: &Sessions) {
     let mut map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut keys: Vec<_> = map.keys().cloned().collect();
-    keys.sort();
-    for key in &keys {
-        if let Some(session) = map.get_mut(key) {
-            if !session.is_terminal() {
-                drop(Command::new("kill").args([&session.pid.to_string()]).output());
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                if is_pid_alive(session.pid) {
-                    drop(Command::new("kill").args(["-9", &session.pid.to_string()]).output());
-                }
+    for session in map.values_mut() {
+        if !session.is_terminal() {
+            drop(Command::new("kill").args([&session.pid.to_string()]).output());
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if is_pid_alive(session.pid) {
+                drop(Command::new("kill").args(["-9", &session.pid.to_string()]).output());
             }
-            drop(session.stdin.take());
         }
+        drop(session.stdin.take());
     }
     map.clear();
 }

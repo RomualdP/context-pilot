@@ -29,7 +29,7 @@
 //! The TUI's `find_or_create_server()` will spawn the new binary automatically
 //! on next launch or module reload.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -54,11 +54,11 @@ static SHUTDOWN_REQUESTED: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new
 /// State of a single managed child process.
 pub(crate) struct Session {
     /// PID of the child process.
-    pub(crate) pid: u32,
+    pub pid: u32,
     /// Handle to the child's stdin pipe, used by `"send"` commands.
-    pub(crate) stdin: Option<std::process::ChildStdin>,
+    pub stdin: Option<std::process::ChildStdin>,
     /// Current lifecycle status of the child process.
-    pub(crate) status: SessionStatus,
+    pub status: SessionStatus,
 }
 
 /// Lifecycle status of a managed session.
@@ -112,7 +112,7 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
 }
 
 /// Shared, thread-safe map from session key to [`Session`].
-type Sessions = Arc<Mutex<HashMap<String, Session>>>;
+type Sessions = Arc<Mutex<BTreeMap<String, Session>>>;
 
 // ---------------------------------------------------------------------------
 // Command handlers
@@ -298,7 +298,7 @@ fn handle_stats(sessions: &Sessions) -> Response {
     drop(map);
 
     // Count open FDs via /dev/fd (macOS/Linux)
-    let fd_count = std::fs::read_dir("/dev/fd").map_or(0, |entries| entries.count());
+    let fd_count = std::fs::read_dir("/dev/fd").map_or(0, Iterator::count);
 
     // Get rlimit
     let (soft, hard) = rlimit::getrlimit(rlimit::Resource::NOFILE).unwrap_or((0, 0));
@@ -433,7 +433,7 @@ fn main() {
     // Set socket to non-blocking so we can check SHUTDOWN_REQUESTED between accepts
     let _: Option<()> = listener.set_nonblocking(true).ok();
 
-    let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
+    let sessions: Sessions = Arc::new(Mutex::new(BTreeMap::new()));
 
     // Install SIGTERM/SIGINT handlers — set flag, main loop polls it
     cleanup::install_signal_handlers();
