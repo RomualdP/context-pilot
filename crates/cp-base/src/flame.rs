@@ -91,24 +91,25 @@ fn write_sample(folded: &str, us: u64) {
 
 /// RAII guard for a flame graph span.
 ///
-/// Created by [`FlameGuard::new`] (or the [`flame!`] macro). Pushes a span
+/// Created by [`Guard::new`] (or the [`flame!`] macro). Pushes a span
 /// name onto the thread-local stack on creation. On drop, computes self-time
 /// (total minus children), emits a folded-stack sample, and pops the stack.
 ///
 /// Returns `None` from [`new`](Self::new) when telemetry is disabled,
 /// so the guard is zero-cost in production.
 #[derive(Debug)]
-pub struct FlameGuard {
+pub struct Guard {
     /// Wall-clock start time for this span.
     start: Instant,
 }
 
-impl FlameGuard {
+impl Guard {
     /// Create a new flame span. Returns `None` if telemetry is disabled.
     ///
     /// The `name` is pushed onto the thread-local span stack and will appear
     /// as a frame in the resulting flame graph.
     #[inline]
+    #[must_use]
     pub fn new(name: &str) -> Option<Self> {
         if !is_enabled() {
             return None;
@@ -118,7 +119,7 @@ impl FlameGuard {
     }
 }
 
-impl Drop for FlameGuard {
+impl Drop for Guard {
     fn drop(&mut self) {
         let total_us = self.start.elapsed().as_micros().to_u64();
 
@@ -150,7 +151,7 @@ impl Drop for FlameGuard {
 
 /// Create a flame graph span guard for the current scope.
 ///
-/// Returns `Option<FlameGuard>` — `None` when telemetry is disabled (zero overhead).
+/// Returns `Option<Guard>` — `None` when telemetry is disabled (zero overhead).
 /// The span is automatically closed when the guard drops.
 ///
 /// # Examples
@@ -162,6 +163,6 @@ impl Drop for FlameGuard {
 #[macro_export]
 macro_rules! flame {
     ($name:expr) => {
-        $crate::flame::FlameGuard::new($name)
+        $crate::flame::Guard::new($name)
     };
 }

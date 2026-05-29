@@ -313,15 +313,15 @@ impl Module for OverviewModule {
                                         && desc.file_hash != current_hash
                                         && !has_pending_tree_describe(state, rel_str.as_ref())
                                     {
-                                        pf.errors.push(format!(
-                                            "Panel '{id}' ({rel_str}) has a stale [!] tree description. \
-                                             Update it with tree_describe before closing."
+                                        pf.warnings.push(format!(
+                                            "Panel '{id}' ({rel_str}) has a stale [!] tree description — \
+                                             will be skipped. Update it with tree_describe first."
                                         ));
                                     }
                                 } else if !has_pending_tree_describe(state, rel_str.as_ref()) {
-                                    pf.errors.push(format!(
-                                        "Panel '{id}' ({rel_str}) has no tree description. \
-                                         Add one with tree_describe before closing."
+                                    pf.warnings.push(format!(
+                                        "Panel '{id}' ({rel_str}) has no tree description — \
+                                         will be skipped. Add one with tree_describe first."
                                     ));
                                 }
                             }
@@ -451,7 +451,7 @@ impl Module for OverviewModule {
 }
 
 /// Check if there's a pending `tree_describe` in the queue for the given path.
-fn has_pending_tree_describe(state: &State, rel_path: &str) -> bool {
+pub(crate) fn has_pending_tree_describe(state: &State, rel_path: &str) -> bool {
     state.active_modules.contains("queue")
         && cp_mod_queue::types::QueueState::get(state).queued_calls.iter().any(|call| {
             call.tool_name == "tree_describe"

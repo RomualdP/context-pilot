@@ -1,6 +1,6 @@
 use crate::infra::tools::{ToolResult, ToolUse};
 use crate::modules::all_modules;
-use crate::state::State;
+use crate::state::{Kind, State};
 use std::fmt::Write as _;
 
 /// Execute the `Close_panel` tool to remove context panels.
@@ -42,6 +42,31 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         if ctx_elem.context_type.is_fixed() {
             skipped.push(format!("{id} (protected)"));
             continue;
+        }
+
+        // Guard: file panels need a current tree description before closing
+        if state.active_modules.contains("tree")
+            && ctx_elem.context_type.as_str() == Kind::FILE
+            && let Some(file_path) = ctx_elem.get_meta_str("file_path")
+            && let Ok(cwd) = std::env::current_dir().and_then(|d| d.canonicalize())
+            && let Ok(rel) = std::path::Path::new(file_path).strip_prefix(&cwd)
+        {
+            let rel_str = rel.to_string_lossy();
+            let ts = cp_mod_tree::types::TreeState::get(state);
+            let needs_skip = ts.descriptions.iter().find(|d| d.path == rel_str.as_ref()).map_or_else(
+                || !super::super::has_pending_tree_describe(state, rel_str.as_ref()),
+                |desc| {
+                    let current_hash =
+                        cp_mod_tree::tools::compute_file_hash(std::path::Path::new(file_path)).unwrap_or_default();
+                    !desc.file_hash.is_empty()
+                        && desc.file_hash != current_hash
+                        && !super::super::has_pending_tree_describe(state, rel_str.as_ref())
+                },
+            );
+            if needs_skip {
+                skipped.push(format!("{id} ({rel_str}) — needs tree_describe before closing"));
+                continue;
+            }
         }
 
         // Take the context element out so modules can mutate state without borrow conflicts
