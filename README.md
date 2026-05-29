@@ -66,6 +66,46 @@ It's the satisfaction of building something that can't rot.
 
 ---
 
+## Flame Graph Telemetry
+
+Context Pilot includes built-in flame graph instrumentation (~60 spans across the entire codebase) for profiling wall-clock time. Zero overhead when disabled.
+
+### Usage
+
+```bash
+# Run with telemetry enabled
+./run.sh --telemetry
+
+# Use the app normally — spans are recorded in the background
+# Telemetry persists across reloads automatically
+
+# After quitting, generate the flame graph
+inferno-flamegraph --title "Context Pilot – Flame Graph" \
+  < .context-pilot/logs/flame-folded.txt > flame.svg
+
+# View it (interactive — click to zoom, hover for details)
+open flame.svg
+```
+
+### Setup
+
+```bash
+# One-time: install the inferno toolchain
+cargo install inferno
+```
+
+### What's Instrumented
+
+- **Main loop**: `loop` → `render` → `prompt_build` → `stream` → `finalize_stream`
+- **Tool pipeline**: `tool_pipeline` → `tool_{name}` → individual tool spans → `callbacks`
+- **Background**: `watcher_events` / `cache_updates` / `check_spine` / `radar_refresh`
+- **Context**: `prepare_context` → `detach` → `save_batch` / `save_state`
+- **Every tool**: 30+ individual tool spans across all 16 crate modules
+
+Self-time accounting (total minus children) prevents double-counting in nested spans.
+
+---
+
 <p align="center">
   <i>Built by an AI, inside itself, under mass constraints, for the love of the craft.</i>
 </p>
