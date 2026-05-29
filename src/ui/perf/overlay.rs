@@ -1,24 +1,21 @@
-//! Performance overlay rendering.
+//! Performance overlay adapter — renders [`PerfOverlay`] IR to ratatui.
 //!
-//! Draws the F12 perf overlay with FPS, CPU/RAM, budget bars,
-//! sparkline, and operation table.
+//! Consumes the pre-built IR snapshot instead of reading perf metrics
+//! directly. All data and semantic styling decisions are made by the
+//! IR builder; this module only maps them to ratatui widgets.
 
-use super::super::helpers::Cell;
-use super::super::{chars, theme};
-use super::{FRAME_BUDGET_30FPS, FRAME_BUDGET_60FPS, PERF};
-use cp_base::cast::Safe as _;
+use cp_render::Semantic;
+use cp_render::conversation::PerfOverlay;
 use ratatui::Frame;
 use ratatui::prelude::{Color, Line, Rect, Span, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
-use crate::state::State;
+use crate::ui::ir::semantic_to_style;
+use crate::ui::{chars, theme};
+use cp_base::cast::Safe as _;
 
-/// Render the performance overlay in the top-right corner.
-pub(crate) fn render_perf_overlay(frame: &mut Frame<'_>, area: Rect, state: &State) {
-    use super::super::helpers::render_table;
-
-    let snapshot = PERF.snapshot();
-
+/// Render the performance overlay from its IR snapshot.
+pub(crate) fn render_perf_overlay_from_ir(frame: &mut Frame<'_>, area: Rect, perf: &PerfOverlay) {
     // Overlay dimensions
     let overlay_width = 62u16;
     let overlay_height = 30u16;
@@ -28,127 +25,54 @@ pub(crate) fn render_perf_overlay(frame: &mut Frame<'_>, area: Rect, state: &Sta
     let y = 1;
     let overlay_area = Rect::new(x, y, overlay_width, overlay_height.min(area.height.saturating_sub(2)));
 
-    // Build content lines
     let mut lines: Vec<Line<'_>> = Vec::new();
 
     // FPS and frame time
-    let fps = if snapshot.frame_avg_ms > 0.0 { 1000.0 / snapshot.frame_avg_ms } else { 0.0 };
-    let fps_color = frame_time_color(snapshot.frame_avg_ms);
-
     lines.push(Line::from(vec![
-        Span::styled(format!(" FPS: {fps:.0}"), Style::default().fg(fps_color).bold()),
+        Span::styled(format!(" FPS: {:.0}", perf.fps), semantic_to_style(perf.frame_semantic).bold()),
         Span::styled(
-            format!("  Frame: {:.1}ms avg  {:.1}ms max", snapshot.frame_avg_ms, snapshot.frame_max_ms),
-            Style::default().fg(theme::text_muted()),
+            format!("  Frame: {:.1}ms avg  {:.1}ms max", perf.frame_avg_ms, perf.frame_max_ms),
+            semantic_to_style(Semantic::Muted),
         ),
     ]));
 
-    // CPU and RAM line
-    let cpu_color = if snapshot.cpu_usage < 25.0 {
-        theme::success()
-    } else if snapshot.cpu_usage < 50.0 {
-        theme::warning()
-    } else {
-        theme::error()
-    };
+    // CPU and RAM
     lines.push(Line::from(vec![
-        Span::styled(format!(" CPU: {:.1}%", snapshot.cpu_usage), Style::default().fg(cpu_color)),
-        Span::styled(format!("  RAM: {:.1} MB", snapshot.memory_mb), Style::default().fg(theme::text_muted())),
+        Span::styled(format!(" CPU: {:.1}%", perf.cpu_usage), semantic_to_style(perf.cpu_semantic)),
+        Span::styled(format!("  RAM: {:.1} MB", perf.memory_mb), semantic_to_style(Semantic::Muted)),
     ]));
 
     // Meilisearch process stats
-    if let Some(meili) = cp_mod_search::overlay_info(state)
-        && (meili.meili_memory_bytes > 0 || meili.meili_cpu_pct > 0.0)
-    {
-        let meili_cpu_color = if meili.meili_cpu_pct < 25.0 {
-            theme::success()
-        } else if meili.meili_cpu_pct < 50.0 {
-            theme::warning()
-        } else {
-            theme::error()
-        };
-        let meili_mb = meili.meili_memory_bytes.to_f64() / (1024.0 * 1024.0);
+    if let Some(ref meili) = perf.meili {
         lines.push(Line::from(vec![
-            Span::styled(format!(" Meili CPU: {:.1}%", meili.meili_cpu_pct), Style::default().fg(meili_cpu_color)),
-            Span::styled(format!("  RAM: {meili_mb:.1} MB"), Style::default().fg(theme::text_muted())),
+            Span::styled(format!(" Meili CPU: {:.1}%", meili.cpu_pct), semantic_to_style(meili.cpu_semantic)),
+            Span::styled(format!("  RAM: {:.1} MB", meili.memory_mb), semantic_to_style(Semantic::Muted)),
         ]));
     }
     lines.push(Line::from(""));
 
     // Budget bars
-    lines.push(render_budget_bar(snapshot.frame_avg_ms, "60fps", FRAME_BUDGET_60FPS));
-    lines.push(render_budget_bar(snapshot.frame_avg_ms, "30fps", FRAME_BUDGET_30FPS));
+    for budget_bar in &perf.budget_bars {
+        lines.push(render_budget_bar(budget_bar));
+    }
+
     // Sparkline
     lines.push(Line::from(""));
-    lines.push(render_sparkline(&snapshot.frame_times_ms));
+    lines.push(render_sparkline(&perf.sparkline));
     lines.push(Line::from(""));
-    // Operation table using render_table
-    let total_time: f64 = snapshot.ops.iter().map(|o| o.total_ms).sum();
 
-    let header = [
-        Cell::new("Operation", Style::default()),
-        Cell::right("Mean", Style::default()),
-        Cell::right("Std", Style::default()),
-        Cell::right("Cumul", Style::default()),
-    ];
-
-    let rows: Vec<Vec<Cell>> = snapshot
-        .ops
-        .iter()
-        .take(10)
-        .map(|op| {
-            let pct = if total_time > 0.0 { op.total_ms / total_time * 100.0 } else { 0.0 };
-            let is_hotspot = pct > 30.0;
-
-            let name = if op.name.len() <= 24 {
-                op.name.to_string()
-            } else {
-                let tail_start = op.name.len().saturating_sub(22);
-                format!("..{}", op.name.get(tail_start..).unwrap_or(""))
-            };
-            let name_str = if is_hotspot { format!("! {name}") } else { format!("  {name}") };
-
-            let name_style = if is_hotspot {
-                Style::default().fg(theme::warning()).bold()
-            } else {
-                Style::default().fg(theme::text())
-            };
-
-            let mean_color = frame_time_color(op.mean_ms);
-            let std_color = if op.std_ms < 1.0 {
-                theme::success()
-            } else if op.std_ms < 5.0 {
-                theme::warning()
-            } else {
-                theme::error()
-            };
-
-            let cumul_str = if op.total_ms >= 1000.0 {
-                format!("{:.1}s", op.total_ms / 1000.0)
-            } else {
-                format!("{:.0}ms", op.total_ms)
-            };
-
-            vec![
-                Cell::new(name_str, name_style),
-                Cell::right(format!("{:.2}ms", op.mean_ms), Style::default().fg(mean_color)),
-                Cell::right(format!("{:.2}ms", op.std_ms), Style::default().fg(std_color)),
-                Cell::right(cumul_str, Style::default().fg(theme::text_muted())),
-            ]
-        })
-        .collect();
-
-    lines.extend(render_table(&header, &rows, None, 1));
+    // Operation table
+    render_op_table(&perf.operations, &mut lines);
 
     // Footer
     lines.push(Line::from(vec![
-        Span::styled(" F12", Style::default().fg(theme::accent())),
-        Span::styled(" toggle  ", Style::default().fg(theme::text_muted())),
-        Span::styled("!", Style::default().fg(theme::warning())),
-        Span::styled(" hotspot (>30%)", Style::default().fg(theme::text_muted())),
+        Span::styled(" F12", semantic_to_style(Semantic::Accent)),
+        Span::styled(" toggle  ", semantic_to_style(Semantic::Muted)),
+        Span::styled("!", semantic_to_style(Semantic::Warning)),
+        Span::styled(" hotspot (>30%)", semantic_to_style(Semantic::Muted)),
     ]));
 
-    // Render
+    // Render popup
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -161,50 +85,32 @@ pub(crate) fn render_perf_overlay(frame: &mut Frame<'_>, area: Rect, state: &Sta
     frame.render_widget(paragraph, overlay_area);
 }
 
-/// Map frame time to a color (green/yellow/red).
-fn frame_time_color(ms: f64) -> Color {
-    if ms < FRAME_BUDGET_60FPS {
-        theme::success()
-    } else if ms < FRAME_BUDGET_30FPS {
-        theme::warning()
-    } else {
-        theme::error()
-    }
-}
+// ── Helpers ──────────────────────────────────────────────────────────
 
-/// Render a budget bar showing current frame time as a percentage of the budget.
-fn render_budget_bar(current_ms: f64, label: &str, budget_ms: f64) -> Line<'static> {
-    let pct = (current_ms / budget_ms * 100.0).min(150.0);
+/// Render a budget bar from IR data.
+fn render_budget_bar(budget_bar: &cp_render::conversation::PerfBudgetBar) -> Line<'static> {
     let bar_width = 30usize;
-    let filled = ((pct / 100.0) * bar_width.to_f64()).to_usize();
-
-    let color = if pct <= 80.0 {
-        theme::success()
-    } else if pct <= 100.0 {
-        theme::warning()
-    } else {
-        theme::error()
-    };
+    let filled = ((budget_bar.percent / 100.0) * bar_width.to_f64()).to_usize();
 
     Line::from(vec![
-        Span::styled(format!(" {label:<6}"), Style::default().fg(theme::text_muted())),
-        Span::styled(chars::BLOCK_FULL.repeat(filled.min(bar_width)), Style::default().fg(color)),
+        Span::styled(format!(" {:<6}", budget_bar.label), semantic_to_style(Semantic::Muted)),
+        Span::styled(chars::BLOCK_FULL.repeat(filled.min(bar_width)), semantic_to_style(budget_bar.semantic)),
         Span::styled(
             chars::BLOCK_LIGHT.repeat(bar_width.saturating_sub(filled)),
             Style::default().fg(theme::bg_elevated()),
         ),
-        Span::styled(format!(" {pct:>5.0}%"), Style::default().fg(color)),
+        Span::styled(format!(" {:>5.0}%", budget_bar.percent), semantic_to_style(budget_bar.semantic)),
     ])
 }
 
-/// Render a sparkline visualization of recent frame times.
+/// Render a sparkline from frame time samples.
 fn render_sparkline(values: &[f64]) -> Line<'static> {
     const SPARK_CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
     if values.is_empty() {
         return Line::from(vec![
-            Span::styled(" Recent: ", Style::default().fg(theme::text_muted())),
-            Span::styled("(collecting...)", Style::default().fg(theme::text_muted())),
+            Span::styled(" Recent: ", semantic_to_style(Semantic::Muted)),
+            Span::styled("(collecting...)", semantic_to_style(Semantic::Muted)),
         ]);
     }
 
@@ -219,7 +125,102 @@ fn render_sparkline(values: &[f64]) -> Line<'static> {
         .collect();
 
     Line::from(vec![
-        Span::styled(" Recent: ", Style::default().fg(theme::text_muted())),
-        Span::styled(sparkline, Style::default().fg(theme::accent())),
+        Span::styled(" Recent: ", semantic_to_style(Semantic::Muted)),
+        Span::styled(sparkline, semantic_to_style(Semantic::Accent)),
     ])
+}
+
+/// Render the operation table using IR semantic styles.
+fn render_op_table(ops: &[cp_render::conversation::PerfOp], lines: &mut Vec<Line<'static>>) {
+    use unicode_width::UnicodeWidthStr as _;
+
+    // Column definitions: name, mean, std, cumul
+    let headers = ["Operation", "Mean", "Std", "Cumul"];
+    let aligns = [false, true, true, true]; // false = left, true = right
+
+    // Compute column widths
+    let mut widths: Vec<usize> = headers.iter().map(|h| h.width()).collect();
+    for op in ops {
+        let name_w = op.name.len().saturating_add(2); // "! " or "  " prefix
+        if let Some(w) = widths.first_mut() {
+            *w = (*w).max(name_w);
+        }
+        if let Some(w) = widths.get_mut(1) {
+            *w = (*w).max(format!("{:.2}ms", op.mean_ms).len());
+        }
+        if let Some(w) = widths.get_mut(2) {
+            *w = (*w).max(format!("{:.2}ms", op.std_ms).len());
+        }
+        if let Some(w) = widths.get_mut(3) {
+            *w = (*w).max(op.total_display.len());
+        }
+    }
+
+    let border_style = semantic_to_style(Semantic::Border);
+    let header_style = semantic_to_style(Semantic::Accent).bold();
+
+    // Helper to pad and align
+    let pad = |text: &str, width: usize, right_align: bool| -> String {
+        let deficit = width.saturating_sub(text.width());
+        if right_align { format!("{}{text}", " ".repeat(deficit)) } else { format!("{text}{}", " ".repeat(deficit)) }
+    };
+
+    // Header row
+    let mut spans = vec![Span::raw(" ")];
+    for (i, hdr) in headers.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" │ ", border_style));
+        }
+        let w = widths.get(i).copied().unwrap_or(0);
+        spans.push(Span::styled(pad(hdr, w, *aligns.get(i).unwrap_or(&false)), header_style));
+    }
+    lines.push(Line::from(spans));
+
+    // Separator
+    let mut sep_spans = vec![Span::raw(" ")];
+    for (i, width) in widths.iter().enumerate() {
+        if i > 0 {
+            sep_spans.push(Span::styled("─┼─", border_style));
+        }
+        sep_spans.push(Span::styled("─".repeat(*width), border_style));
+    }
+    lines.push(Line::from(sep_spans));
+
+    // Data rows
+    for op in ops {
+        let name_prefix = if op.is_hotspot { "! " } else { "  " };
+        let name_str = format!("{name_prefix}{}", op.name);
+        let name_style = if op.is_hotspot {
+            semantic_to_style(Semantic::Warning).bold()
+        } else {
+            semantic_to_style(Semantic::Default)
+        };
+
+        let mean_str = format!("{:.2}ms", op.mean_ms);
+        let std_str = format!("{:.2}ms", op.std_ms);
+
+        let mut row_spans = vec![Span::raw(" ")];
+        // Name
+        row_spans.push(Span::styled(pad(&name_str, widths.first().copied().unwrap_or(0), false), name_style));
+        // Mean
+        row_spans.push(Span::styled(" │ ", border_style));
+        row_spans.push(Span::styled(
+            pad(&mean_str, widths.get(1).copied().unwrap_or(0), true),
+            semantic_to_style(op.mean_semantic),
+        ));
+        // Std
+        row_spans.push(Span::styled(" │ ", border_style));
+        row_spans.push(Span::styled(
+            pad(&std_str, widths.get(2).copied().unwrap_or(0), true),
+            semantic_to_style(op.std_semantic),
+        ));
+        // Cumul
+        row_spans.push(Span::styled(" │ ", border_style));
+        row_spans.push(Span::styled(
+            pad(&op.total_display, widths.get(3).copied().unwrap_or(0), true),
+            semantic_to_style(Semantic::Muted),
+        ));
+
+        lines.push(Line::from(row_spans));
+    }
 }

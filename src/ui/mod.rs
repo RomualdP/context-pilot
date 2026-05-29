@@ -57,9 +57,13 @@ pub(crate) fn render(frame: &mut Frame<'_>, state: &mut State) {
     render_body(frame, state, body_area, &ir_frame);
     ir::render_status_bar::render_status_bar_from_ir(frame, &ir_frame.status_bar, status_area);
 
-    // Render performance overlay if enabled
-    if state.flags.ui.perf_enabled {
-        perf::render_perf_overlay(frame, area, state);
+    // Render performance overlay if active (from IR overlays)
+    if let Some(perf_overlay) = ir_frame
+        .overlays
+        .iter()
+        .find_map(|o| if let cp_render::conversation::Overlay::Perf(ref p) = *o { Some(p) } else { None })
+    {
+        perf::render_perf_overlay_from_ir(frame, area, perf_overlay);
     }
 
     // Render autocomplete popup if active (via IR overlays)

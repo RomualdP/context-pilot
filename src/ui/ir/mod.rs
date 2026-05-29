@@ -96,7 +96,7 @@ use super::theme;
 // ── Semantic → Style ─────────────────────────────────────────────────
 
 /// Map an IR semantic token to a concrete ratatui [`Style`].
-fn semantic_to_style(semantic: Semantic) -> Style {
+pub(crate) fn semantic_to_style(semantic: Semantic) -> Style {
     match semantic {
         Semantic::Accent | Semantic::Active | Semantic::KeyHint | Semantic::Header => {
             Style::default().fg(theme::accent())

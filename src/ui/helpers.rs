@@ -128,8 +128,6 @@ pub(crate) fn count_wrapped_lines(line: &ratatui::prelude::Line<'_>, max_width: 
 
     line_count
 }
-// Re-export from cp-base
-pub(crate) use cp_base::ui::{Cell, render_table};
 
 // ─── Spinner ─────────────────────────────────────────────────────────────────
 

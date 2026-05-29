@@ -3,9 +3,9 @@
 //! Provides low-overhead profiling with real-time stats collection.
 //! Toggle with F12.
 
-/// Performance overlay rendering (F12 panel).
+/// Performance overlay adapter (F12 panel) — renders from IR snapshot.
 mod overlay;
-pub(crate) use overlay::render_perf_overlay;
+pub(crate) use overlay::render_perf_overlay_from_ir;
 
 use crate::infra::constants::PERF_STATS_REFRESH_MS;
 use cp_base::cast::Safe as _;
@@ -19,10 +19,6 @@ const SAMPLE_RING_SIZE: usize = 64;
 
 /// Bitmask for power-of-2 ring buffer wrapping (`SIZE - 1`).
 const RING_MASK: usize = SAMPLE_RING_SIZE - 1;
-/// Frame budget for 60fps (milliseconds).
-pub(crate) const FRAME_BUDGET_60FPS: f64 = 16.67;
-/// Frame budget for 30fps (milliseconds)
-pub(crate) const FRAME_BUDGET_30FPS: f64 = 33.33;
 
 /// Ring buffer for recent samples.
 pub(crate) struct RingBuffer<T: Copy + Default> {

@@ -6,11 +6,12 @@
 
 use cp_render::conversation::{
     Autocomplete, AutocompleteEntry, Conversation, HistorySection, InputArea, Message as IrMessage, Overlay,
-    QuestionForm, StreamingTool, ToolResultPreview, ToolUsePreview,
+    PerfBudgetBar, PerfMeiliStats, PerfOp, PerfOverlay, QuestionForm, StreamingTool, ToolResultPreview, ToolUsePreview,
 };
 use cp_render::{Block, Semantic};
 
 use crate::state::{Kind, MsgKind, MsgStatus, State, ToolResultRecord, ToolUseRecord};
+use cp_base::cast::Safe as _;
 
 /// Build the conversation region from application state.
 #[must_use]
@@ -171,6 +172,11 @@ pub(crate) fn build_overlays(state: &State) -> Vec<Overlay> {
         overlays.push(Overlay::Autocomplete(build_autocomplete(ac)));
     }
 
+    // Perf overlay
+    if state.flags.ui.perf_enabled {
+        overlays.push(Overlay::Perf(build_perf_overlay(state)));
+    }
+
     overlays
 }
 
@@ -216,4 +222,128 @@ fn build_autocomplete(ac: &cp_base::state::autocomplete::Suggestions) -> Autocom
         .collect();
 
     Autocomplete { query: ac.query.clone(), entries, selected_index: ac.selected }
+}
+
+// ── Perf overlay ─────────────────────────────────────────────────────
+
+/// Frame budget for 60fps (milliseconds).
+const FRAME_BUDGET_60FPS: f64 = 16.67;
+/// Frame budget for 30fps (milliseconds).
+const FRAME_BUDGET_30FPS: f64 = 33.33;
+
+/// Map frame time to a Semantic (green < 60fps budget, yellow < 30fps, red otherwise).
+fn frame_time_semantic(ms: f64) -> Semantic {
+    if ms < FRAME_BUDGET_60FPS {
+        Semantic::Success
+    } else if ms < FRAME_BUDGET_30FPS {
+        Semantic::Warning
+    } else {
+        Semantic::Error
+    }
+}
+
+/// Map a percentage to a Semantic (green < 25%, yellow < 50%, red otherwise).
+fn cpu_semantic(pct: f64) -> Semantic {
+    if pct < 25.0 {
+        Semantic::Success
+    } else if pct < 50.0 {
+        Semantic::Warning
+    } else {
+        Semantic::Error
+    }
+}
+
+/// Build the perf overlay IR data from the perf metrics snapshot.
+fn build_perf_overlay(state: &State) -> PerfOverlay {
+    use crate::ui::perf::PERF;
+
+    let snapshot = PERF.snapshot();
+
+    let fps = if snapshot.frame_avg_ms > 0.0 { 1000.0 / snapshot.frame_avg_ms } else { 0.0 };
+
+    // Meilisearch stats
+    let meili = cp_mod_search::overlay_info(state).and_then(|info| {
+        if info.meili_memory_bytes == 0 && info.meili_cpu_pct <= 0.0 {
+            return None;
+        }
+        let mb = info.meili_memory_bytes.to_f64() / (1024.0 * 1024.0);
+        Some(PerfMeiliStats {
+            cpu_pct: f64::from(info.meili_cpu_pct),
+            cpu_semantic: cpu_semantic(f64::from(info.meili_cpu_pct)),
+            memory_mb: mb,
+        })
+    });
+
+    // Budget bars
+    let build_bar = |label: &str, budget_ms: f64| -> PerfBudgetBar {
+        let pct = (snapshot.frame_avg_ms / budget_ms * 100.0).min(150.0);
+        let semantic = if pct <= 80.0 {
+            Semantic::Success
+        } else if pct <= 100.0 {
+            Semantic::Warning
+        } else {
+            Semantic::Error
+        };
+        PerfBudgetBar { label: label.into(), percent: pct, semantic }
+    };
+
+    let budget_bars = vec![build_bar("60fps", FRAME_BUDGET_60FPS), build_bar("30fps", FRAME_BUDGET_30FPS)];
+
+    // Operations
+    let total_time: f64 = snapshot.ops.iter().map(|o| o.total_ms).sum();
+
+    let operations = snapshot
+        .ops
+        .iter()
+        .take(10)
+        .map(|op| {
+            let pct = if total_time > 0.0 { op.total_ms / total_time * 100.0 } else { 0.0 };
+            let is_hotspot = pct > 30.0;
+
+            let name = if op.name.len() <= 24 {
+                op.name.to_string()
+            } else {
+                let tail_start = op.name.len().saturating_sub(22);
+                format!("..{}", op.name.get(tail_start..).unwrap_or(""))
+            };
+
+            let total_display = if op.total_ms >= 1000.0 {
+                format!("{:.1}s", op.total_ms / 1000.0)
+            } else {
+                format!("{:.0}ms", op.total_ms)
+            };
+
+            let std_semantic = if op.std_ms < 1.0 {
+                Semantic::Success
+            } else if op.std_ms < 5.0 {
+                Semantic::Warning
+            } else {
+                Semantic::Error
+            };
+
+            PerfOp {
+                name,
+                mean_ms: op.mean_ms,
+                mean_semantic: frame_time_semantic(op.mean_ms),
+                std_ms: op.std_ms,
+                std_semantic,
+                total_display,
+                is_hotspot,
+            }
+        })
+        .collect();
+
+    PerfOverlay {
+        fps,
+        frame_avg_ms: snapshot.frame_avg_ms,
+        frame_max_ms: snapshot.frame_max_ms,
+        frame_semantic: frame_time_semantic(snapshot.frame_avg_ms),
+        cpu_usage: snapshot.cpu_usage,
+        cpu_semantic: cpu_semantic(f64::from(snapshot.cpu_usage)),
+        memory_mb: snapshot.memory_mb,
+        meili,
+        budget_bars,
+        sparkline: snapshot.frame_times_ms,
+        operations,
+    }
 }
