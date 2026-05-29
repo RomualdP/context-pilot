@@ -40,6 +40,12 @@ pub(crate) fn boot_init_modules(state: &mut State, module_data: &BootModuleData,
         let _global = dotenvy::from_path(&global_env).ok();
     }
 
+    // Pre-start heavy daemons in parallel — the biggest boot perf win.
+    // Meilisearch, Tuwunel, and Console server all start concurrently.
+    // When module init_state() runs, each daemon is already healthy and
+    // the reconnect path fires instantly.
+    pre_start_daemons(&mut progress);
+
     let modules = crate::modules::all_modules();
 
     for module in &modules {
@@ -68,4 +74,33 @@ pub(crate) fn boot_init_modules(state: &mut State, module_data: &BootModuleData,
     cp_mod_github::types::GithubState::get_mut(state).github_token = std::env::var("GITHUB_TOKEN").ok();
 
     set_active_theme(&state.active_theme);
+}
+
+/// Pre-start the three heavy daemons in parallel threads.
+///
+/// Spawns Meilisearch, Tuwunel (Matrix homeserver), and the Console
+/// server concurrently.  Each has its own ~15 s health-check timeout.
+/// Joining waits for `max(startup₁, startup₂, startup₃)` instead of
+/// the sequential `startup₁ + startup₂ + startup₃`.
+///
+/// Failures are logged but never halt boot — the normal module init
+/// will retry the startup for any daemon that failed here.
+fn pre_start_daemons(progress: &mut impl FnMut(&str)) {
+    progress("pre-starting daemons");
+
+    let meili_handle = std::thread::spawn(cp_mod_search::pre_start_daemon);
+    let chat_handle = std::thread::spawn(cp_mod_chat::pre_start_daemon);
+    let console_handle = std::thread::spawn(cp_mod_console::manager::find_or_create_server);
+
+    // Join all three — each thread has internal timeouts so this won't
+    // block indefinitely.  Log results without aborting.
+    for (name, result) in
+        [("Meilisearch", meili_handle.join()), ("Tuwunel", chat_handle.join()), ("Console", console_handle.join())]
+    {
+        match result {
+            Ok(Ok(())) => log::info!("Pre-start: {name} ready"),
+            Ok(Err(e)) => log::warn!("Pre-start: {name} failed: {e}"),
+            Err(_panic) => log::warn!("Pre-start: {name} thread panicked"),
+        }
+    }
 }

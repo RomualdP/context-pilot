@@ -31,6 +31,22 @@ use cp_base::tools::{ToolResult, ToolUse};
 
 use types::{SearchPersistData, SearchState};
 
+/// Pre-start the global Meilisearch server for parallel boot.
+///
+/// Spawns or reconnects to the Meilisearch daemon, waiting for it to
+/// become healthy.  Called from background threads during boot to
+/// overlap daemon startup with other module initialization.  When
+/// `load_module_data()` later calls `ensure_server_running()`, it
+/// finds the daemon already alive and reconnects instantly.
+///
+/// # Errors
+///
+/// Returns an error if the server cannot be started (download failure,
+/// spawn error, health timeout).
+pub fn pre_start_daemon() -> Result<(), String> {
+    meili::server::ensure_server_running().map(|_info| ())
+}
+
 /// Read overlay information for the Ctrl+I overlay.
 ///
 /// Delegates to [`meili::overlay::overlay_info`]. Returns `None` if the

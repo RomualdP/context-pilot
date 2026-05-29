@@ -52,6 +52,20 @@ static TOOL_TEXTS: std::sync::LazyLock<ToolTexts> =
 #[derive(Debug, Clone, Copy)]
 pub struct ChatModule;
 
+/// Pre-start the Tuwunel homeserver for parallel boot.
+///
+/// Ensures the binary is present (or returns cached 404 quickly),
+/// then spawns or reconnects to the Tuwunel daemon.  Called from
+/// background threads during boot.
+///
+/// # Errors
+///
+/// Returns an error if the binary download fails or the daemon
+/// can't start.
+pub fn pre_start_daemon() -> Result<(), String> {
+    server::pre_start_daemon()
+}
+
 impl Module for ChatModule {
     fn id(&self) -> &'static str {
         "chat"

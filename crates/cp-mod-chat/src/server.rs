@@ -248,6 +248,94 @@ pub(crate) fn uds_put(path: &str, json_body: &str, access_token: &str) -> Result
     Ok((status_code, body))
 }
 
+// -- Daemon pre-start (State-free) -------------------------------------------
+
+/// Pre-start the Tuwunel daemon for parallel boot.
+///
+/// Ensures the binary is present (hits 404 cache if applicable),
+/// then spawns or reconnects to the daemon and waits for health.
+/// Called from background threads during boot; when `start_server()`
+/// later runs it finds the daemon already alive via PID file.
+///
+/// # Errors
+///
+/// Returns an error if the binary is missing, config absent, or the
+/// daemon cannot start.
+pub(crate) fn pre_start_daemon() -> Result<(), String> {
+    crate::client::download::ensure_binary()?;
+
+    let matrix_dir = ensure_global_dirs()?;
+    let cfg = matrix_dir.join("homeserver.toml");
+    if !cfg.exists() {
+        // Config will be created by bootstrap::bootstrap() during init_state.
+        // We can't generate it here (needs bridge registration).
+        return Ok(());
+    }
+
+    ensure_daemon_running().map(|_pid| ())
+}
+
+/// Pre-start the Tuwunel daemon without needing `State`.
+///
+/// Spawns a new Tuwunel process (or discovers an existing one via PID
+/// file) and waits for it to become healthy.  Returns the server PID.
+///
+/// Called from background threads during parallel boot to overlap
+/// daemon startup.  When `start_server()` later runs, it finds the
+/// daemon already alive via the PID file and reconnects instantly.
+///
+/// # Errors
+///
+/// Returns an error if the binary/config is missing, the process fails
+/// to spawn, or the health check times out.
+pub(crate) fn ensure_daemon_running() -> Result<u32, String> {
+    // Phase 0: try to reconnect to an existing server
+    if let Some(pid) = read_pid() {
+        if is_pid_alive(pid) && health_check().is_ok() {
+            log::info!("Pre-start: reconnected to existing Tuwunel server (PID {pid})");
+            return Ok(pid);
+        }
+        remove_pid();
+    }
+
+    // Phase 1: validate prerequisites
+    let bin = binary_path().ok_or("Cannot determine home directory for Tuwunel binary")?;
+    if !bin.exists() {
+        return Err(format!("Tuwunel binary not found at {}", bin.display()));
+    }
+
+    let cfg = global_config_path().ok_or("Cannot determine global config path")?;
+    if !cfg.exists() {
+        return Err(format!("Config not found at {}", cfg.display()));
+    }
+
+    let log_path = global_log_path().ok_or("Cannot determine global log path")?;
+    let log_file =
+        std::fs::File::create(&log_path).map_err(|e| format!("Cannot create log at {}: {e}", log_path.display()))?;
+    let log_err = log_file.try_clone().map_err(|e| format!("Cannot duplicate log handle: {e}"))?;
+
+    // Phase 2: spawn the process (without --execute args — those are
+    // added by start_server() which has access to bridge config)
+    let child = Command::new(&bin)
+        .arg("--config")
+        .arg(&cfg)
+        .stdin(Stdio::null())
+        .stdout(log_file)
+        .stderr(log_err)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn Tuwunel: {e}"))?;
+
+    let pid = child.id();
+    if let Err(e) = write_pid(pid) {
+        log::warn!("Failed to write PID file: {e}");
+    }
+
+    // Phase 3: wait for health over UDS
+    wait_for_health()?;
+    log::info!("Pre-start: Tuwunel daemon healthy (PID {pid})");
+    Ok(pid)
+}
+
 // -- Server lifecycle --------------------------------------------------------
 
 /// Start the global Tuwunel homeserver, reusing an existing process.
