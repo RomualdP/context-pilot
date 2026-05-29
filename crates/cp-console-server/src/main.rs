@@ -286,6 +286,31 @@ fn handle_list(sessions: &Sessions) -> Response {
     Response::ok_sessions(infos)
 }
 
+/// Return server diagnostic stats: session counts, FD usage, thread count.
+fn handle_stats(sessions: &Sessions) -> Response {
+    let map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
+    let total = map.len();
+    let running = map.values().filter(|s| matches!(s.status, SessionStatus::Running)).count();
+    let exited = total.saturating_sub(running);
+    let stdin_fds = map.values().filter(|s| s.stdin.is_some()).count();
+    drop(map);
+
+    // Count open FDs via /dev/fd (macOS/Linux)
+    let fd_count = std::fs::read_dir("/dev/fd").map_or(0, |entries| entries.count());
+
+    // Get rlimit
+    let (soft, hard) = rlimit::getrlimit(rlimit::Resource::NOFILE).unwrap_or((0, 0));
+
+    let stats = format!(
+        "sessions: {total} (running={running}, exited={exited}), \
+         stdin_pipes={stdin_fds}, open_fds={fd_count}, \
+         rlimit_soft={soft}, rlimit_hard={hard}, \
+         pid={}",
+        std::process::id()
+    );
+    Response::ok_status(stats, None)
+}
+
 // ---------------------------------------------------------------------------
 // Connection handler
 // ---------------------------------------------------------------------------
@@ -354,6 +379,7 @@ impl ConnectionHandler {
                     if key.is_empty() { Response::err("Missing key") } else { handle_status(&sessions, key) }
                 }
                 "list" => handle_list(&sessions),
+                "stats" => handle_stats(&sessions),
                 "ping" => Response::ok(),
                 "shutdown" => {
                     SHUTDOWN_REQUESTED.store(true, Ordering::Relaxed);
@@ -423,6 +449,14 @@ fn main() {
     // Install SIGTERM/SIGINT handlers — set flag, main loop polls it
     install_signal_handlers();
 
+    // Spawn a background thread to auto-reap exited sessions.
+    // Without this, sessions that exit but are never explicitly killed accumulate
+    // forever — each holding a stdin pipe FD — until FD exhaustion.
+    {
+        let sessions = Arc::clone(&sessions);
+        drop(std::thread::spawn(move || reaper_loop(&sessions)));
+    }
+
     // Accept connections (one thread per connection)
     loop {
         match listener.accept() {
@@ -457,6 +491,62 @@ fn main() {
 fn install_signal_handlers() {
     for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGHUP] {
         drop(signal_hook::flag::register(sig, Arc::clone(&SHUTDOWN_REQUESTED)));
+    }
+}
+
+/// Grace period (seconds) after a session exits before the reaper removes it.
+/// Gives the TUI time to read the final status and log output.
+const REAPER_GRACE_SECS: u64 = 30;
+
+/// Background thread that periodically removes exited sessions from the map.
+///
+/// Without this, sessions that complete but are never explicitly killed by the
+/// TUI accumulate indefinitely — each holding a stdin pipe FD. Over hundreds
+/// of callback invocations this exhausts the process file-descriptor limit.
+fn reaper_loop(sessions: &Sessions) {
+    /// Map from session key → first time we observed it as exited (seconds since epoch).
+    let mut exit_times: HashMap<String, u64> = HashMap::new();
+
+    loop {
+        if SHUTDOWN_REQUESTED.load(Ordering::Relaxed) {
+            break;
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(5));
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+
+        let mut map = sessions.lock().unwrap_or_else(PoisonError::into_inner);
+
+        // Discover newly-exited sessions
+        for (key, session) in map.iter_mut() {
+            session.poll_status();
+            if session.is_terminal() {
+                let _prev = exit_times.entry(key.clone()).or_insert(now_secs);
+            }
+        }
+
+        // Remove sessions that have been exited long enough
+        let mut to_remove: Vec<String> = Vec::new();
+        for (key, &first_seen) in &exit_times {
+            if now_secs.saturating_sub(first_seen) >= REAPER_GRACE_SECS {
+                to_remove.push(key.clone());
+            }
+        }
+
+        for key in &to_remove {
+            if let Some(mut session) = map.remove(key) {
+                drop(session.stdin.take());
+            }
+            let _prev = exit_times.remove(key);
+        }
+
+        // Clean exit_times for sessions that were manually removed
+        exit_times.retain(|k, _| map.contains_key(k));
+
+        drop(map);
     }
 }
 
