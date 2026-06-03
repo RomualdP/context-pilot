@@ -7,6 +7,7 @@
 //! - T = Tool call
 //! - R = Tool result
 use std::fs;
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::infra::constants::{MESSAGES_DIR, STORE_DIR};
@@ -45,4 +46,24 @@ pub(crate) fn save_message(msg: &Message) {
 pub(crate) fn delete_message(uid: &str) {
     let path = message_path(uid);
     let _r = fs::remove_file(path).ok();
+}
+
+/// Append a user prompt to the persistent prompt history file.
+///
+/// Format: one JSON object per line (JSONL) at `.context-pilot/prompt-history.jsonl`.
+/// This is an append-only audit log that survives conversation clears and context switches.
+pub(crate) fn record_prompt_history(content: &str) {
+    let path = PathBuf::from(STORE_DIR).join("prompt-history.jsonl");
+    let timestamp = chrono::Utc::now()
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    // Escape content properly for JSON embedding
+    let escaped = serde_json::to_string(content).unwrap_or_default();
+    let line = format!(r#"{{"ts":"{timestamp}","content":{escaped}}}"#);
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _r = writeln!(file, "{line}");
+    }
 }
