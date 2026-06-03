@@ -299,6 +299,8 @@ fn build_help_hints() -> Vec<HelpHint> {
     [
         ("Tab", "next panel"),
         ("↑↓", "scroll"),
+        ("Ctrl+U/D", "history"),
+        ("Ctrl+C", "copy panel"),
         ("Ctrl+I", "search index"),
         ("Ctrl+P", "commands"),
         ("Ctrl+H", "config"),

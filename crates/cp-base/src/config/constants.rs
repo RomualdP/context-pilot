@@ -73,7 +73,7 @@ pub const SIDEBAR_WIDTH: u16 = 36;
 pub const STATUS_BAR_HEIGHT: u16 = 1;
 
 /// Height of the help hints section in sidebar
-pub const SIDEBAR_HELP_HEIGHT: u16 = 8;
+pub const SIDEBAR_HELP_HEIGHT: u16 = 10;
 
 // =============================================================================
 // EVENT LOOP
