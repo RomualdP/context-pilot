@@ -45,6 +45,12 @@ pub enum Action {
     CursorEndSelect,
     /// Select all text in input (Ctrl+A).
     SelectAll,
+    /// Navigate to previous (older) prompt in history (Ctrl+U).
+    HistoryPrev,
+    /// Navigate to next (newer) prompt in history (Ctrl+D).
+    HistoryNext,
+    /// Copy current panel content to clipboard (Ctrl+C).
+    CopyPanelContent,
 
     // === Conversation lifecycle ===
     /// Discard all messages and start fresh.

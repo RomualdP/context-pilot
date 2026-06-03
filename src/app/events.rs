@@ -26,6 +26,15 @@ pub(crate) fn handle_event(event: &Event, state: &State) -> Option<Action> {
                     KeyCode::Char('v') => return Some(Action::CycleSidebarMode),
                     KeyCode::Char('o') => return Some(Action::ResetSessionCosts),
                     KeyCode::Char('p') => return Some(Action::OpenCommandPalette),
+                    KeyCode::Char('u') => return Some(Action::HistoryPrev),
+                    KeyCode::Char('d') => return Some(Action::HistoryNext),
+                    KeyCode::Char('c') => {
+                        return if state.flags.overlays.index_status {
+                            Some(Action::CopyIndexOverlay)
+                        } else {
+                            Some(Action::CopyPanelContent)
+                        };
+                    }
                     // All other keys: fall through to normal handling
                     KeyCode::Backspace
                     | KeyCode::Enter
@@ -66,7 +75,6 @@ pub(crate) fn handle_event(event: &Event, state: &State) -> Option<Action> {
             if state.flags.overlays.index_status {
                 return Some(match key.code {
                     KeyCode::Esc => Action::ToggleIndexOverlay,
-                    KeyCode::Char('c') if ctrl => Action::CopyIndexOverlay,
                     KeyCode::Backspace
                     | KeyCode::Enter
                     | KeyCode::Left

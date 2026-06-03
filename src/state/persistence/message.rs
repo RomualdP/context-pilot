@@ -67,3 +67,21 @@ pub(crate) fn record_prompt_history(content: &str) {
         let _r = writeln!(file, "{line}");
     }
 }
+
+/// Load all prompt history entries from the JSONL file.
+///
+/// Returns a `Vec<String>` of past user prompts, oldest first.
+pub(crate) fn load_prompt_history() -> Vec<String> {
+    let path = PathBuf::from(STORE_DIR).join("prompt-history.jsonl");
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| v.get("content")?.as_str().map(String::from))
+        })
+        .collect()
+}
