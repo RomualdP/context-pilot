@@ -60,7 +60,14 @@ touch "$GITIGNORE_GLOBAL"
 # Use .context-pilot/* (not .context-pilot/) so git enters the directory,
 # allowing the negation !.context-pilot/shared/ to track shared configs.
 if grep -qxF ".context-pilot/*" "$GITIGNORE_GLOBAL" 2>/dev/null; then
-    echo "      .context-pilot/* already in $GITIGNORE_GLOBAL — skipping."
+    # Pattern exists — just ensure all negations are present
+    for dir in shared agents skills commands; do
+        if ! grep -qxF "!.context-pilot/$dir/" "$GITIGNORE_GLOBAL" 2>/dev/null; then
+            echo "!.context-pilot/$dir/" >> "$GITIGNORE_GLOBAL"
+            echo "      Added !.context-pilot/$dir/ to $GITIGNORE_GLOBAL"
+        fi
+    done
+    echo "      .context-pilot/* already in $GITIGNORE_GLOBAL — negations verified."
 else
     # Migrate old pattern if present
     if grep -qxF ".context-pilot/" "$GITIGNORE_GLOBAL" 2>/dev/null; then
@@ -70,11 +77,13 @@ else
     else
         echo ".context-pilot/*" >> "$GITIGNORE_GLOBAL"
     fi
-    # Ensure shared/ negation is present
-    if ! grep -qxF '!.context-pilot/shared/' "$GITIGNORE_GLOBAL" 2>/dev/null; then
-        echo '!.context-pilot/shared/' >> "$GITIGNORE_GLOBAL"
-    fi
-    echo "      Set up .context-pilot/* + !.context-pilot/shared/ in $GITIGNORE_GLOBAL"
+    # Ensure negations are present for shared dirs (shared/, agents/, skills/, commands/)
+    for dir in shared agents skills commands; do
+        if ! grep -qxF "!.context-pilot/$dir/" "$GITIGNORE_GLOBAL" 2>/dev/null; then
+            echo "!.context-pilot/$dir/" >> "$GITIGNORE_GLOBAL"
+        fi
+    done
+    echo "      Set up .context-pilot/* + negations for shared/agents/skills/commands in $GITIGNORE_GLOBAL"
 fi
 git config --global core.excludesFile "$GITIGNORE_GLOBAL"
 
