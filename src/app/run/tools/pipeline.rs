@@ -141,17 +141,7 @@ pub(crate) fn handle_tool_execution(app: &mut App, tx: &Sender<StreamEvent>) {
                         input: tool.input.clone(),
                         queued_at: now_ms(),
                     });
-                    let params = serde_json::to_string(&tool.input).unwrap_or_default();
-                    let short = if params.len() > 120 {
-                        let mut end = 117;
-                        while !params.is_char_boundary(end) {
-                            end = end.saturating_sub(1);
-                        }
-                        format!("{}...", params.get(..end).unwrap_or(""))
-                    } else {
-                        params
-                    };
-                    let mut msg = format!("Queued as #{}: {}({})", idx, tool.name, short);
+                    let mut msg = format!("Queued as #{idx}");
                     if pf.has_warnings() {
                         let _r = write!(msg, "\n{}", pf.format_errors());
                     }

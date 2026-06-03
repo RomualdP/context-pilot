@@ -186,19 +186,9 @@ pub(super) fn handle_reverie_tools(app: &mut App) {
                         input: tool.input.clone(),
                         queued_at: crate::app::panels::now_ms(),
                     });
-                    let params = serde_json::to_string(&tool.input).unwrap_or_default();
-                    let short = if params.len() > 120 {
-                        let mut end = 117;
-                        while !params.is_char_boundary(end) {
-                            end = end.saturating_sub(1);
-                        }
-                        format!("{}...", params.get(..end).unwrap_or(""))
-                    } else {
-                        params
-                    };
                     crate::infra::tools::ToolResult::new(
                         tool.id.clone(),
-                        format!("Queued as #{}: {}({})", idx, tool.name, short),
+                        format!("Queued as #{idx}"),
                         false,
                     )
                 } else {
