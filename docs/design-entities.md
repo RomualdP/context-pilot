@@ -1,6 +1,6 @@
 # cp-mod-entities — Design Document
 
-> **Status:** Draft v6
+> **Status:** Draft v7
 > **Date:** 2026-06-04  
 > **Crate:** `crates/cp-mod-entities/`  
 > **Depends on:** cp-base, cp-render, cp-mod-search, rusqlite
@@ -49,7 +49,7 @@ Not every project needs entities. They shine when the AI accumulates structured 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Storage engine | **SQLite (rusqlite, bundled)** | ACID, full SQL, in-process, 24+ years maturity. Meilisearch explicitly unsuitable as primary store (no ACID, async indexing). |
-| Schema management | **No ORM** | The AI IS the schema manager. It reads the panel, writes SQL. An ORM adds a translation layer that reduces flexibility. If the AI wants schema docs, it creates a `_notes` table. |
+| Schema management | **Auto migrations + dump** | Every DDL auto-captured as a numbered migration file. Full dump (schema + data) on save. DB is source of truth; files are derived. Recovery: dump (primary) → migrations (fallback) → fresh start. ~220 lines. Industry-standard Rails model. |
 | Meilisearch sync | **Fire-and-forget, full re-index** | Re-index all user tables after any write. Same pattern as `sync_logs_to_meilisearch`. Meilisearch down → skip silently. |
 | Schema guidance | **Suggested, not enforced** | Tool description includes conventions. AI decides. |
 | Sample data in panel | **Yes, capped** | First 3 rows per table in panel context. Prevents wasted "exploration SELECTs." Capped: skip tables >10 columns, truncate values at 50 chars. |
@@ -103,12 +103,13 @@ Not every project needs entities. They shine when the AI accumulates structured 
 
 ```
 crates/cp-mod-entities/src/
-├── lib.rs      ~200 lines   Module trait impl (mirrors cp-mod-memory/src/lib.rs)
-├── db.rs       ~250 lines   Connection factory, bootstrap, introspection
-├── tools.rs    ~350 lines   SQL execution, classification, formatting
-├── panel.rs    ~200 lines   Fixed Entities panel
-├── sync.rs     ~200 lines   Meilisearch sync (mirrors sync_logs_to_meilisearch)
-└── types.rs    ~100 lines   State types
+├── lib.rs           ~200 lines   Module trait impl (mirrors cp-mod-memory/src/lib.rs)
+├── db.rs            ~300 lines   Connection factory, bootstrap, introspection, dump/restore
+├── migrations.rs    ~100 lines   Auto-capture DDL, sequential replay, _meta tracking
+├── tools.rs         ~350 lines   SQL execution, classification, formatting
+├── panel.rs         ~200 lines   Fixed Entities panel
+├── sync.rs          ~200 lines   Meilisearch sync (mirrors sync_logs_to_meilisearch)
+└── types.rs         ~100 lines   State types
 ```
 
 ---
@@ -121,7 +122,17 @@ crates/cp-mod-entities/src/
 
 **PRAGMAs:** `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `journal_size_limit=64MB`.
 
-**Bootstrap:** `_meta` table with `schema_version` and `created_at`. Everything else is AI-created.
+**Bootstrap:** `_meta` table tracks schema version and applied migrations:
+
+```sql
+CREATE TABLE IF NOT EXISTS _meta (
+    migration_id INTEGER PRIMARY KEY,
+    filename TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+Everything else is AI-created.
 
 **Introspection:** `sqlite_master` for table names, `PRAGMA table_info` for columns, `PRAGMA foreign_key_list` for FKs, `COUNT(*)` for row counts. Excludes `sqlite_%` and `_meta`.
 
@@ -168,7 +179,50 @@ pub struct ForeignKeyInfo {
 
 No `Connection` in state (`!Send`). No JSON to persist (SQLite is self-persisting). DB path: `cwd / ".context-pilot" / "entities.db"`.
 
-### 5.3 Meilisearch
+### 5.3 Schema Persistence (Migrations + Dump)
+
+Two complementary mechanisms — migrations capture the **story**, the dump captures the **state**.
+
+**File layout:**
+
+```
+.context-pilot/shared/entities/
+├── schema.sql                          ← current state: CREATE + INSERT
+└── migrations/
+    ├── 0001_20260604T153000.sql        ← CREATE TABLE companies (...)
+    ├── 0002_20260604T153100.sql        ← CREATE TABLE people (...)
+    └── 0003_20260605T100000.sql        ← ALTER TABLE companies ADD COLUMN founded
+```
+
+**Migrations** — auto-captured after every successful DDL via `entity_sql`:
+- One file per DDL tool call (multi-statement DDL = one file)
+- Sequential numbering from `_meta` table (atomic via SQLite transaction)
+- Timestamp in filename for human readability
+- Written ONLY after successful execution — never for failed DDL
+- Git-diffable: each schema change = one small file
+
+**schema.sql** — auto-generated full dump:
+- `CREATE TABLE IF NOT EXISTS` for all tables (including `_meta`)
+- `INSERT OR IGNORE` for all rows (including `_meta` entries)
+- Regenerated after every DDL (immediate) and on `save_module_data` (if DML occurred)
+- **Data cap:** if dump exceeds 1 MB, omit INSERT statements + include warning comment
+- `PRAGMA foreign_keys = OFF` wrapper for safe restore ordering
+
+**Recovery priority:**
+
+| DB state | schema.sql | migrations/ | Action |
+|----------|-----------|-------------|--------|
+| Has tables | Any | Any | Use DB. Regenerate files if missing. |
+| Empty | Exists | Any | Apply schema.sql. Then apply migrations newer than last `_meta` entry. |
+| Empty | Missing | Exist | Replay all migrations in order. |
+| Empty | Missing | Missing | Fresh start. |
+| Corrupt | Exists | Any | Delete DB, apply schema.sql, then pending migrations. |
+
+**The crash gap:** DDL at T=1 creates migration file immediately. TUI crashes at T=2 before save. schema.sql is stale. On restart: DB is fine (WAL). If DB also lost: schema.sql (stale) + pending migration 0004 = full schema recovery.
+
+**The AI never interacts with any of this.** It's infrastructure.
+
+### 5.4 Meilisearch
 
 **Document format** (one per SQLite row):
 
@@ -222,6 +276,7 @@ entity_sql:
     triggers, views. Multi-statement (semicolons) executes atomically.
     Use RETURNING * on INSERT/UPDATE to see results without a separate SELECT.
     Use CREATE TABLE IF NOT EXISTS for idempotent schema setup.
+    Schema changes are auto-tracked for reproducibility.
   params:
     sql:
       type: string
@@ -230,14 +285,14 @@ entity_sql:
 
 ### Execution semantics
 
-| SQL type | Detection | Return value | Triggers sync? |
-|----------|-----------|-------------|----------------|
-| SELECT / EXPLAIN / PRAGMA | Trimmed uppercase starts with keyword | Markdown table (≤50 rows inline, >50 → `entity_result` panel) | No |
-| INSERT / UPDATE / DELETE | Starts with DML keyword | `"N row(s) affected."` | Yes |
-| CREATE / ALTER / DROP / CREATE INDEX | Starts with DDL keyword | Full schema summary | Yes |
-| WITH ... SELECT (CTE) | Starts with WITH, no DML keywords | Markdown table | No |
-| WITH ... INSERT/UPDATE/DELETE | Starts with WITH, contains DML | Affected rows | Yes |
-| Error | SQLite returns error | `is_error: true` + enriched error (see below) | No |
+| SQL type | Detection | Return value | Triggers sync? | Persistence |
+|----------|-----------|-------------|----------------|-------------|
+| SELECT / EXPLAIN / PRAGMA | Trimmed uppercase starts with keyword | Markdown table (≤50 rows inline, >50 → `entity_result` panel) | No | — |
+| INSERT / UPDATE / DELETE | Starts with DML keyword | `"N row(s) affected."` | Yes | Dirty flag |
+| CREATE / ALTER / DROP / CREATE INDEX | Starts with DDL keyword | Full schema summary | Yes | Migration file + dump |
+| WITH ... SELECT (CTE) | Starts with WITH, no DML keywords | Markdown table | No | — |
+| WITH ... INSERT/UPDATE/DELETE | Starts with WITH, contains DML | Affected rows | Yes | Dirty flag |
+| Error | SQLite returns error | `is_error: true` + enriched error (see below) | No | — |
 
 **Conservative fallback:** if classification is ambiguous, treat as write (sync is idempotent).
 
@@ -267,7 +322,9 @@ NULL → `NULL`. BLOB → `[BLOB N bytes]`. No alignment padding.
 
 ### Lifecycle
 
-Every `entity_sql` call: open connection → classify → execute → format result → refresh panel (`touch_panel(Kind::ENTITIES)`) → if write: fire-and-forget Meilisearch sync → drop connection.
+Every `entity_sql` call: open connection → classify → execute → format result → refresh panel (`touch_panel(Kind::ENTITIES)`) → if DDL: write migration file + regenerate schema.sql → if write: fire-and-forget Meilisearch sync + set dirty flag → drop connection.
+
+On `save_module_data`: if dirty flag set → regenerate schema.sql (captures DML changes) → clear flag.
 
 Instrumented with `flame!("entity_sql")`.
 
@@ -279,7 +336,7 @@ Fixed panel. `Kind::ENTITIES`, `fixed_order = Some(5)` (after Memories), `needs_
 
 ### Populated state
 
-Every user table (excluding `_meta`, `sqlite_%`) with name, row count, columns (name, type, PK), foreign keys. Footer: totals, DB size.
+Every user table (excluding `_meta`, `sqlite_%`) with name, row count, columns (name, type, PK), foreign keys. Footer: totals, DB size, migration count.
 
 **LLM context** — schema + sample data for quick orientation:
 
@@ -371,7 +428,22 @@ Follow cp-mod-memory pattern. Key specifics: `Kind::ENTITIES`, `fixed_order=5`, 
 
 ---
 
-## 10. Implementation Plan
+## 10. Justified Decisions — Dropped Alternatives
+
+| Alternative | Why dropped |
+|-------------|-------------|
+| **No ORM / no schema management** | "AI owns it all" sounds elegant but fails on reproducibility. DB corruption = total schema loss. No git-trackable history. No cross-project portability. Not professional. |
+| **Dump only (no migrations)** | A backup, not schema management. No audit trail — "when was this column added?" requires digging git log of one monolithic file. Can't bridge the crash gap (DDL after last save is lost). |
+| **Migrations only (no dump)** | No data recovery. AI spends an hour populating 200 entities, DB corrupts, migrations replay empty tables. Unacceptable. |
+| **Declarative schema file (Model A — file is source of truth)** | Requires schema diffing engine (500+ lines) to reconcile file vs DB. SQLite ALTER TABLE limitations make automatic reconciliation fragile. Over-engineering for a utility module. |
+| **Full ORM (Diesel/SeaORM)** | Schema defined in Rust structs, compile-time validation. Defeats the purpose — AI can't change schema at runtime. Massive complexity. |
+| **Migration files created by the AI explicitly** | Adds a second tool (`entity_migrate`), doubles cognitive load. The AI already writes DDL via `entity_sql` — auto-capturing it is zero-overhead. |
+| **YAML schema definition** | YAML to describe SQL schemas is a pointless translation layer. SQL is already a schema definition language. |
+| **Track .db binary in git** | Binary diffs are useless. Merge conflicts unresolvable. File grows. Git-lfs requires setup (violates "zero user setup"). |
+
+---
+
+## 11. Implementation Plan
 
 ### Phase 1: Crate scaffold
 - [ ] Create `crates/cp-mod-entities/` with Cargo.toml + empty lib.rs
@@ -379,12 +451,15 @@ Follow cp-mod-memory pattern. Key specifics: `Kind::ENTITIES`, `fixed_order=5`, 
 - [ ] Audit transitive deps: `cargo tree -p rusqlite --features bundled --depth 2`
 - [ ] Verify compilation on all CI targets
 
-### Phase 2: Core (DB + Tool + Panel)
+### Phase 2: Core (DB + Tool + Panel + Schema Persistence)
 - [ ] `types.rs` — EntitiesState, SchemaCache, TableInfo, ColumnInfo, ForeignKeyInfo
 - [ ] `db.rs` — open_connection (PRAGMAs + bootstrap), introspect_schema, integrity_check
+- [ ] `db.rs` — dump_to_file (CREATE + INSERT for all tables incl _meta, 1MB cap), restore_from_file
+- [ ] `migrations.rs` — write_migration, list_migration_files, apply_pending, last_applied_id
 - [ ] `tools.rs` — SQL classification, multi-statement splitting, execution, result formatting
-- [ ] `panel.rs` — blocks(), context(), refresh(), empty state
-- [ ] `lib.rs` — Module trait impl (init, save/load, tool defs, panel)
+- [ ] `tools.rs` — after DDL success: write_migration + dump_to_file; after DML: set dirty flag
+- [ ] `panel.rs` — blocks(), context(), refresh(), empty state, migration count in footer
+- [ ] `lib.rs` — Module trait impl (init with recovery priority, save with conditional dump)
 - [ ] `yamls/tools/entities.yaml`
 - [ ] Register in mod.rs, add Kind::ENTITIES, update YAML validation count
 - [ ] All 6 callbacks green ✓
@@ -400,12 +475,12 @@ Follow cp-mod-memory pattern. Key specifics: `Kind::ENTITIES`, `fixed_order=5`, 
 
 ---
 
-## 11. Future Extensions
+## 12. Future Extensions
 
 | Extension | When |
 |-----------|------|
 | Graph visualization in panel (ASCII/IR) | User demand |
-| Export/import (SQL dump, CSV, JSON) | Data portability needs |
+| Explicit export/import commands (CSV, JSON, selective SQL) | Data portability beyond auto-dump |
 | Spine notifications on entity changes | Automation use cases |
 | FTS5 full-text search columns | Large text fields |
 
