@@ -63,7 +63,7 @@ pub(crate) fn build_sidebar(state: &State) -> Sidebar {
     let token_bar = Some(build_token_bar(state));
     let token_stats = build_token_stats(state);
     let pr_card = build_pr_card(state);
-    let help_hints = build_help_hints();
+    let help_hints = build_help_hints(state);
 
     Sidebar { mode, entries, token_bar, token_stats, pr_card, help_hints }
 }
@@ -295,12 +295,17 @@ fn build_pr_card(state: &State) -> Option<PrCard> {
 // ── Help hints ───────────────────────────────────────────────────────
 
 /// Build keyboard shortcut help hints for the sidebar.
-fn build_help_hints() -> Vec<HelpHint> {
+fn build_help_hints(state: &State) -> Vec<HelpHint> {
+    let copy_flash = {
+        let ms = state.flags.overlays.copied_flash_ms;
+        ms > 0 && cp_base::panels::now_ms().saturating_sub(ms) < 2_000
+    };
+
     [
         ("Tab", "next panel"),
         ("↑↓", "scroll"),
         ("Ctrl+U/D", "history"),
-        ("Ctrl+C", "copy panel"),
+        ("Ctrl+C", if copy_flash { "copied ✓" } else { "copy panel" }),
         ("Ctrl+I", "search index"),
         ("Ctrl+P", "commands"),
         ("Ctrl+H", "config"),
