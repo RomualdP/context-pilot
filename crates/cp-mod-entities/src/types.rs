@@ -1,5 +1,6 @@
 //! Entity module state types.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use cp_base::state::runtime::State;
@@ -24,13 +25,25 @@ pub struct EntitiesState {
     pub schema_cache: Option<SchemaCache>,
     /// Meilisearch index UID for entities (`cp_{hash}_entities`). Empty until search wired.
     pub entities_index_uid: String,
+    /// Tables with unsynced writes (DML/DDL since last flush). In-memory only.
+    pub dirty_tables: HashSet<String>,
+    /// Tables dropped since last sync. In-memory only.
+    pub dropped_tables: Vec<String>,
 }
 
 impl EntitiesState {
     /// Create a new `EntitiesState` with the given database path.
     #[must_use]
-    pub const fn new(db_path: PathBuf, dump_path: PathBuf, migrations_dir: PathBuf) -> Self {
-        Self { db_path, dump_path, migrations_dir, schema_cache: None, entities_index_uid: String::new() }
+    pub fn new(db_path: PathBuf, dump_path: PathBuf, migrations_dir: PathBuf) -> Self {
+        Self {
+            db_path,
+            dump_path,
+            migrations_dir,
+            schema_cache: None,
+            entities_index_uid: String::new(),
+            dirty_tables: HashSet::new(),
+            dropped_tables: Vec::new(),
+        }
     }
 
     /// Borrow the `EntitiesState` from the global `State`.

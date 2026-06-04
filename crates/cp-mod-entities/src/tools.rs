@@ -145,6 +145,24 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         }
     };
 
+    // Post-execution: sync to Meilisearch on writes
+    if !is_error && kind != SqlKind::Select {
+        let stmts = split_statements(sql);
+        let affected = crate::sync::extract_affected_tables(&stmts);
+        let upper = sql.to_uppercase();
+        let is_drop = upper.contains("DROP TABLE") || upper.contains("DROP TABLE IF EXISTS");
+        let es_sync = crate::types::EntitiesState::get_mut(state);
+        for table in &affected {
+            if is_drop {
+                es_sync.dropped_tables.push(table.clone());
+                let _removed = es_sync.dirty_tables.remove(table);
+            } else {
+                let _inserted = es_sync.dirty_tables.insert(table.clone());
+            }
+        }
+        crate::sync::flush_sync(state);
+    }
+
     // Post-execution: refresh schema cache + touch panel
     let fresh_cache = db::introspect(&conn, &db_path);
     let es_mut = crate::types::EntitiesState::get_mut(state);

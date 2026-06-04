@@ -1,6 +1,6 @@
 # cp-mod-entities — Design Document
 
-> **Status:** Draft v7
+> **Status:** Implemented
 > **Date:** 2026-06-04  
 > **Crate:** `crates/cp-mod-entities/`  
 > **Depends on:** cp-base, cp-render, cp-mod-search, rusqlite

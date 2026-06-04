@@ -278,6 +278,7 @@ name = "cp-mod-entities"
 version = "0.1.0"
 dependencies = [
  "cp-base",
+ "cp-mod-search",
  "cp-mod-utilities",
  "cp-render",
  "crossterm",
