@@ -11,8 +11,11 @@ use crate::{db, migrations, panel};
 // Constants
 // =============================================================================
 
-/// Results with more rows than this go to a panel instead of inline.
-const INLINE_ROW_LIMIT: usize = 5;
+/// Results exceeding either limit go to a panel instead of inline.
+/// Matches console `easy_bash` thresholds.
+const INLINE_MAX_LINES: usize = 150;
+/// Maximum inline byte count before routing to a panel.
+const INLINE_MAX_BYTES: usize = 8000;
 
 /// Maximum rows rendered in a single result (inline or panel).
 const MAX_RESULT_ROWS: usize = 200;
@@ -187,15 +190,17 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
     };
 
     // Route results: small → inline + preserve tempo, big → panel + break tempo.
-    // Errors are always inline with no tempo.
+    // Thresholds match console easy_bash: ≤150 lines AND ≤8000 bytes.
     let (content, is_error, preserves_tempo) = match result_content {
-        Ok((text, row_count)) => {
-            if row_count > INLINE_ROW_LIMIT {
+        Ok(text) => {
+            let line_count = text.lines().count();
+            let byte_count = text.len();
+            if line_count > INLINE_MAX_LINES || byte_count > INLINE_MAX_BYTES {
                 // Big result → entity_result panel
                 let sql_preview: String = sql.chars().take(60).collect();
                 let title = format!("entity_sql: {sql_preview}");
                 let panel_id = panel::create_result_panel(state, &title, &text);
-                let summary = format!("{row_count} rows returned — results in panel {panel_id}.{PANEL_WARNING}");
+                let summary = format!("{line_count} lines returned — results in panel {panel_id}.{PANEL_WARNING}");
                 (summary, false, false)
             } else {
                 // Small result → inline + tempo
@@ -252,7 +257,7 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
 // =============================================================================
 
 /// Execute a SELECT / EXPLAIN / PRAGMA query and format results as markdown.
-fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<(String, usize), String> {
+fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<String, String> {
     let stmts = split_statements(sql);
     let last = stmts.last().copied().unwrap_or(sql);
 
@@ -270,7 +275,7 @@ fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<(String
 /// Multi-statement batches are wrapped in an implicit transaction for
 /// atomicity (all-or-nothing), unless the user already controls
 /// transactions explicitly with `BEGIN`.
-fn execute_dml(conn: &Connection, sql: &str) -> Result<(String, usize), String> {
+fn execute_dml(conn: &Connection, sql: &str) -> Result<String, String> {
     let stmts = split_statements(sql);
     let upper = sql.to_uppercase();
     let has_returning = upper.contains("RETURNING");
@@ -299,7 +304,7 @@ fn execute_dml(conn: &Connection, sql: &str) -> Result<(String, usize), String> 
 }
 
 /// Inner loop for DML execution — separated so the caller can wrap in a transaction.
-fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> Result<(String, usize), String> {
+fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> Result<String, String> {
     let mut total_affected = 0usize;
     for (i, stmt) in stmts.iter().enumerate() {
         let is_last = i == stmts.len().saturating_sub(1);
@@ -322,25 +327,20 @@ fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> 
             let count = rows_data.len();
             let table = format_markdown_table(&col_names, &rows_data);
             if total_affected > 0 {
-                return Ok((format!("{total_affected} row(s) affected.\n\n{table}\n\n({count} returned)"), count));
+                return Ok(format!("{total_affected} row(s) affected.\n\n{table}\n\n({count} returned)"));
             }
-            return Ok((format!("{table}\n\n({count} returned)"), count));
+            return Ok(format!("{table}\n\n({count} returned)"));
         }
 
         let affected = conn.execute(stmt, []).map_err(|e| format!("{e}"))?;
         total_affected = total_affected.saturating_add(affected);
     }
 
-    Ok((format!("{total_affected} row(s) affected."), 0))
+    Ok(format!("{total_affected} row(s) affected."))
 }
 
 /// Execute DDL. Writes migration + regenerates dump.
-fn execute_ddl(
-    conn: &Connection,
-    sql: &str,
-    dump_path: &Path,
-    migrations_dir: &Path,
-) -> Result<(String, usize), String> {
+fn execute_ddl(conn: &Connection, sql: &str, dump_path: &Path, migrations_dir: &Path) -> Result<String, String> {
     conn.execute_batch(sql).map_err(|e| format!("{e}"))?;
 
     // Write migration file
@@ -351,7 +351,7 @@ fn execute_ddl(
         log::warn!("Failed to regenerate dump after DDL: {e}");
     }
 
-    Ok((format!("Schema updated. Migration saved: {filename}"), 0))
+    Ok(format!("Schema updated. Migration saved: {filename}"))
 }
 
 // =============================================================================
@@ -359,9 +359,7 @@ fn execute_ddl(
 // =============================================================================
 
 /// Execute a query and format results as a markdown table.
-///
-/// Returns `(formatted_text, row_count)`.
-fn query_to_markdown(conn: &Connection, sql: &str, state: &State) -> Result<(String, usize), String> {
+fn query_to_markdown(conn: &Connection, sql: &str, state: &State) -> Result<String, String> {
     let mut stmt = conn.prepare(sql).map_err(|e| format!("{e}"))?;
     let col_names: Vec<String> = stmt.column_names().iter().map(|s| (*s).to_string()).collect();
     let mut rows_data: Vec<Vec<String>> = Vec::new();
@@ -385,21 +383,21 @@ fn query_to_markdown(conn: &Connection, sql: &str, state: &State) -> Result<(Str
             if let Some(cache) = &es.schema_cache
                 && let Some(info) = cache.tables.iter().find(|t| t.name.eq_ignore_ascii_case(tbl))
             {
-                return Ok((format!("0 rows returned. (Table '{}' has {} total rows.)", info.name, info.row_count), 0));
+                return Ok(format!("0 rows returned. (Table '{}' has {} total rows.)", info.name, info.row_count));
             }
         }
-        return Ok(("0 rows returned.".to_string(), 0));
+        return Ok("0 rows returned.".to_string());
     }
 
     // Cap results at MAX_RESULT_ROWS
     if count > MAX_RESULT_ROWS {
         let truncated = rows_data.get(..MAX_RESULT_ROWS).unwrap_or(&rows_data);
         let table = format_markdown_table(&col_names, truncated);
-        return Ok((format!("{table}\n\n({count} rows, showing first {MAX_RESULT_ROWS})"), count));
+        return Ok(format!("{table}\n\n({count} rows, showing first {MAX_RESULT_ROWS})"));
     }
 
     let table = format_markdown_table(&col_names, &rows_data);
-    Ok((format!("{table}\n\n({count} rows)"), count))
+    Ok(format!("{table}\n\n({count} rows)"))
 }
 
 /// Format a single cell value for markdown table display.

@@ -94,6 +94,10 @@
   path: src/ui/ir/mod.rs
   description: IR-to-ratatui adapter. semantic_to_style (pub(crate)) + ir_span_to_ratatui (with reversed support). blocks_to_lines converts IR Block vec to ratatui Lines. Table/ProgressBar/Tree/KeyValue renderers. build_frame + build_active_panel frame assembly.
   last_edited_ms: 0
+09bf54b9b89e86d0:
+  path: crates/cp-mod-entities/src/tools.rs
+  description: SQL execution engine. classify() (SELECT/DML/DDL/CTE), split_statements() with string literal awareness. execute() dispatches to execute_select/dml/ddl. Error enrichment with Levenshtein fuzzy matching. Markdown table formatting, ≤5 rows inline+tempo, >5 rows entity_result panel+no tempo. 200-row cap. RETURNING support.
+  last_edited_ms: 1780606076253
 0a18dae90799c09c:
   path: crates/cp-mod-scratchpad/Cargo.toml
   description: 'Scratchpad module deps: cp-base, cp-render, crossterm, serde, serde_json.'
@@ -1882,6 +1886,10 @@ c338519b09352739:
   path: crates/cp-mod-files/src/lib.rs
   description: 'Files module. Core/global. 3 tools: Open, Edit, Write. Pre-flight: queue auto-activate, old_string match against both disk and virtual (post-queue) content via build_virtual_content(). 4-way matrix: disk✓/virtual✓→OK, disk✓/virtual✗→ERROR, disk✗/virtual✓→OK, disk✗/virtual✗→ERROR.'
   last_edited_ms: 0
+c420a45f730117d1:
+  path: crates/cp-mod-entities/src/panel.rs
+  description: Fixed Entities panel. Live schema + sample data context for LLM. Empty-state onboarding guide with quick-start SQL. IR blocks with Accent/Code/Muted styling. Migration count display. EntityResultPanel for large query results (dynamic, metadata-persisted). max_freezes=2.
+  last_edited_ms: 1780606076247
 c4829069423c1fe6:
   path: crates/cp-mod-tree/src/lib.rs
   description: 'Tree module. 3 tools: filter/toggle/describe (with close_panel param). Fixed TREE panel (fixed_order=3). Watches open folders. Dir-event-only invalidation. Module data: filter+descriptions. Worker data: open_folders. @-path autocomplete.'
@@ -1973,6 +1981,10 @@ cbb71fe5106157bc:
 cbeaa3dfd0701f21:
   path: src/llms/mod.rs
   description: LLM abstraction layer. LlmClient trait (stream + check_api). 7 providers via get_client(). Unified LlmRequest/ApiMessage/ContentBlock types. start_streaming() assembles prompt + spawns thread. api_messages_to_cc_json() places cache breakpoints. SSE error logging.
+  last_edited_ms: 0
+cc1484c01885f429:
+  path: yamls/themes.yaml
+  description: '6 themes (dnd/modern/futuristic/forest/sea/space). Each: message icons, context icons (including entities: 🗃️), status/todo icons, 16 RGB colors.'
   last_edited_ms: 0
 cc38f9829f5f0384:
   path: crates/cp-mod-firecrawl/src/api.rs
@@ -2106,6 +2118,10 @@ dadf52c9990a635f:
   path: crates/cp-mod-brave/src/tools.rs
   description: Brave tool dispatch with flame!("brave_search") and flame!("brave_llm_context"). Both async via spawn_async_tool. DynPanel creation with DYN_PANEL_ID_PLACEHOLDER.
   last_edited_ms: 0
+dbeaa40a36614e5f:
+  path: crates/cp-mod-entities/src/lib.rs
+  description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search. Dynamic entity_result panels.
+  last_edited_ms: 1780606076259
 dc0886a13ca5908c:
   path: src/ui/helpers.rs
   description: 'Shared UI helpers: truncate_string, format_number, format_time_ago, wrap_text, count_wrapped_lines. Braille spinner (wall-clock-time-based, 10fps). IR-aware syntax highlighting (syntect, LRU cache, do_highlight_ir). TypewriterBuffer for streaming animation.'
