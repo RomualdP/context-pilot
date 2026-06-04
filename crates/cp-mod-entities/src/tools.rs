@@ -5,7 +5,23 @@ use cp_base::state::runtime::State;
 use cp_base::tools::{ToolResult, ToolUse};
 
 use crate::errors::enrich_error;
-use crate::{db, migrations};
+use crate::{db, migrations, panel};
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/// Results with more rows than this go to a panel instead of inline.
+const INLINE_ROW_LIMIT: usize = 5;
+
+/// Maximum rows rendered in a single result (inline or panel).
+const MAX_RESULT_ROWS: usize = 200;
+
+/// Warning appended to panel-creating tool results.
+const PANEL_WARNING: &str = "\n\nIMPORTANT: Results live in this panel. Act on the information FIRST \
+    (write files, answer questions, store in scratchpad, etc.), THEN close the panel. Closing it \
+    IMMEDIATELY and IRREVERSIBLY erases all content from your context — you cannot recall it from \
+    memory afterward. Never close-then-act; always act-then-close.";
 
 // =============================================================================
 // SQL classification
@@ -170,21 +186,30 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         SqlKind::Ddl => execute_ddl(&conn, sql, &dump_path, &migrations_dir),
     };
 
-    // Handle errors, and for successful writes remind the LLM that the
-    // Entities panel refreshes immediately — the panel already reflects
-    // whatever change was just made.
-    let (content, is_error) = match result_content {
-        Ok(text) => {
-            let note = if kind == SqlKind::Select {
-                ""
+    // Route results: small → inline + preserve tempo, big → panel + break tempo.
+    // Errors are always inline with no tempo.
+    let (content, is_error, preserves_tempo) = match result_content {
+        Ok((text, row_count)) => {
+            if row_count > INLINE_ROW_LIMIT {
+                // Big result → entity_result panel
+                let sql_preview: String = sql.chars().take(60).collect();
+                let title = format!("entity_sql: {sql_preview}");
+                let panel_id = panel::create_result_panel(state, &title, &text);
+                let summary = format!("{row_count} rows returned — results in panel {panel_id}.{PANEL_WARNING}");
+                (summary, false, false)
             } else {
-                "\n\n(The Entities panel now reflects the updated database state.)"
-            };
-            (format!("{text}{note}"), false)
+                // Small result → inline + tempo
+                let note = if kind == SqlKind::Select {
+                    ""
+                } else {
+                    "\n\n(The Entities panel now reflects the updated database state.)"
+                };
+                (format!("{text}{note}"), false, true)
+            }
         }
         Err(e) => {
             let schema = db::introspect(&conn, &db_path);
-            (enrich_error(&e, &schema), true)
+            (enrich_error(&e, &schema), true, false)
         }
     };
 
@@ -217,7 +242,7 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         display: None,
         tldr: None,
         is_error,
-        preserves_tempo: false,
+        preserves_tempo,
         tool_name: tool.name.clone(),
     }
 }
@@ -227,7 +252,7 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
 // =============================================================================
 
 /// Execute a SELECT / EXPLAIN / PRAGMA query and format results as markdown.
-fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<String, String> {
+fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<(String, usize), String> {
     let stmts = split_statements(sql);
     let last = stmts.last().copied().unwrap_or(sql);
 
@@ -245,7 +270,7 @@ fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<String,
 /// Multi-statement batches are wrapped in an implicit transaction for
 /// atomicity (all-or-nothing), unless the user already controls
 /// transactions explicitly with `BEGIN`.
-fn execute_dml(conn: &Connection, sql: &str) -> Result<String, String> {
+fn execute_dml(conn: &Connection, sql: &str) -> Result<(String, usize), String> {
     let stmts = split_statements(sql);
     let upper = sql.to_uppercase();
     let has_returning = upper.contains("RETURNING");
@@ -274,7 +299,7 @@ fn execute_dml(conn: &Connection, sql: &str) -> Result<String, String> {
 }
 
 /// Inner loop for DML execution — separated so the caller can wrap in a transaction.
-fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> Result<String, String> {
+fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> Result<(String, usize), String> {
     let mut total_affected = 0usize;
     for (i, stmt) in stmts.iter().enumerate() {
         let is_last = i == stmts.len().saturating_sub(1);
@@ -297,20 +322,25 @@ fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> 
             let count = rows_data.len();
             let table = format_markdown_table(&col_names, &rows_data);
             if total_affected > 0 {
-                return Ok(format!("{total_affected} row(s) affected.\n\n{table}\n\n({count} returned)"));
+                return Ok((format!("{total_affected} row(s) affected.\n\n{table}\n\n({count} returned)"), count));
             }
-            return Ok(format!("{table}\n\n({count} returned)"));
+            return Ok((format!("{table}\n\n({count} returned)"), count));
         }
 
         let affected = conn.execute(stmt, []).map_err(|e| format!("{e}"))?;
         total_affected = total_affected.saturating_add(affected);
     }
 
-    Ok(format!("{total_affected} row(s) affected."))
+    Ok((format!("{total_affected} row(s) affected."), 0))
 }
 
 /// Execute DDL. Writes migration + regenerates dump.
-fn execute_ddl(conn: &Connection, sql: &str, dump_path: &Path, migrations_dir: &Path) -> Result<String, String> {
+fn execute_ddl(
+    conn: &Connection,
+    sql: &str,
+    dump_path: &Path,
+    migrations_dir: &Path,
+) -> Result<(String, usize), String> {
     conn.execute_batch(sql).map_err(|e| format!("{e}"))?;
 
     // Write migration file
@@ -321,7 +351,7 @@ fn execute_ddl(conn: &Connection, sql: &str, dump_path: &Path, migrations_dir: &
         log::warn!("Failed to regenerate dump after DDL: {e}");
     }
 
-    Ok(format!("Schema updated. Migration saved: {filename}"))
+    Ok((format!("Schema updated. Migration saved: {filename}"), 0))
 }
 
 // =============================================================================
@@ -329,7 +359,9 @@ fn execute_ddl(conn: &Connection, sql: &str, dump_path: &Path, migrations_dir: &
 // =============================================================================
 
 /// Execute a query and format results as a markdown table.
-fn query_to_markdown(conn: &Connection, sql: &str, state: &State) -> Result<String, String> {
+///
+/// Returns `(formatted_text, row_count)`.
+fn query_to_markdown(conn: &Connection, sql: &str, state: &State) -> Result<(String, usize), String> {
     let mut stmt = conn.prepare(sql).map_err(|e| format!("{e}"))?;
     let col_names: Vec<String> = stmt.column_names().iter().map(|s| (*s).to_string()).collect();
     let mut rows_data: Vec<Vec<String>> = Vec::new();
@@ -353,21 +385,21 @@ fn query_to_markdown(conn: &Connection, sql: &str, state: &State) -> Result<Stri
             if let Some(cache) = &es.schema_cache
                 && let Some(info) = cache.tables.iter().find(|t| t.name.eq_ignore_ascii_case(tbl))
             {
-                return Ok(format!("0 rows returned. (Table '{}' has {} total rows.)", info.name, info.row_count));
+                return Ok((format!("0 rows returned. (Table '{}' has {} total rows.)", info.name, info.row_count), 0));
             }
         }
-        return Ok("0 rows returned.".to_string());
+        return Ok(("0 rows returned.".to_string(), 0));
     }
 
-    // Cap inline results at 50 rows
-    if count > 50 {
-        let truncated = rows_data.get(..50).unwrap_or(&rows_data);
+    // Cap results at MAX_RESULT_ROWS
+    if count > MAX_RESULT_ROWS {
+        let truncated = rows_data.get(..MAX_RESULT_ROWS).unwrap_or(&rows_data);
         let table = format_markdown_table(&col_names, truncated);
-        return Ok(format!("{table}\n\n({count} rows, showing first 50)"));
+        return Ok((format!("{table}\n\n({count} rows, showing first {MAX_RESULT_ROWS})"), count));
     }
 
     let table = format_markdown_table(&col_names, &rows_data);
-    Ok(format!("{table}\n\n({count} rows)"))
+    Ok((format!("{table}\n\n({count} rows)"), count))
 }
 
 /// Format a single cell value for markdown table display.

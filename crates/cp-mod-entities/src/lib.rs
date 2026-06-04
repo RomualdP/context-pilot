@@ -128,6 +128,7 @@ impl Module for EntitiesModule {
     fn create_panel(&self, context_type: &Kind) -> Option<Box<dyn Panel>> {
         match context_type.as_str() {
             Kind::ENTITIES => Some(Box::new(panel::EntitiesPanel)),
+            Kind::ENTITY_RESULT => Some(Box::new(panel::EntityResultPanel)),
             _ => None,
         }
     }
@@ -159,16 +160,28 @@ impl Module for EntitiesModule {
     }
 
     fn context_type_metadata(&self) -> Vec<cp_base::state::context::TypeMeta> {
-        vec![cp_base::state::context::TypeMeta {
-            context_type: "entities",
-            icon_id: "entities",
-            is_fixed: true,
-            needs_cache: false,
-            fixed_order: Some(5),
-            display_name: "entities",
-            short_name: "entities",
-            needs_async_wait: false,
-        }]
+        vec![
+            cp_base::state::context::TypeMeta {
+                context_type: "entities",
+                icon_id: "entities",
+                is_fixed: true,
+                needs_cache: false,
+                fixed_order: Some(5),
+                display_name: "entities",
+                short_name: "entities",
+                needs_async_wait: false,
+            },
+            cp_base::state::context::TypeMeta {
+                context_type: "entity_result",
+                icon_id: "entities",
+                is_fixed: false,
+                needs_cache: true,
+                fixed_order: None,
+                display_name: "entity-result",
+                short_name: "sql-result",
+                needs_async_wait: false,
+            },
+        ]
     }
 
     fn overview_context_section(&self, state: &State) -> Option<String> {
@@ -199,7 +212,7 @@ impl Module for EntitiesModule {
     fn load_worker_data(&self, _data: &serde_json::Value, _state: &mut State) {}
 
     fn dynamic_panel_types(&self) -> Vec<Kind> {
-        vec![]
+        vec![Kind::new(Kind::ENTITY_RESULT)]
     }
 
     fn context_display_name(&self, _context_type: &str) -> Option<&'static str> {
