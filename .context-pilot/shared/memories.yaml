@@ -34,28 +34,43 @@
   importance: high
   last_edited_ms: 0
 48f2140d3c2dee0e:
-  tl_dr: Entities module COMPLETE + stress-tested (40+ edge cases). 4 bugs found/fixed (including critical dump/restore data loss). Committed 52a9810 on 'entities' branch. Production-quality.
+  tl_dr: Entities module COMPLETE — all 151 stress tests passed (12 categories, 4 difficulty levels). 9 bugs found/fixed. Committed on 'entities' branch. Production-quality.
   contents: |-
-    ## Stress Test Results
+    ## Stress Test Results — COMPLETE (151/151)
 
-    ### Bugs Found & Fixed:
+    ### Bugs Found & Fixed (9 total):
     1. **Bug #1**: PRAGMA hex literal `0x4_000_000` → `67108864` (SQLite doesn't understand Rust hex)
     2. **Bug #2**: SQL comments before SELECT caused misclassification → added `strip_leading_comments()`
     3. **Bug #3**: Non-atomic multi-statement DML → implicit BEGIN/COMMIT/ROLLBACK wrapper
-    4. **Bug #4** (CRITICAL): Dump/restore data loss — db::open() auto-creates files, panel.refresh()/save_module_data could create empty DB then dump it, overwriting the good recovery dump. Fix: multi-layer guards (db_path.exists() + has_user_tables()) in save_module_data, panel.refresh, sync functions.
+    4. **Bug #4** (CRITICAL): Dump/restore data loss — db::open() auto-creates files, panel.refresh()/save_module_data could overwrite good dump. Fix: multi-layer guards.
+    5. **Bug #5**: Trailing comments after semicolons cause 'bad parameter or other API misuse' → strip in split_statements()
+    6. **Bug #6**: split_statements empty segments → filter empty after split
+    7. **Bug #7**: dump_to_file only captures tables, misses triggers/views/indexes → query sqlite_master for all types
+    8. **Bug #8**: recover_database() didn't handle db::open() failure → delete corrupt file, create fresh, restore
+    9. **Bug #9**: extract_affected_tables wrong table name for INSERT INTO table(col) → clean_identifier stops at '('
 
-    ### UX Warts (Not Bugs):
-    - Multi-statement DDL+DML swallows DML result feedback
-    - ROLLBACK reports misleading affected row count
-    - ATTACH DATABASE works but ephemeral (per-call connection)
+    ### UX Fix:
+    - Added panel refresh note to tool result: "The Entities panel now reflects the updated database state."
 
-    ### All 40+ Tests Passed:
-    CRUD, RETURNING, FKs, CTEs, triggers, WITHOUT ROWID, unicode, BLOBs, transactions, VACUUM, UNION, subqueries, dump/restore round-trip with all edge cases.
-  importance: medium
+    ### 12 Test Categories:
+    T1: SQL Execution (18 tests) — CRUD, JOINs, CTEs, triggers, adversarial SQL
+    T2: Schema Persistence (14) — migrations, dump format, 1MB cap, rapid DDL
+    T3: Recovery (12) — fresh start, dump restore, migration replay, corrupt DB self-heal
+    T4: Panel & Context (12) — schema display, samples, empty state, extreme schema
+    T5: Meilisearch Sync (13) — CRUD sync, orphan cleanup, 1000-row batch, rogue docs
+    T6: Search Scope (9) — scope=entities/all, facets, typo tolerance, full lifecycle
+    T7: Connection & PRAGMAs (11) — WAL, FK, busy_timeout, self-healing
+    T8: Error Handling (12) — fuzzy matching, Levenshtein, constraint errors
+    T9: Data Types (13) — TEXT/INT/REAL/BLOB/NULL, unicode, SQL injection strings
+    T10: Module Integration (12) — registration, toggle, YAML validation, flame
+    T11: Dump/Restore (13) — round-trip, WITHOUT ROWID, near-1MB, crash gap
+    T12: End-to-End (12) — full workflows, stress, incremental build-up
+  importance: high
   labels:
   - entities
   - complete
-  last_edited_ms: 1780592360808
+  - stress-testing
+  last_edited_ms: 1780597902120
 8185ce57712b238d:
   tl_dr: 'ALWAYS push memories (memories.yaml) and tree descriptions (tree-descriptions.yaml) alongside code commits. When committing work, include a ''chore: sync memories and tree descriptions'' commit and push everything together. Never leave these unsync''d.'
   importance: critical

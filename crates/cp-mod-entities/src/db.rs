@@ -197,6 +197,13 @@ pub(crate) fn dump_to_file(conn: &Connection, dump_path: &Path) -> Result<(), St
         }
     }
 
+    // Non-table objects: views, triggers, user-created indexes
+    let non_table_stmts = non_table_create_statements(conn);
+    for stmt_sql in &non_table_stmts {
+        output.push_str(stmt_sql);
+        output.push_str(";\n\n");
+    }
+
     // Check 1 MB cap
     let total_size = output.len().saturating_add(data_lines.len());
     if total_size > 0x10_0000 {
@@ -224,6 +231,28 @@ fn all_table_names(conn: &Connection) -> Vec<String> {
         "SELECT name FROM sqlite_master
          WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
          ORDER BY name",
+    ) else {
+        return Vec::new();
+    };
+
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
+        return Vec::new();
+    };
+
+    rows.filter_map(Result::ok).collect()
+}
+
+/// Get `CREATE` SQL for non-table objects (views, triggers, user indexes).
+///
+/// These are stored in `sqlite_master` with their full DDL and must be
+/// included in the dump so that a dump-only recovery doesn't lose them.
+fn non_table_create_statements(conn: &Connection) -> Vec<String> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT sql FROM sqlite_master
+         WHERE type IN ('view', 'trigger', 'index')
+           AND name NOT LIKE 'sqlite_%'
+           AND sql IS NOT NULL
+         ORDER BY type, name",
     ) else {
         return Vec::new();
     };

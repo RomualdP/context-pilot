@@ -1,0 +1,1 @@
+CREATE TABLE _bug7_verify (id INTEGER PRIMARY KEY); DROP TABLE _bug7_verify;

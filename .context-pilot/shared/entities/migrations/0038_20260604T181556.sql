@@ -1,0 +1,1 @@
+CREATE TABLE orphan_test (id INTEGER PRIMARY KEY, name TEXT)

@@ -1,0 +1,1 @@
+CREATE TABLE _regen_test (id INTEGER PRIMARY KEY); DROP TABLE _regen_test;

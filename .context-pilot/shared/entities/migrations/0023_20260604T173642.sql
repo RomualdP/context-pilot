@@ -1,0 +1,1 @@
+CREATE INDEX idx_companies_country ON companies(country)

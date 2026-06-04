@@ -334,9 +334,25 @@ fn visualize_entity_output(content: &str, width: usize) -> Vec<cp_render::Block>
 ///
 /// Priority: DB (if healthy) → dump → migrations → fresh start.
 fn recover_database(db_path: &std::path::Path, dump_path: &std::path::Path, migrations_dir: &std::path::Path) {
-    let Ok(conn) = db::open(db_path) else {
-        log::warn!("Failed to open entity database — will retry on next access");
-        return;
+    let conn = match db::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            // db::open() failed (e.g. corrupt file where PRAGMAs fail).
+            // Delete the corrupt file and attempt a full recovery.
+            log::warn!("Failed to open entity database: {e} — attempting recovery");
+            let _rm = std::fs::remove_file(db_path);
+            let Ok(fresh) = db::open(db_path) else {
+                log::warn!("Recovery failed: cannot create fresh database");
+                return;
+            };
+            if dump_path.exists()
+                && let Err(re) = db::restore_from_file(&fresh, dump_path)
+            {
+                log::warn!("Failed to restore dump during open-failure recovery: {re}");
+            }
+            let _apply = migrations::apply_pending(&fresh, migrations_dir);
+            return;
+        }
     };
 
     // Integrity check

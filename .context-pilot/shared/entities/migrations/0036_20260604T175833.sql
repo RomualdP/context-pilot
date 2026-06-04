@@ -1,0 +1,1 @@
+CREATE TABLE type_edge (id INTEGER PRIMARY KEY, int_col INTEGER, text_col TEXT, real_col REAL, blob_col BLOB)

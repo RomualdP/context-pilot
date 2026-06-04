@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS batch_test (id INTEGER PRIMARY KEY, name TEXT, score REAL)

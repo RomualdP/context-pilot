@@ -107,7 +107,7 @@ pub(crate) fn split_statements(sql: &str) -> Vec<&str> {
             in_string = true;
         } else if ch == ';' {
             let stmt = sql.get(start..i).unwrap_or_default().trim();
-            if !stmt.is_empty() {
+            if !stmt.is_empty() && !strip_leading_comments(stmt).is_empty() {
                 results.push(stmt);
             }
             start = i.saturating_add(1);
@@ -118,7 +118,7 @@ pub(crate) fn split_statements(sql: &str) -> Vec<&str> {
 
     // Last statement (no trailing semicolon)
     let tail = sql.get(start..).unwrap_or_default().trim();
-    if !tail.is_empty() {
+    if !tail.is_empty() && !strip_leading_comments(tail).is_empty() {
         results.push(tail);
     }
 
@@ -143,6 +143,13 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         return err(tool, "SQL parameter is empty.");
     }
 
+    // Split statements early for classification and empty-input detection.
+    // This filters out comment-only and empty segments.
+    let stmts = split_statements(sql);
+    if stmts.is_empty() {
+        return err(tool, "No SQL statements found (input is only comments).");
+    }
+
     let es = crate::types::EntitiesState::get(state);
     let db_path = es.db_path.clone();
     let dump_path = es.dump_path.clone();
@@ -153,7 +160,9 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         Err(e) => return err(tool, &e),
     };
 
-    let kind = classify(sql);
+    // Classify based on the first clean statement (not raw input)
+    // so that leading semicolons / comments don't confuse classification.
+    let kind = classify(stmts.first().copied().unwrap_or(sql));
 
     let result_content = match kind {
         SqlKind::Select => execute_select(&conn, sql, state),
@@ -161,9 +170,18 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
         SqlKind::Ddl => execute_ddl(&conn, sql, &dump_path, &migrations_dir),
     };
 
-    // Handle errors
+    // Handle errors, and for successful writes remind the LLM that the
+    // Entities panel refreshes immediately — the panel already reflects
+    // whatever change was just made.
     let (content, is_error) = match result_content {
-        Ok(text) => (text, false),
+        Ok(text) => {
+            let note = if kind == SqlKind::Select {
+                ""
+            } else {
+                "\n\n(The Entities panel now reflects the updated database state.)"
+            };
+            (format!("{text}{note}"), false)
+        }
         Err(e) => {
             let schema = db::introspect(&conn, &db_path);
             (enrich_error(&e, &schema), true)
@@ -172,7 +190,6 @@ pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult {
 
     // Post-execution: sync to Meilisearch on writes
     if !is_error && kind != SqlKind::Select {
-        let stmts = split_statements(sql);
         let affected = crate::sync::extract_affected_tables(&stmts);
         let upper = sql.to_uppercase();
         let is_drop = upper.contains("DROP TABLE") || upper.contains("DROP TABLE IF EXISTS");

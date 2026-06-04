@@ -274,9 +274,20 @@ pub(crate) fn extract_affected_tables(statements: &[&str]) -> Vec<String> {
     tables
 }
 
-/// Strip quotes and parentheses from an identifier.
+/// Extract a clean table name from a raw SQL token.
+///
+/// Handles quoted identifiers (`"table"`, `` `table` ``), bracket notation
+/// (`[table]`), and column-list suffixes (`table(col1, col2)`).
 fn clean_identifier(raw: &str) -> String {
-    raw.trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == '[' || c == ']' || c == '(').to_lowercase()
+    // Take only identifier characters (alphanumeric, underscore, quotes, backticks).
+    // Stops at '(' which starts a column list — e.g. INSERT INTO table(col1, col2).
+    let ident: String = raw
+        .chars()
+        .take_while(|c| {
+            c.is_ascii_alphanumeric() || *c == '_' || *c == '"' || *c == '\'' || *c == '`' || *c == '[' || *c == ']'
+        })
+        .collect();
+    ident.trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == '[' || c == ']').to_lowercase()
 }
 
 // =============================================================================
