@@ -239,24 +239,16 @@ impl FirecrawlClient {
 
             match status {
                 200..=299 => {
-                    return serde_json::from_str(&resp_body)
-                        .map_err(|e| format!("Failed to parse response: {e}"));
+                    return serde_json::from_str(&resp_body).map_err(|e| format!("Failed to parse response: {e}"));
                 }
                 429 => {
-                    return Err(format!(
-                        "Rate limited (429). Response: {}",
-                        truncate(&resp_body, 200)
-                    ));
+                    return Err(format!("Rate limited (429). Response: {}", truncate(&resp_body, 200)));
                 }
                 500..=599 if attempt < 2 => {
                     std::thread::sleep(Duration::from_secs(1));
                 }
                 _ => {
-                    return Err(format!(
-                        "HTTP {} error: {}",
-                        status,
-                        truncate(&resp_body, 200)
-                    ));
+                    return Err(format!("HTTP {} error: {}", status, truncate(&resp_body, 200)));
                 }
             }
         }

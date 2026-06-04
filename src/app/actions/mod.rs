@@ -12,6 +12,8 @@ pub(crate) mod config;
 mod cursor;
 /// Utility functions for action handling.
 pub(crate) mod helpers;
+/// Prompt history navigation and panel clipboard copy.
+mod history;
 /// Input submission and conversation clearing.
 pub(crate) mod input;
 /// Context panel navigation (next/prev, page jumping).
@@ -24,22 +26,9 @@ pub(crate) use helpers::{clean_llm_id_prefix, find_context_by_id, parse_context_
 
 use crate::infra::constants::{SCROLL_ACCEL_INCREMENT, SCROLL_ACCEL_MAX};
 use crate::state::{Entry, Kind, State, StreamPhase};
-use crate::state::persistence::message::load_prompt_history;
 
 // Re-export Action/ActionResult from cp-base (shared with module crates)
 pub(crate) use cp_base::state::actions::{Action, ActionResult};
-
-/// Prompt history navigation state (stored in `State`'s `TypeMap`).
-pub(crate) struct PromptHistoryNav {
-    /// Past prompts loaded from `prompt-history.jsonl`, oldest first.
-    entries: Vec<String>,
-    /// Current position. `None` = not navigating (showing draft).
-    index: Option<usize>,
-    /// Saved input text when navigation started.
-    draft: String,
-    /// Whether the JSONL file has been loaded yet (lazy init).
-    loaded: bool,
-}
 
 /// Dispatch an `Action` to the appropriate handler, returning the resulting `ActionResult`.
 pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
@@ -173,29 +162,28 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             ActionResult::Nothing
         }
         Action::HistoryPrev => {
-            handle_history_prev(state);
+            history::handle_history_prev(state);
             ActionResult::Nothing
         }
         Action::HistoryNext => {
-            handle_history_next(state);
+            history::handle_history_next(state);
             ActionResult::Nothing
         }
         Action::CopyPanelContent => {
-            handle_copy_panel_content(state);
+            history::handle_copy_panel_content(state);
             ActionResult::Nothing
         }
 
         // === Delegated to submodules ===
         Action::InputSubmit => {
             // Reset prompt history navigation and push new entry
-            ensure_history_nav(state);
+            history::ensure_history_nav(state);
             let trimmed = state.input.trim_end().to_string();
-            let nav = state.ext_mut::<PromptHistoryNav>();
+            let nav = state.ext_mut::<history::PromptHistoryNav>();
             if !trimmed.is_empty() {
-                nav.entries.push(trimmed);
+                nav.push(trimmed);
             }
-            nav.index = None;
-            nav.draft.clear();
+            nav.reset_nav();
             input::handle_input_submit(state)
         }
         Action::ClearConversation => input::handle_clear_conversation(state),
@@ -461,121 +449,4 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
         }
         Action::None => ActionResult::Nothing,
     }
-}
-
-// === Prompt history navigation ===
-
-/// Ensure `PromptHistoryNav` exists in the type-map; lazy-load entries on first call.
-fn ensure_history_nav(state: &mut State) {
-    if state.get_ext::<PromptHistoryNav>().is_none() {
-        state.set_ext(PromptHistoryNav {
-            entries: Vec::new(),
-            index: None,
-            draft: String::new(),
-            loaded: false,
-        });
-    }
-    let nav = state.ext_mut::<PromptHistoryNav>();
-    if !nav.loaded {
-        nav.entries = load_prompt_history();
-        nav.loaded = true;
-    }
-}
-
-/// Navigate to the previous (older) prompt in history (Ctrl+U).
-fn handle_history_prev(state: &mut State) {
-    ensure_history_nav(state);
-    // Clone input before mutable borrow of TypeMap
-    let current_input = state.input.clone();
-    let nav = state.ext_mut::<PromptHistoryNav>();
-    if nav.entries.is_empty() {
-        return;
-    }
-    let new_text = match nav.index {
-        None => {
-            // Start navigating — save current input as draft
-            nav.draft = current_input;
-            let idx = nav.entries.len() - 1;
-            nav.index = Some(idx);
-            nav.entries[idx].clone()
-        }
-        Some(idx) if idx > 0 => {
-            nav.index = Some(idx - 1);
-            nav.entries[idx - 1].clone()
-        }
-        Some(_) => return, // Already at oldest entry
-    };
-    state.input = new_text;
-    state.input_cursor = state.input.len();
-    state.input_selection_anchor = None;
-}
-
-/// Navigate to the next (newer) prompt in history (Ctrl+D).
-fn handle_history_next(state: &mut State) {
-    if state.get_ext::<PromptHistoryNav>().is_none() {
-        return;
-    }
-    let nav = state.ext_mut::<PromptHistoryNav>();
-    let Some(idx) = nav.index else { return };
-    if idx < nav.entries.len().saturating_sub(1) {
-        nav.index = Some(idx + 1);
-        let text = nav.entries[idx + 1].clone();
-        state.input = text;
-    } else {
-        // Back to the draft (current unsaved input)
-        let draft = nav.draft.clone();
-        nav.index = None;
-        state.input = draft;
-    }
-    state.input_cursor = state.input.len();
-    state.input_selection_anchor = None;
-}
-
-// === Panel content copy ===
-
-/// Copy the current panel's content to the system clipboard (Ctrl+C).
-fn handle_copy_panel_content(state: &mut State) {
-    use std::io::Write as _;
-
-    let Some(context_type) = state
-        .context
-        .get(state.selected_context)
-        .map(|c| c.context_type.clone())
-    else {
-        return;
-    };
-    let is_conversation = context_type.as_str() == Kind::CONVERSATION;
-    let panel = crate::app::panels::get_panel(&context_type);
-    let items = panel.context(state);
-    let mut text: String = items
-        .iter()
-        .map(|i| i.content.as_str())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    // If on conversation panel, append the pending input
-    if is_conversation && !state.input.is_empty() {
-        if !text.is_empty() {
-            text.push_str("\n\n");
-        }
-        text.push_str(&state.input);
-    }
-
-    if text.is_empty() {
-        return;
-    }
-
-    // Copy via pbcopy (macOS)
-    if let Ok(mut child) = std::process::Command::new("pbcopy")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-    {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _r = stdin.write_all(text.as_bytes());
-        }
-        let _r = child.wait();
-    }
-    // Visual feedback via status bar flash
-    state.flags.overlays.copied_flash_ms = crate::app::panels::now_ms();
-    state.flags.ui.dirty = true;
 }

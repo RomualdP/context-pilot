@@ -1,11 +1,14 @@
-//! Firecrawl module — web scraping, search+scrape, and URL discovery.
+//! Firecrawl module — web scraping, search+scrape, URL discovery, and recursive crawling.
 //!
-//! Three tools: `firecrawl_scrape` (single-URL extraction), `firecrawl_search`
-//! (search and scrape in one call), `firecrawl_map` (site URL discovery).
-//! Results appear as dynamic panels with full markdown content.
+//! Four tools: `firecrawl_scrape` (single-URL extraction), `firecrawl_search`
+//! (search and scrape in one call), `firecrawl_map` (site URL discovery),
+//! `firecrawl_crawl` (recursive multi-page crawling to file).
+//! Results appear as dynamic panels (scrape/search/map) or output files (crawl).
 
 /// HTTP API client for Firecrawl scrape/search/map endpoints.
 pub mod api;
+/// Recursive site crawling — `firecrawl_crawl` tool.
+pub(crate) mod crawl;
 /// Dynamic panel rendering for scraped content.
 pub mod panel;
 /// Tool dispatch: `firecrawl_scrape`, `firecrawl_search`, `firecrawl_map`.

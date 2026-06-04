@@ -1,5 +1,5 @@
-use crate::state::persistence::{delete_message, save_message};
 use crate::state::persistence::message::record_prompt_history;
+use crate::state::persistence::{delete_message, save_message};
 use crate::state::{Kind, Message, State, estimate_tokens};
 use cp_mod_prompt::types::PromptItem;
 use cp_mod_spine::types::{NotificationType, SpineState};

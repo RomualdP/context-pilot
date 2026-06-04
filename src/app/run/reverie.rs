@@ -186,11 +186,7 @@ pub(super) fn handle_reverie_tools(app: &mut App) {
                         input: tool.input.clone(),
                         queued_at: crate::app::panels::now_ms(),
                     });
-                    crate::infra::tools::ToolResult::new(
-                        tool.id.clone(),
-                        format!("Queued as #{idx}"),
-                        false,
-                    )
+                    crate::infra::tools::ToolResult::new(tool.id.clone(), format!("Queued as #{idx}"), false)
                 } else {
                     // Execute normally through module dispatch
                     let active = app.state.active_modules.clone();

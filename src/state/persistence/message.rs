@@ -54,16 +54,11 @@ pub(crate) fn delete_message(uid: &str) {
 /// This is an append-only audit log that survives conversation clears and context switches.
 pub(crate) fn record_prompt_history(content: &str) {
     let path = PathBuf::from(STORE_DIR).join("prompt-history.jsonl");
-    let timestamp = chrono::Utc::now()
-        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     // Escape content properly for JSON embedding (trim trailing whitespace)
     let escaped = serde_json::to_string(content.trim_end()).unwrap_or_default();
     let line = format!(r#"{{"ts":"{timestamp}","content":{escaped}}}"#);
-    if let Ok(mut file) = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _r = writeln!(file, "{line}");
     }
 }
@@ -79,9 +74,8 @@ pub(crate) fn load_prompt_history() -> Vec<String> {
     content
         .lines()
         .filter_map(|line| {
-            serde_json::from_str::<serde_json::Value>(line)
-                .ok()
-                .and_then(|v| v.get("content")?.as_str().map(String::from))
+            let v = serde_json::from_str::<serde_json::Value>(line).ok()?;
+            v.get("content")?.as_str().map(String::from)
         })
         .collect()
 }
