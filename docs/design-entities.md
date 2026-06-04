@@ -101,6 +101,20 @@ None support relational queries. *"Which engineers at French companies work on a
 └──────────────────────────────────────────────────────────────┘
 ```
 
+### Crate layout
+
+```
+crates/cp-mod-entities/src/
+├── lib.rs      ~200 lines   Module trait impl
+├── db.rs       ~250 lines   Connection factory, bootstrap, introspection
+├── tools.rs    ~350 lines   SQL execution, classification, formatting
+├── panel.rs    ~200 lines   Fixed Entities panel
+├── sync.rs     ~200 lines   Meilisearch sync
+└── types.rs    ~100 lines   State types
+```
+
+### Component responsibilities
+
 | Component | Responsibility | Reference |
 |-----------|---------------|-----------|
 | `lib.rs` | Module trait impl — init, save/load, tool defs, panel creation | cp-mod-memory/src/lib.rs |
@@ -269,7 +283,7 @@ entity_sql:
 
 | SQL type | Detection | Return value | Triggers sync? |
 |----------|-----------|-------------|----------------|
-| SELECT / EXPLAIN / PRAGMA | Trimmed uppercase starts with keyword | Markdown table (≤50 rows inline, >50 → panel) | No |
+| SELECT / EXPLAIN / PRAGMA | Trimmed uppercase starts with keyword | Markdown table (≤50 rows inline, >50 → `entity_result` panel) | No |
 | INSERT / UPDATE / DELETE | Starts with DML keyword | `"N row(s) affected."` | Yes |
 | CREATE / ALTER / DROP / CREATE INDEX | Starts with DDL keyword | Full schema summary | Yes |
 | WITH ... SELECT (CTE) | Starts with WITH, no DML keywords | Markdown table | No |
