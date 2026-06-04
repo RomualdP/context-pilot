@@ -194,6 +194,10 @@
   path: crates/cp-mod-callback/Cargo.toml
   description: 'Callback module deps: cp-base, cp-render, cp-mod-console, crossterm, serde, serde_json, globset, sha2.'
   last_edited_ms: 0
+14d8aa9d69c4a452:
+  path: crates/cp-mod-entities/Cargo.toml
+  description: 'Entities module deps: cp-base, cp-render, cp-mod-utilities, cp-mod-search, rusqlite (bundled), crossterm, serde_json, log.'
+  last_edited_ms: 1780592402505
 1504aaaeb7821512:
   path: src/app/actions/history.rs
   description: Prompt history navigation and panel clipboard copy. PromptHistoryNav struct with lazy-load from JSONL. Safe indexing via .get(), saturating arithmetic. handle_history_prev/next (Ctrl+U/D), handle_copy_panel_content (Ctrl+C via pbcopy).
@@ -482,6 +486,10 @@
   path: crates/cp-mod-utilities/src/secret.rs
   description: Redacted newtype — Debug/Display print [REDACTED]. expose_secret() for access. Replaces secrecy crate.
   last_edited_ms: 1780565428680
+320a91c0259e5b70:
+  path: crates/cp-mod-entities/src/sync.rs
+  description: Meilisearch sync for entity data — incremental dirty-tracked, delete-then-add. ensure_index, sync_table, flush_sync, full_reindex. extract_affected_tables for SQL parsing.
+  last_edited_ms: 1780592402521
 3279dfee597f2c60:
   path: src/app/context/mod.rs
   description: Context preparation + unified freeze system. FreezeConditions (queue/tempo). Panel ordering stabilization. Per-panel content hashing + freeze budgets. Cache cost tracking via prefix-match. flame!("prepare_context"). Reverie path branches.
@@ -1286,6 +1294,10 @@
   path: crates/cp-mod-typst/src/compiler.rs
   description: Embedded typst compilation engine. Minimal typst::World impl. compile_to_pdf/compile_and_write. today() uses cp_mod_utilities::time (now_local + decompose_epoch_secs). Font loading from system dirs. @preview/ package resolution.
   last_edited_ms: 0
+87c9c3f805064c63:
+  path: crates/cp-mod-entities/src/errors.rs
+  description: 'SQL error enrichment: fuzzy suggestions (Levenshtein ≤2) for unknown table/column names + schema context appended to all errors.'
+  last_edited_ms: 1780592402516
 87f32c2c2d88ea49:
   path: crates/cp-mod-callback/src/storage.rs
   description: YAML-backed persistent storage for callback definitions. Keyed by name (BTreeMap alphabetical). upsert/remove/populate/migrate functions. Script file read/write helpers (strip_script_header, write_script_file). cleanup_old_hash_keys migration.
@@ -1658,6 +1670,10 @@ b269061204ca853d:
   path: yamls/tools/ocr.yaml
   description: 'OCR tool YAML. Single tool: ocr with path/mode/output params. Datalab Surya engine, markdown or text_boxes modes.'
   last_edited_ms: 0
+b2692d69f7a93563:
+  path: .context-pilot/shared/entities/schema.sql
+  description: 'Auto-generated SQLite dump: CREATE + INSERT for all entity tables. Recovery source for DB corruption/deletion.'
+  last_edited_ms: 1780592402527
 b3831f3e391cdcc6:
   path: crates/cp-mod-scratchpad/src/lib.rs
   description: 'Scratchpad module. 3 tools: create_cell/edit_cell/wipe. Fixed SCRATCHPAD panel. Per-worker cells. Visualizer: colored create/update/delete. fixed_order=8.'
@@ -2298,6 +2314,10 @@ facee2199f39362a:
   path: Cargo.toml
   description: Workspace root. 22 crate members. Binary 'tui'. Edition 2024. Strict lint config (hundreds of forbid-level clippy/rust lints). openssl vendored for cross-compilation.
   last_edited_ms: 0
+fad776c4dfccb118:
+  path: docs/design-entities.md
+  description: Entities module design doc. SQLite entity DB, entity_sql tool, auto-migrations, schema dump/restore, Meilisearch sync, fuzzy error enrichment. Fully implemented.
+  last_edited_ms: 1780592402510
 fb144d05c6aabf4c:
   path: crates/cp-mod-spine/src/engine.rs
   description: 'Spine engine — check_spine() with flame!("check_spine") evaluates auto-continuation. Bypass hierarchy: (1) is_streaming, (2) user_stopped (absolute hard stop), (3) error backoff, (4) unprocessed check, (5) double-synthetic guard, (6) guard rails. Marks all consumed notifications as processed before firing. apply_continuation() creates synthetic messages.'

@@ -34,7 +34,7 @@
   importance: high
   last_edited_ms: 0
 48f2140d3c2dee0e:
-  tl_dr: Entities module COMPLETE + stress-tested (40+ edge cases). 3 bugs found/fixed. Committed cf76fb1 on 'entities' branch. Production-quality.
+  tl_dr: Entities module COMPLETE + stress-tested (40+ edge cases). 4 bugs found/fixed (including critical dump/restore data loss). Committed 52a9810 on 'entities' branch. Production-quality.
   contents: |-
     ## Stress Test Results
 
@@ -42,6 +42,7 @@
     1. **Bug #1**: PRAGMA hex literal `0x4_000_000` → `67108864` (SQLite doesn't understand Rust hex)
     2. **Bug #2**: SQL comments before SELECT caused misclassification → added `strip_leading_comments()`
     3. **Bug #3**: Non-atomic multi-statement DML → implicit BEGIN/COMMIT/ROLLBACK wrapper
+    4. **Bug #4** (CRITICAL): Dump/restore data loss — db::open() auto-creates files, panel.refresh()/save_module_data could create empty DB then dump it, overwriting the good recovery dump. Fix: multi-layer guards (db_path.exists() + has_user_tables()) in save_module_data, panel.refresh, sync functions.
 
     ### UX Warts (Not Bugs):
     - Multi-statement DDL+DML swallows DML result feedback
@@ -49,12 +50,12 @@
     - ATTACH DATABASE works but ephemeral (per-call connection)
 
     ### All 40+ Tests Passed:
-    CRUD, RETURNING, FKs, CTEs, triggers, WITHOUT ROWID, unicode, BLOBs, transactions, VACUUM, UNION, subqueries, and more.
+    CRUD, RETURNING, FKs, CTEs, triggers, WITHOUT ROWID, unicode, BLOBs, transactions, VACUUM, UNION, subqueries, dump/restore round-trip with all edge cases.
   importance: medium
   labels:
   - entities
   - complete
-  last_edited_ms: 1780590825984
+  last_edited_ms: 1780592360808
 8185ce57712b238d:
   tl_dr: 'ALWAYS push memories (memories.yaml) and tree descriptions (tree-descriptions.yaml) alongside code commits. When committing work, include a ''chore: sync memories and tree descriptions'' commit and push everything together. Never leave these unsync''d.'
   importance: critical
