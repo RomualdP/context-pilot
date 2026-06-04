@@ -83,9 +83,27 @@ impl Module for EntitiesModule {
     }
 
     fn save_module_data(&self, state: &State) -> serde_json::Value {
-        // Regenerate dump + WAL checkpoint
+        // Regenerate dump + WAL checkpoint.
+        // Guard: if the DB file doesn't exist (deleted for recovery testing, etc.),
+        // don't create a new empty one — that would overwrite the good dump file
+        // and destroy the recovery source.
         let es = EntitiesState::get(state);
+        if !es.db_path.exists() {
+            log::info!("save_module_data: DB missing, skipping dump");
+            return serde_json::Value::Null;
+        }
         if let Ok(conn) = db::open(&es.db_path) {
+            // Guard: don't overwrite a good dump with an empty-data DB
+            if !db::has_user_tables(&conn) {
+                log::info!("save_module_data: DB has no user tables, skipping dump");
+                db::checkpoint(&conn);
+                return serde_json::Value::Null;
+            }
+            let total_rows: u64 = {
+                let cache = db::introspect(&conn, &es.db_path);
+                cache.tables.iter().map(|t| t.row_count).sum()
+            };
+            log::info!("save_module_data: dumping DB ({total_rows} rows)");
             let _r = db::dump_to_file(&conn, &es.dump_path);
             db::checkpoint(&conn);
         }
@@ -348,10 +366,22 @@ fn recover_database(db_path: &std::path::Path, dump_path: &std::path::Path, migr
     }
 
     // DB is empty — try recovery from files
-    if dump_path.exists()
-        && let Err(e) = db::restore_from_file(&conn, dump_path)
-    {
-        log::warn!("Failed to restore dump: {e}");
+    if dump_path.exists() {
+        log::info!(
+            "Entity DB empty, restoring from dump ({} bytes)",
+            std::fs::metadata(dump_path).map_or(0, |m| m.len())
+        );
+        match db::restore_from_file(&conn, dump_path) {
+            Ok(()) => {
+                // Verify restoration succeeded
+                let post_check = db::introspect(&conn, db_path);
+                let total_rows: u64 = post_check.tables.iter().map(|t| t.row_count).sum();
+                log::info!("Dump restore OK: {} tables, {} rows", post_check.tables.len(), total_rows);
+            }
+            Err(e) => {
+                log::warn!("Failed to restore dump: {e}");
+            }
+        }
     }
 
     // Apply any pending migrations beyond what the dump contained

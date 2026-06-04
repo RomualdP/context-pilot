@@ -110,6 +110,10 @@ pub(crate) fn flush_sync(state: &mut State) {
     if index_uid.is_empty() {
         return;
     }
+    // Guard: don't open (and auto-create) the DB if it doesn't exist
+    if !es.db_path.exists() {
+        return;
+    }
 
     let Ok(client) = MeiliClient::new(port, &key) else {
         return;
@@ -155,6 +159,10 @@ pub(crate) fn full_reindex(state: &State) {
         return;
     }
     let db_path = es.db_path.clone();
+    // Guard: don't open (and auto-create) the DB if it doesn't exist
+    if !db_path.exists() {
+        return;
+    }
 
     // Ensure index exists
     if let Err(e) = ensure_index(port, &key, &index_uid) {

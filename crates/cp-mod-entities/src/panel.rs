@@ -38,8 +38,14 @@ impl Panel for EntitiesPanel {
     }
 
     fn refresh(&self, state: &mut State) {
-        // Re-introspect the database and update the cache
+        // Re-introspect the database and update the cache.
+        // Guard: don't open (and auto-create) the DB if it doesn't exist —
+        // that would create an empty DB, and a subsequent save would overwrite
+        // the good dump file with empty data, destroying the recovery source.
         let db_path = EntitiesState::get(state).db_path.clone();
+        if !db_path.exists() {
+            return;
+        }
 
         if let Ok(conn) = db::open(&db_path) {
             let fresh = db::introspect(&conn, &db_path);

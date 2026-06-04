@@ -862,6 +862,10 @@
   path: crates/cp-mod-search/src/lib.rs
   description: 'Search module. 1 tool: search. Global Meilisearch server bootstrap, per-project indexes. sync_logs_to_meilisearch() fire-and-forget (no tags). Context Radar refresh_radar()/push_task_signal() via background thread. Overlay info delegation.'
   last_edited_ms: 0
+578221b18edc9b45:
+  path: crates/cp-mod-entities/src/lib.rs
+  description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search.
+  last_edited_ms: 0
 57b7952a9cbf9b7e:
   path: src/ui/perf/mod.rs
   description: 'In-memory perf system. LazyLock PerfMetrics: per-op AtomicU64 stats + RingBuffer<u64> samples, frame times, CPU/RAM, open FDs + rlimit. Platform-specific read_proc_stat(): Linux /proc/self/stat, macOS via ps command, fallback None. snapshot() for overlay. F12 toggle.'
@@ -1430,6 +1434,10 @@
   path: crates/cp-base/src/tools/mod.rs
   description: 'Tool system. ToolUse/ToolResult (display, tldr, preserves_tempo). ToolDefinition + ToolDefBuilder (schema in Rust, descriptions from YAML). ParamType recursive JSON Schema. build_api() generates LLM tool array. Sub-modules: pre_flight, async_exec.'
   last_edited_ms: 0
+98d222cc0c679e29:
+  path: crates/cp-mod-entities/src/lib.rs
+  description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search.
+  last_edited_ms: 0
 99495bd81ffd5f7e:
   path: crates/cp-mod-ocr/src/lib.rs
   description: 'OCR module. 1 tool: ocr. Datalab API integration. Non-blocking: returns immediately, fires spine notification on completion. Global, non-core.'
@@ -1865,6 +1873,10 @@ c7ea61d3ceb784d8:
 c80cf4a36c945d80:
   path: crates/cp-mod-spine/src/lib.rs
   description: Spine module. Auto-continuation, notifications (10 processed kept), guard rails, coucou timers. Manages WatcherRegistry. on_user_message resets counters. on_stream_stop prevents re-launch.
+  last_edited_ms: 0
+c92262342f94a31f:
+  path: crates/cp-mod-entities/src/panel.rs
+  description: Fixed Entities panel. Live schema + sample data context for LLM. Empty-state onboarding guide with quick-start SQL. IR blocks with Accent/Code/Muted styling. Migration count display.
   last_edited_ms: 0
 c93c3261319b3b55:
   path: crates/cp-mod-utilities/Cargo.toml

@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS people (
     company_id INTEGER REFERENCES companies(id)
 );
 
+CREATE TABLE IF NOT EXISTS recovery_test (
+    id INTEGER PRIMARY KEY,
+    tricky_text TEXT,
+    num REAL,
+    blob_col BLOB
+);
+
 CREATE TABLE IF NOT EXISTS tags (name TEXT PRIMARY KEY, color TEXT) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS temp_test (id INTEGER PRIMARY KEY, val TEXT);
@@ -49,6 +56,8 @@ INSERT OR IGNORE INTO "_meta" VALUES (10, '0010_20260604T161944.sql', '2026-06-0
 INSERT OR IGNORE INTO "_meta" VALUES (11, '0011_20260604T161953.sql', '2026-06-04 16:19:53');
 INSERT OR IGNORE INTO "_meta" VALUES (12, '0012_20260604T162718.sql', '2026-06-04 16:27:18');
 INSERT OR IGNORE INTO "_meta" VALUES (13, '0013_20260604T162759.sql', '2026-06-04 16:27:59');
+INSERT OR IGNORE INTO "_meta" VALUES (14, '0014_20260604T163552.sql', '2026-06-04 16:35:52');
+INSERT OR IGNORE INTO "_meta" VALUES (15, '0015_20260604T165630.sql', '2026-06-04 16:56:30');
 
 INSERT OR IGNORE INTO "audit_log" VALUES (1, 'INSERT', 'companies', 8, '2026-06-04 16:17:47');
 INSERT OR IGNORE INTO "audit_log" VALUES (2, 'INSERT', 'companies', 9, '2026-06-04 16:18:14');
@@ -72,6 +81,19 @@ INSERT OR IGNORE INTO "companies" VALUES (12, 'Trigger+Return Co', 'Germany', 20
 
 INSERT OR IGNORE INTO "people" VALUES (1, 'Alice', 'Engineer', 1);
 INSERT OR IGNORE INTO "people" VALUES (2, 'Bob', 'Designer', 2);
+
+INSERT OR IGNORE INTO "recovery_test" VALUES (1, 'normal text', 3.14, X'deadbeef');
+INSERT OR IGNORE INTO "recovery_test" VALUES (2, 'it''s a quote', 0, X'00ff');
+INSERT OR IGNORE INTO "recovery_test" VALUES (3, 'line1
+line2
+line3', -99.99, NULL);
+INSERT OR IGNORE INTO "recovery_test" VALUES (4, 'has "double quotes"', 10000000000, X'');
+INSERT OR IGNORE INTO "recovery_test" VALUES (5, NULL, NULL, NULL);
+INSERT OR IGNORE INTO "recovery_test" VALUES (6, 'SELECT * FROM companies; DROP TABLE--', 0.001, X'0102030405');
+INSERT OR IGNORE INTO "recovery_test" VALUES (7, 'unicode: 日本語 émojis 🎉 café', 42, X'ff');
+INSERT OR IGNORE INTO "recovery_test" VALUES (8, 'backslash\ and tab	here', 1, X'aabb');
+INSERT OR IGNORE INTO "recovery_test" VALUES (9, '', 0, X'00');
+INSERT OR IGNORE INTO "recovery_test" VALUES (10, 'O''Brien said "hello; world" -- not a comment', 999.999, X'cafebabe');
 
 INSERT OR IGNORE INTO "tags" VALUES ('explicit_tx', '#333');
 INSERT OR IGNORE INTO "tags" VALUES ('low', '#00FF00');
