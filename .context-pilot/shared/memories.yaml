@@ -1,22 +1,3 @@
-03b45591550c8dcb:
-  tl_dr: 'Search module: Voyage AI REST embedder (voyage-code-3) for hybrid search, zero local CPU. VOYAGE_API_KEY in ~/.context-pilot/.env. --max-indexing-threads 2. Port reconnects on reload.'
-  contents: |-
-    - Project hash: c7f7b6db, ~4196 chunks across ~1399 files
-    - Embedder: voyage-code-3, 1024 dims, Meilisearch 'rest' source
-    - API key: VOYAGE_API_KEY in global ~/.context-pilot/.env
-    - Server flags: --max-indexing-threads 2 caps indexing CPU
-    - load_module_data() calls ensure_server_running() to pick up live port
-    - ensure_indexes() called on reload to re-add embedders if missing
-    - Keyword search always works even without Voyage API key
-    - Doc IDs sanitized to [a-zA-Z0-9_-]
-    - OCR cache at ~/.context-pilot/ocr-cache/
-    - Boot loads .env before module init
-  importance: high
-  labels:
-  - meilisearch
-  - search
-  - operational
-  last_edited_ms: 0
 07f9cb0fc782bcee:
   tl_dr: 'Meilisearch design complete (9 rounds). Embedded global server, cp-mod-search crate, tree-sitter chunking, unified search tool, log redesign (drop summarization, add tags/importance). Full spec: docs/design-meilisearch.md, branch ''meilisearch''.'
   importance: critical
@@ -51,64 +32,6 @@
 184c1ab0bcb8dbb0:
   tl_dr: 'Context Pilot env vars: ANTHROPIC_API_KEY, BRAVE_API_KEY, FIRECRAWL_API_KEY, GITHUB_TOKEN (core). Optional LLM providers and chat bridge tokens. Loaded via dotenvy from .env, fallback to global config.'
   importance: high
-  last_edited_ms: 0
-2caa2ff3ac2d1a6c:
-  tl_dr: 'Datalab OCR API: POST /api/v1/convert (multipart, X-Api-Key). Poll GET /convert/{id}. Returns markdown. Old /marker and /ocr endpoints deprecated.'
-  contents: |-
-    ## Endpoint Details
-    - **Submit**: POST https://www.datalab.to/api/v1/convert
-      - Content-Type: multipart/form-data
-      - Auth: X-Api-Key header
-      - Params: mode (fast/balanced/accurate), output_format (markdown/html/json/chunks), max_pages, page_range, paginate, disable_image_extraction, disable_image_captions
-    - **Poll**: GET https://www.datalab.to/api/v1/convert/{request_id}
-      - Returns: status, markdown, html, json, chunks fields
-      - Wait until status='complete'
-    - Old /api/v1/ocr and /api/v1/marker are DEPRECATED — use /convert
-    - reqwest needs `multipart` feature for file upload
-    - OCR extensions: pdf, png, jpg, jpeg, tiff, bmp, webp, heic, gif
-    - **For markdown mode**: output_format='markdown'
-    - **For text boxes mode**: output_format='json' — returns blocks with bounding boxes and block types
-  importance: high
-  labels:
-  - datalab
-  - api
-  - ocr
-  - phase9
-  last_edited_ms: 0
-38be56b97d20ba82:
-  tl_dr: 'Datalab documentation site: documentation.datalab.to (Mintlify-hosted). API reference at documentation.datalab.to/api-reference/health. Has sections on limits, supported file types, SDK, on-prem, webhooks, billing.'
-  importance: low
-  last_edited_ms: 0
-4b9ea3e8ac7054d8:
-  tl_dr: 'Meilisearch design complete (9 rounds). Embedded global server, cp-mod-search crate, tree-sitter chunking, unified search tool, log redesign (drop summarization, add tags/importance). Full spec: docs/design-meilisearch.md, branch ''meilisearch''.'
-  importance: critical
-  labels:
-  - architecture
-  - meilisearch
-  - design
-  last_edited_ms: 0
-5482cf928e119f56:
-  tl_dr: 'Context Pilot env vars: ANTHROPIC_API_KEY, BRAVE_API_KEY, FIRECRAWL_API_KEY, GITHUB_TOKEN (core). Optional LLM providers and chat bridge tokens. Loaded via dotenvy from .env, fallback to global config.'
-  importance: high
-  last_edited_ms: 0
-7a847321ea2e59d0:
-  tl_dr: 'Context Pilot is a SIDE PROJECT. In <3 months: became #1 tool for all professional + personal life, enables 2-4 simultaneous projects, helps family gain weeks of time.'
-  contents: |-
-    ## The Side Project That Took Over Everything
-
-    - Context Pilot has been a SIDE PROJECT the entire time — not full-time work
-    - In under 3 months it became Guillaume's #1 working tool for his ENTIRE professional life
-    - Also used for personal life — helping family and proches (through him) gain weeks of work time
-    - Allows maintaining 2-4 projects AT THE SAME TIME, constantly
-    - This is the ultimate compound returns story: a tool built on the side that multiplied his output across everything
-    - Key talk angle: "This was a side project. In 3 months it became the center of everything I do. That's compound returns."
-    - The 762 commits, 65K LOC, 22 crates — all while running 2-4 other projects simultaneously
-  importance: critical
-  labels:
-  - talk
-  - wow
-  - context-pilot
-  - side-project
   last_edited_ms: 0
 8185ce57712b238d:
   tl_dr: 'ALWAYS push memories (memories.yaml) and tree descriptions (tree-descriptions.yaml) alongside code commits. When committing work, include a ''chore: sync memories and tree descriptions'' commit and push everything together. Never leave these unsync''d.'

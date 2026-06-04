@@ -445,33 +445,197 @@ Follow cp-mod-memory pattern. Key specifics: `Kind::ENTITIES`, `fixed_order=5`, 
 
 ## 11. Implementation Plan
 
-### Phase 1: Crate scaffold
-- [ ] Create `crates/cp-mod-entities/` with Cargo.toml + empty lib.rs
-- [ ] Add to workspace members, add `rusqlite` workspace dependency
-- [ ] Audit transitive deps: `cargo tree -p rusqlite --features bundled --depth 2`
-- [ ] Verify compilation on all CI targets
+Three phases. Each ends with a verifiable milestone. Every step references exact file paths, function signatures, and codebase patterns.
+
+### Phase 1: Crate scaffold + wiring
+
+**Goal:** Empty module compiles, panel shows "empty", tool definition visible.
+
+**Files created:**
+- `crates/cp-mod-entities/Cargo.toml`
+- `crates/cp-mod-entities/src/lib.rs`
+- `crates/cp-mod-entities/src/types.rs`
+- `yamls/tools/entities.yaml`
+
+**Files modified:**
+- `Cargo.toml` (workspace root)
+- `crates/cp-base/src/state/context.rs`
+- `crates/cp-base/src/lib.rs`
+- `src/modules/mod.rs`
+- `yamls/themes.yaml`
+
+**Steps:**
+
+1. **Cargo.toml (workspace root)** — Add `"crates/cp-mod-entities"` to `[workspace].members` (after `cp-mod-search`). Add workspace dep: `rusqlite = { version = "0.33", features = ["bundled", "column_decltype"] }`. Add binary dep: `cp-mod-entities = { path = "crates/cp-mod-entities" }`.
+
+2. **`crates/cp-mod-entities/Cargo.toml`** — Follow `cp-mod-memory/Cargo.toml` pattern. Dependencies: `cp-base`, `cp-render`, `cp-mod-search` (path dep), `rusqlite` (workspace), `serde_json` (workspace), `crossterm` (workspace), `log` (workspace), `cp-mod-utilities` (workspace).
+
+3. **`crates/cp-mod-entities/src/types.rs`** — Define `EntitiesState`, `SchemaCache`, `TableInfo`, `ColumnInfo`, `ForeignKeyInfo`. Use `state.set_ext()` / `state.ext::<T>()` pattern from `cp-mod-memory/src/types.rs`. Add `EntitiesState::get(state) -> &Self` and `get_mut(state) -> &mut Self` helpers (same as `MemoryState`).
+
+4. **`crates/cp-mod-entities/src/lib.rs`** — Skeleton Module trait impl:
+   - `id() → "entities"`, `name() → "Entities"`, `is_global() → true`, `is_core() → false`
+   - `dependencies() → &["search"]` (needs Meilisearch)
+   - `init_state()` → `state.set_ext(EntitiesState::new(db_path))` where `db_path = cwd / ".context-pilot" / "entities.db"`
+   - `tool_definitions()` → one tool `entity_sql` via `ToolDefinition::from_yaml("entity_sql", t).short_desc("Execute SQL on entity database").category("Entity").param("sql", ParamType::String, true).build()`
+   - `execute_tool()` → stub returning "Not yet implemented"
+   - `create_panel()` → stub returning empty Block::Line
+   - `fixed_panel_types() → vec![Kind::new(Kind::ENTITIES)]`
+   - `fixed_panel_defaults() → vec![(Kind::new(Kind::ENTITIES), "Entities", false)]`
+   - `context_type_metadata()` → `TypeMeta { context_type: "entities", icon_id: "entities", is_fixed: true, needs_cache: false, fixed_order: Some(5), display_name: "entities", short_name: "entities", needs_async_wait: false }`
+   - `tool_category_descriptions() → vec![("Entity", "Persistent relational entity database")]`
+   - Static `TOOL_TEXTS: LazyLock<ToolTexts>` from `include_str!("../../../yamls/tools/entities.yaml")`
+
+5. **`yamls/tools/entities.yaml`** — Tool description. Follow `yamls/tools/memory.yaml` format. Single tool `entity_sql` with `sql` parameter.
+
+6. **`crates/cp-base/src/state/context.rs`** — Add `pub const ENTITIES: &str = "entities";` after `QUEUE` (line 142). Add `pub const ENTITY_RESULT: &str = "entity_result";` for future dynamic panel.
+
+7. **`crates/cp-base/src/lib.rs`** — Add `("entities", include_str!("../../../yamls/tools/entities.yaml")),` to the tool YAML test array (line ~220, alphabetical — after `core`). Test count 19 → 20.
+
+8. **`src/modules/mod.rs`** — Add `pub(crate) use cp_mod_entities::EntitiesModule;` (after `SearchModule` import, line ~44). Add `Box::new(EntitiesModule),` in `all_modules()` after `Box::new(SearchModule)` (after line 129).
+
+9. **`yamls/themes.yaml`** — Add `entities: "🗃️"` under each theme's `context:` map (6 themes, ~lines 15/66/117/168/219/270). After existing `spine:` entry.
+
+10. **Audit deps:** `cargo tree -p rusqlite --features bundled,column_decltype --depth 2 --no-default-features`. Expected: rusqlite → libsqlite3-sys (→ cc, pkg-config) + hashlink + fallible-iterator + fallible-streaming-iterator. Total ≤ 8 new crates.
+
+**Verify:** `cargo build --release` clean. `cargo test` passes (YAML validation count updated). Panel shows empty state. Tool appears in Tools panel under "Entity" category.
 
 ### Phase 2: Core (DB + Tool + Panel + Schema Persistence)
-- [ ] `types.rs` — EntitiesState, SchemaCache, TableInfo, ColumnInfo, ForeignKeyInfo
-- [ ] `db.rs` — open_connection (PRAGMAs + bootstrap), introspect_schema, integrity_check
-- [ ] `db.rs` — dump_to_file (CREATE + INSERT for all tables incl _meta, 1MB cap), restore_from_file
-- [ ] `migrations.rs` — write_migration, list_migration_files, apply_pending, last_applied_id
-- [ ] `tools.rs` — SQL classification, multi-statement splitting, execution, result formatting
-- [ ] `tools.rs` — after DDL success: write_migration + dump_to_file; after DML: set dirty flag
-- [ ] `panel.rs` — blocks(), context(), refresh(), empty state, migration count in footer
-- [ ] `lib.rs` — Module trait impl (init with recovery priority, save with conditional dump)
-- [ ] `yamls/tools/entities.yaml`
-- [ ] Register in mod.rs, add Kind::ENTITIES, update YAML validation count
-- [ ] All 6 callbacks green ✓
+
+**Goal:** `entity_sql` fully functional — CREATE, INSERT, SELECT, ALTER, DROP all work. Panel shows live schema + sample data. Migrations auto-generated. Schema dump on save.
+
+**Files created:**
+- `crates/cp-mod-entities/src/db.rs`
+- `crates/cp-mod-entities/src/migrations.rs`
+- `crates/cp-mod-entities/src/tools.rs`
+- `crates/cp-mod-entities/src/panel.rs`
+
+**Steps:**
+
+1. **`db.rs` — Connection factory (~80 lines):**
+   - `pub(crate) fn open(db_path: &Path) -> Result<rusqlite::Connection, String>` — open, set PRAGMAs (`journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `journal_size_limit=67108864`), create `_meta` table (`migration_id INTEGER PRIMARY KEY, filename TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now'))`).
+   - Connection is `!Send` — open per-call, never store in state.
+
+2. **`db.rs` — Introspection (~120 lines):**
+   - `pub(crate) fn introspect(conn: &Connection) -> SchemaCache` — query `sqlite_master` for tables (exclude `sqlite_%`, `_meta`), `PRAGMA table_info(t)` for columns, `PRAGMA foreign_key_list(t)` for FKs, `SELECT COUNT(*) FROM t` for row counts. Compute DB file size via `std::fs::metadata`. Return `SchemaCache { tables, db_size_bytes }`.
+   - `pub(crate) fn integrity_check(conn: &Connection) -> bool` — `PRAGMA integrity_check` returns `"ok"` on success.
+
+3. **`db.rs` — Dump and restore (~100 lines):**
+   - `pub(crate) fn dump_to_file(db_path: &Path, dump_path: &Path) -> Result<(), String>` — open connection, query all tables from `sqlite_master`, emit `CREATE TABLE IF NOT EXISTS` + `INSERT OR IGNORE` for each (including `_meta`). Wrap in `PRAGMA foreign_keys = OFF/ON`. Skip INSERT statements if total file would exceed 1 MB (write warning comment instead). Write to `dump_path`.
+   - `pub(crate) fn restore_from_file(conn: &Connection, dump_path: &Path) -> Result<(), String>` — read file, `conn.execute_batch()` with FK off. Used during recovery.
+
+4. **`migrations.rs` (~100 lines):**
+   - `pub(crate) fn write_migration(conn: &Connection, migrations_dir: &Path, sql: &str) -> Result<String, String>` — next ID from `SELECT COALESCE(MAX(migration_id), 0) + 1 FROM _meta`, timestamp from `cp_mod_utilities::time`, filename `{id:04}_{timestamp}.sql`, write file, INSERT into `_meta`. Return filename.
+   - `pub(crate) fn list_files(dir: &Path) -> Vec<PathBuf>` — sorted glob of `*.sql` in dir.
+   - `pub(crate) fn apply_pending(conn: &Connection, dir: &Path) -> Result<u32, String>` — compare `_meta` max ID vs file list, apply unapplied in order, INSERT each into `_meta`. Return count applied.
+   - `pub(crate) fn last_applied_id(conn: &Connection) -> i64` — `SELECT COALESCE(MAX(migration_id), 0) FROM _meta`.
+
+5. **`tools.rs` — SQL classification (~40 lines):**
+   - `fn classify(sql: &str) -> SqlKind` — enum `SqlKind { Select, Dml, Ddl, Error }`. Trim, uppercase first word. SELECT/EXPLAIN/PRAGMA → Select. INSERT/UPDATE/DELETE → Dml. CREATE/ALTER/DROP → Ddl. WITH → check for DML keywords after CTE. Default → Dml (conservative).
+
+6. **`tools.rs` — Multi-statement splitting (~30 lines):**
+   - `fn split_statements(sql: &str) -> Vec<&str>` — split on `;` with string literal awareness (track `in_string` flag, handle `''` escapes). Filter empty. Same pattern as described in §6.
+
+7. **`tools.rs` — Execution (~200 lines):**
+   - `pub(crate) fn execute(tool: &ToolUse, state: &mut State) -> ToolResult` with `let _fg = cp_base::flame!("entity_sql");`
+   - Extract `sql` param. Open connection via `db::open(&es.db_path)`.
+   - Split statements. Execute in implicit transaction (`conn.execute_batch` or per-statement `conn.execute` / `conn.prepare` + iterate).
+   - Per `SqlKind`:
+     - **Select:** `conn.prepare(sql)` → iterate rows → format as markdown table. Cap at 50 rows inline. If >50: create `DynPanel` with `context_type: "entity_result"` (follow search_result pattern from `cp-mod-search/src/tools.rs:349-365`).
+     - **Dml:** `conn.execute(sql, [])` → `changes()` for affected row count. If SQL contains `RETURNING`: format returned rows as table. Set sync flag.
+     - **Ddl:** `conn.execute_batch(sql)` → write migration via `migrations::write_migration()` → regenerate dump via `db::dump_to_file()`. Set sync flag.
+   - On error: wrap with `enrich_error()` (see below). Include schema summary.
+   - After success: `state.touch_panel(Kind::ENTITIES)` to trigger panel refresh. Update `schema_cache` in state.
+
+8. **`tools.rs` — Error enrichment (~40 lines):**
+   - `fn enrich_error(err: &str, schema: &SchemaCache) -> String` — parse error for "no such table: X" or "no such column: X" patterns. Collect all table/column names from schema. Levenshtein distance ≤ 2 → suggest closest. Append schema summary to all errors.
+
+9. **`tools.rs` — Result formatting (~40 lines):**
+   - `fn format_table(stmt: &Statement, rows: Vec<Vec<String>>, count: usize) -> String` — column headers from `stmt.column_names()`, values formatted as markdown table. NULL → `NULL`, BLOB → `[BLOB N bytes]`. Footer: `(N rows)`. Empty: `"0 rows returned. (Table 'X' has Y total rows.)"`.
+
+10. **`panel.rs` (~200 lines):**
+    - `pub(crate) struct EntitiesPanel;` implementing `Panel` trait.
+    - `blocks()` — follow `cp-mod-memory/src/panel.rs` pattern. Empty state: tips/quick-start (as described in §7). Populated: table headers as `Block::KeyValue`, columns as `Block::Line`, FKs as muted lines, sample data. Footer: totals + migration count.
+    - `context()` — return `ContextItem` with schema + sample data text (3 rows/table, 50-char truncation, skip >10 columns). Follow memory's `format_memories_for_context` pattern.
+    - `refresh()` — open connection, call `db::introspect()`, update `EntitiesState.schema_cache`. Update token count in Entry. Follow memory's `refresh()` exactly (find Entry by `Kind::ENTITIES`, call `update_if_changed`).
+    - `title()` → `"Entities"`
+    - `needs_cache()` → `false`, `max_freezes()` → `0`
+
+11. **`lib.rs` — Complete Module trait:**
+    - `init_state()` — create `.context-pilot/` dir if needed, set `EntitiesState` with `db_path`, `dump_path` (`.context-pilot/shared/entities/schema.sql`), `migrations_dir` (`.context-pilot/shared/entities/migrations/`). Create dirs. Run recovery logic:
+      1. Try `db::open()` + `db::integrity_check()` — if OK, use DB as-is, regenerate dump/migrations if missing.
+      2. If DB empty (no user tables in `sqlite_master` besides `_meta`): try restore from `dump_path`, then `migrations::apply_pending()`.
+      3. If DB corrupt: delete DB file, re-create, restore from dump, apply pending migrations.
+    - `save_module_data()` — always call `db::dump_to_file()` (reads from SQLite, always current). Return `Value::Null` (SQLite is self-persisting).
+    - `load_module_data()` — same recovery logic as `init_state()`. Idempotent.
+    - `execute_tool()` — match `"entity_sql"` → `tools::execute()`.
+    - `overview_context_section()` — `"Entities: N tables, M rows\n"` or `None`.
+    - `tool_visualizers()` — optional, can add later.
+
+12. **Add `entity_result` dynamic panel type** — register in `context_type_metadata()` and `dynamic_panel_types()`. Create a simple content panel (same pattern as `SearchResultPanel` — stores content in metadata, renders from cache).
+
+**Verify:** Create tables, insert data, query with JOINs. Panel shows schema + sample data. `git log .context-pilot/shared/entities/` shows migration files. Corrupt DB and restart → auto-recovery. All 6 callbacks green.
 
 ### Phase 3: Meilisearch + search scope + polish
-- [ ] `sync.rs` — table → documents, upsert, delete-by-filter
-- [ ] Expose `pub fn meili_client()` from cp-mod-search
-- [ ] Create entities index on module init, full re-index
-- [ ] Wire sync into tool execution (after writes)
-- [ ] Expose `pub fn entities_index_uid()`, add `"entities"` scope to search tool
-- [ ] Tool visualizer, overview context section
-- [ ] Documentation
+
+**Goal:** Entity data discoverable via `search(scope="entities")`. Full integration complete.
+
+**Files created:**
+- `crates/cp-mod-entities/src/sync.rs`
+
+**Files modified:**
+- `crates/cp-mod-search/src/meili/client.rs` (make `MeiliClient` + key methods `pub`)
+- `crates/cp-mod-search/src/lib.rs` (add `pub fn meili_credentials()`)
+- `crates/cp-mod-search/src/tools.rs` (add `"entities"` scope)
+- `yamls/tools/search.yaml` (add `"entities"` to scope enum description)
+- `docs/search-module.md` (document entities index)
+
+**Steps:**
+
+1. **Expose Meilisearch API from cp-mod-search:**
+   - `crates/cp-mod-search/src/meili/client.rs` — change `pub(crate) struct MeiliClient` to `pub struct MeiliClient`. Change `new()`, `create_index()`, `update_settings()`, `index_exists()`, `add_documents()`, `delete_documents_by_filter()` from `pub(crate)` to `pub`.
+   - `crates/cp-mod-search/src/meili/mod.rs` — add `pub use client::MeiliClient;` re-export.
+   - `crates/cp-mod-search/src/lib.rs` — add:
+     ```rust
+     pub fn meili_credentials(state: &State) -> Option<(u16, String)> {
+         let ss = state.get_ext::<SearchState>()?;
+         (ss.persist.port > 0).then(|| (ss.persist.port, ss.persist.master_key.clone()))
+     }
+     pub fn project_hash(state: &State) -> Option<String> {
+         state.get_ext::<SearchState>().map(|ss| ss.persist.project_hash.clone())
+     }
+     ```
+   - Re-export: `pub use meili::client::MeiliClient;` from `cp-mod-search/src/lib.rs`.
+
+2. **`crates/cp-mod-entities/src/sync.rs` (~120 lines):**
+   - `pub(crate) fn ensure_index(state: &State, entities_index_uid: &str) -> Result<(), String>` — get `(port, key)` from `cp_mod_search::meili_credentials(state)`. Create `MeiliClient::new(port, &key)`. `index_exists()` → if not, `create_index(uid, "id")` + `update_settings()` with entities-specific settings: `searchableAttributes: ["_all_text"]`, `filterableAttributes: ["entity_table"]`.
+   - `pub(crate) fn sync_all_tables(state: &State, db_path: &Path, index_uid: &str)` — open connection, query all user tables, for each: SELECT all rows, build documents (`{id: "{table}__{rowid}", entity_table: table_name, ...columns, _all_text: "space-joined text values"}`). Fire-and-forget `client.add_documents()`. Follow `sync_logs_to_meilisearch` pattern from `cp-mod-search/src/lib.rs:230-270`.
+   - `pub(crate) fn delete_table_docs(state: &State, table_name: &str, index_uid: &str)` — `client.delete_documents_by_filter(&format!("entity_table = '{table_name}'"))`.
+
+3. **Wire sync into tools.rs:**
+   - After DML success: call `sync::sync_all_tables()` (fire-and-forget).
+   - After DDL success: call `sync::sync_all_tables()` (captures table additions) or `sync::delete_table_docs()` if DROP TABLE.
+
+4. **Wire index creation into lib.rs `init_state()` / `load_module_data()`:**
+   - After DB recovery, call `sync::ensure_index(state, &entities_index_uid)`.
+   - Then `sync::sync_all_tables()` for initial population.
+   - `entities_index_uid = format!("cp_{}_entities", project_hash)` where `project_hash` from `cp_mod_search::project_hash(state)`.
+
+5. **Add `"entities"` search scope:**
+   - `crates/cp-mod-search/src/tools.rs` — add `let search_entities = scope == "all" || scope == "entities";` alongside existing `search_files`/`search_logs`. When `search_entities`: query the entities index. Merge results.
+   - `yamls/tools/search.yaml` — update `scope` description: `"'all' (files, logs, entities), 'project' (files), 'logs', 'entities'"`.
+   - `crates/cp-mod-search/src/lib.rs` — add `pub fn entities_index_uid(state: &State) -> Option<String>` that checks if entities module is active and returns the UID.
+
+6. **Tool visualizer** (`lib.rs`):
+   - Register `("entity_sql", visualize_entity_output)`. Color: table headers → Accent, row counts → green, NULLs → muted+dimmed, errors → red. Follow `visualize_memory_output` pattern from `cp-mod-memory/src/lib.rs:180-210`.
+
+7. **Overview section** (`lib.rs`):
+   - `overview_context_section()` → `"Entities: N tables, M rows\n"` from `schema_cache`. Return `None` if no user tables.
+
+8. **Documentation:**
+   - Update `docs/search-module.md` to mention entities index.
+   - Update `docs/design-entities.md` status to "Implemented".
+
+**Verify:** `entity_sql("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)")` → migration file appears. `entity_sql("INSERT INTO test VALUES (1, 'hello')")` → Meilisearch receives document. `search(query="hello", scope="entities")` → finds the row. `search(query="hello", scope="all")` → includes entity results alongside files and logs. All 6 callbacks green. `cargo test` 48/48. Commit + push.
 
 ---
 
