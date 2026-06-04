@@ -1,0 +1,22 @@
+# Entity SQL tool — execute SQL against the project's entity database (SQLite).
+#
+# Single tool: entity_sql. Full SQLite support (JOINs, CTEs, window functions,
+# foreign keys, triggers, views). Multi-statement executes atomically.
+
+tools:
+  entity_sql:
+    description: >
+      Execute SQL against the project's entity database (SQLite). The database
+      is empty on first use — create your own schema. See the Entities panel
+      for current schema, sample data, and getting-started tips.
+
+      Use entities for structured data with relationships that need querying.
+      Use memories for isolated facts. Use logs for events and decisions.
+
+      Supports full SQLite: JOINs, CTEs, window functions, foreign keys,
+      triggers, views. Multi-statement (semicolons) executes atomically.
+      Use RETURNING * on INSERT/UPDATE to see results without a separate SELECT.
+      Use CREATE TABLE IF NOT EXISTS for idempotent schema setup.
+      Schema changes are auto-tracked for reproducibility.
+    params:
+      sql: "SQL statement(s) to execute. Multi-statement supported (semicolons). DDL, DML, and queries all accepted."

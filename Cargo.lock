@@ -274,6 +274,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cp-mod-entities"
+version = "0.1.0"
+dependencies = [
+ "cp-base",
+ "cp-render",
+ "serde_json",
+]
+
+[[package]]
 name = "cp-mod-files"
 version = "0.1.0"
 dependencies = [
@@ -2890,6 +2899,7 @@ dependencies = [
  "cp-mod-brave",
  "cp-mod-callback",
  "cp-mod-console",
+ "cp-mod-entities",
  "cp-mod-files",
  "cp-mod-firecrawl",
  "cp-mod-git",
