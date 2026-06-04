@@ -71,6 +71,14 @@
   - complete
   - stress-testing
   last_edited_ms: 1780597902120
+803fa2aac4f0489a:
+  tl_dr: NEVER commit or push .context-pilot/shared/entities/ files (entities.db, schema.sql, migrations/). These are local-only. Added to .gitignore.
+  importance: critical
+  labels:
+  - git
+  - entities
+  - workflow
+  last_edited_ms: 1780613144244
 8185ce57712b238d:
   tl_dr: 'ALWAYS push memories (memories.yaml) and tree descriptions (tree-descriptions.yaml) alongside code commits. When committing work, include a ''chore: sync memories and tree descriptions'' commit and push everything together. Never leave these unsync''d.'
   importance: critical

@@ -1,1 +1,0 @@
-CREATE TABLE blobs_test (id INTEGER PRIMARY KEY, data BLOB); INSERT INTO blobs_test VALUES (1, X'CAFE')

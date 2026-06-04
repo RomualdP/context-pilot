@@ -1,1 +1,0 @@
-CREATE TABLE _dump_regen_trigger (id INTEGER PRIMARY KEY); DROP TABLE _dump_regen_trigger;

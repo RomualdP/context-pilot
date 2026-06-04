@@ -1,1 +1,0 @@
-CREATE TABLE temp_test (id INTEGER PRIMARY KEY, val TEXT)

@@ -1,1 +1,0 @@
-CREATE TABLE us_companies_snapshot AS SELECT id, name, revenue FROM companies WHERE country = 'US'

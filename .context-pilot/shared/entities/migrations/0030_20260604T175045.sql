@@ -1,1 +1,0 @@
-CREATE TABLE mb_test (id INTEGER PRIMARY KEY, payload TEXT)

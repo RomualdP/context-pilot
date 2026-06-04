@@ -1,1 +1,0 @@
-CREATE VIEW us_companies AS SELECT * FROM companies WHERE country = 'US'

@@ -1,1 +1,0 @@
-CREATE TABLE blobs_test (id INTEGER PRIMARY KEY, data BLOB, label TEXT)

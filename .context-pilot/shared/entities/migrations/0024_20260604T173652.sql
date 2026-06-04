@@ -1,1 +1,0 @@
-CREATE TABLE trigger_log (id INTEGER PRIMARY KEY, event TEXT, ts TEXT DEFAULT (datetime('now')))
