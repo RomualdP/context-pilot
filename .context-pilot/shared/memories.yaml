@@ -33,6 +33,15 @@
   tl_dr: 'Context Pilot env vars: ANTHROPIC_API_KEY, BRAVE_API_KEY, FIRECRAWL_API_KEY, GITHUB_TOKEN (core). Optional LLM providers and chat bridge tokens. Loaded via dotenvy from .env, fallback to global config.'
   importance: high
   last_edited_ms: 0
+48f2140d3c2dee0e:
+  tl_dr: STOP before Phase 3 (Meilisearch sync + search scope) of entities implementation. User needs to review and edit the Meilisearch design doc BEFORE implementing the Meilisearch × Entities link. Go idle and ask user before starting any Phase 3 work.
+  importance: critical
+  labels:
+  - entities
+  - phase3
+  - blocker
+  - meilisearch
+  last_edited_ms: 1780585124407
 8185ce57712b238d:
   tl_dr: 'ALWAYS push memories (memories.yaml) and tree descriptions (tree-descriptions.yaml) alongside code commits. When committing work, include a ''chore: sync memories and tree descriptions'' commit and push everything together. Never leave these unsync''d.'
   importance: critical

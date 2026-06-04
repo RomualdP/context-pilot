@@ -1,9 +1,17 @@
 //! Entities module — persistent relational database for structured domain knowledge.
 //!
-//! One tool: `entity_sql` for arbitrary SQL against an embedded SQLite database.
+//! One tool: `entity_sql` for arbitrary SQL against an embedded `SQLite` database.
 //! The AI owns the schema — nothing is hard-coded. Automatic Meilisearch sync
 //! for fuzzy discovery. Fixed panel with live schema + sample data.
 
+/// SQLite connection factory, bootstrap, introspection, dump, and restore.
+mod db;
+/// Auto-capture DDL as numbered migration files + sequential replay for recovery.
+mod migrations;
+/// Fixed Entities panel — live schema, sample data, and empty-state guide.
+mod panel;
+/// SQL execution engine: classification, splitting, execution, error enrichment.
+mod tools;
 /// State types: `EntitiesState`, `SchemaCache`, `TableInfo`, `ColumnInfo`, `ForeignKeyInfo`.
 pub mod types;
 
@@ -48,23 +56,35 @@ impl Module for EntitiesModule {
         let migrations_dir = shared_dir.join("migrations");
 
         // Ensure directories exist
-        let _r = std::fs::create_dir_all(&shared_dir);
-        let _r = std::fs::create_dir_all(&migrations_dir);
+        let _mkdir_shared = std::fs::create_dir_all(&shared_dir);
+        let _mkdir_mig = std::fs::create_dir_all(&migrations_dir);
 
-        state.set_ext(EntitiesState::new(db_path, dump_path, migrations_dir));
+        state.set_ext(EntitiesState::new(db_path.clone(), dump_path.clone(), migrations_dir.clone()));
+
+        // Recovery + introspection
+        recover_database(&db_path, &dump_path, &migrations_dir);
+        if let Ok(conn) = db::open(&db_path) {
+            let cache = db::introspect(&conn, &db_path);
+            EntitiesState::get_mut(state).schema_cache = Some(cache);
+        }
     }
 
     fn reset_state(&self, state: &mut State) {
         self.init_state(state);
     }
 
-    fn save_module_data(&self, _state: &State) -> serde_json::Value {
-        // SQLite is self-persisting. Full dump on save will be added in Phase 2.
+    fn save_module_data(&self, state: &State) -> serde_json::Value {
+        // Regenerate dump + WAL checkpoint
+        let es = EntitiesState::get(state);
+        if let Ok(conn) = db::open(&es.db_path) {
+            let _r = db::dump_to_file(&conn, &es.dump_path);
+            db::checkpoint(&conn);
+        }
         serde_json::Value::Null
     }
 
     fn load_module_data(&self, _data: &serde_json::Value, state: &mut State) {
-        // Re-initialize state (idempotent). Recovery logic added in Phase 2.
+        // Re-initialize (idempotent recovery + introspection)
         self.init_state(state);
     }
 
@@ -78,35 +98,29 @@ impl Module for EntitiesModule {
 
     fn create_panel(&self, context_type: &Kind) -> Option<Box<dyn Panel>> {
         match context_type.as_str() {
-            Kind::ENTITIES => Some(Box::new(EntitiesPanel)),
+            Kind::ENTITIES => Some(Box::new(panel::EntitiesPanel)),
             _ => None,
         }
     }
 
     fn tool_definitions(&self) -> Vec<ToolDefinition> {
         let t = &*TOOL_TEXTS;
-        vec![ToolDefinition::from_yaml("entity_sql", t)
-            .short_desc("Execute SQL on entity database")
-            .category("Entity")
-            .param("sql", ParamType::String, true)
-            .build()]
+        vec![
+            ToolDefinition::from_yaml("entity_sql", t)
+                .short_desc("Execute SQL on entity database")
+                .category("Entity")
+                .param("sql", ParamType::String, true)
+                .build(),
+        ]
     }
 
     fn pre_flight(&self, _tool: &ToolUse, _state: &State) -> Option<Verdict> {
         None
     }
 
-    fn execute_tool(&self, tool: &ToolUse, _state: &mut State) -> Option<ToolResult> {
+    fn execute_tool(&self, tool: &ToolUse, state: &mut State) -> Option<ToolResult> {
         match tool.name.as_str() {
-            "entity_sql" => Some(ToolResult {
-                tool_use_id: tool.id.clone(),
-                content: "entity_sql not yet implemented (Phase 2)".to_string(),
-                display: None,
-                tldr: None,
-                is_error: true,
-                preserves_tempo: false,
-                tool_name: tool.name.clone(),
-            }),
+            "entity_sql" => Some(tools::execute(tool, state)),
             _ => None,
         }
     }
@@ -206,132 +220,53 @@ impl Module for EntitiesModule {
 }
 
 // =============================================================================
-// Stub panel — will be replaced in Phase 2
+// Database recovery
 // =============================================================================
 
-/// Minimal entities panel (stub for Phase 1).
-#[derive(Debug)]
-struct EntitiesPanel;
+/// Recover the entity database using the priority table from the design doc.
+///
+/// Priority: DB (if healthy) → dump → migrations → fresh start.
+fn recover_database(db_path: &std::path::Path, dump_path: &std::path::Path, migrations_dir: &std::path::Path) {
+    let Ok(conn) = db::open(db_path) else {
+        log::warn!("Failed to open entity database — will retry on next access");
+        return;
+    };
 
-impl Panel for EntitiesPanel {
-    fn title(&self, _state: &State) -> String {
-        "Entities".to_string()
-    }
-
-    fn context(&self, state: &State) -> Vec<cp_base::panels::ContextItem> {
-        let es = EntitiesState::get(state);
-        let content = if es.table_count() == 0 {
-            "Entity Database (empty)\n\nNo entity tables yet. Use entity_sql to create your schema."
-                .to_string()
-        } else {
-            format!(
-                "Entity Database ({} tables, {} rows)",
-                es.table_count(),
-                es.total_rows()
-            )
+    // Integrity check
+    if !db::integrity_check(&conn) {
+        log::warn!("Entity database corrupt, attempting recovery");
+        drop(conn);
+        let _rm = std::fs::remove_file(db_path);
+        let Ok(fresh) = db::open(db_path) else {
+            return;
         };
-        let entry = state.context.iter().find(|e| e.context_type.as_str() == Kind::ENTITIES);
-        let (id, last_refresh_ms) = entry.map_or_else(
-            || (String::new(), 0),
-            |e| (e.id.clone(), e.last_refresh_ms),
-        );
-        vec![cp_base::panels::ContextItem::new(id, "Entities", content, last_refresh_ms)]
-    }
-
-    fn blocks(&self, state: &State) -> Vec<cp_render::Block> {
-        let es = EntitiesState::get(state);
-
-        if es.table_count() == 0 {
-            return empty_state_blocks();
-        }
-
-        vec![cp_render::Block::text(format!(
-            "Entity Database ({} tables, {} rows)",
-            es.table_count(),
-            es.total_rows()
-        ))]
-    }
-
-    fn refresh(&self, state: &mut State) {
-        let es = EntitiesState::get(state);
-        let content = if es.table_count() == 0 {
-            "Entity Database (empty)\n\nNo entity tables yet. Use entity_sql to create your schema."
-                .to_string()
-        } else {
-            format!(
-                "Entity Database ({} tables, {} rows)",
-                es.table_count(),
-                es.total_rows()
-            )
-        };
-        let tokens = cp_base::state::context::estimate_tokens(&content);
-        if let Some(ctx) = state
-            .context
-            .iter_mut()
-            .find(|e| e.context_type.as_str() == Kind::ENTITIES)
+        if dump_path.exists()
+            && let Err(e) = db::restore_from_file(&fresh, dump_path)
         {
-            ctx.cached_content = Some(content);
-            ctx.token_count = tokens;
-            ctx.full_token_count = tokens;
+            log::warn!("Failed to restore dump: {e}");
         }
+        let _apply = migrations::apply_pending(&fresh, migrations_dir);
+        return;
     }
 
-    fn needs_cache(&self) -> bool {
-        false
+    // DB is healthy — check if it has user tables
+    if db::has_user_tables(&conn) {
+        // DB is fine. Regenerate dump if missing.
+        if !dump_path.exists() {
+            let _dump = db::dump_to_file(&conn, dump_path);
+        }
+        return;
     }
 
-    fn max_freezes(&self) -> u8 {
-        0
+    // DB is empty — try recovery from files
+    if dump_path.exists()
+        && let Err(e) = db::restore_from_file(&conn, dump_path)
+    {
+        log::warn!("Failed to restore dump: {e}");
     }
-}
 
-/// Blocks for the empty-state panel (onboarding guide).
-fn empty_state_blocks() -> Vec<cp_render::Block> {
-    use cp_render::{Block, Semantic, Span};
-
-    vec![
-        Block::text("Entity Database (empty)".to_string()),
-        Block::empty(),
-        Block::text(
-            "No entity tables yet. Use entity_sql to create your schema.".to_string(),
-        ),
-        Block::empty(),
-        Block::Line(vec![Span::new("Quick start:".to_string()).bold()]),
-        Block::Line(vec![Span::styled(
-            "  CREATE TABLE companies (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT);"
-                .to_string(),
-            Semantic::Code,
-        )]),
-        Block::Line(vec![Span::styled(
-            "  CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT, role TEXT,".to_string(),
-            Semantic::Code,
-        )]),
-        Block::Line(vec![Span::styled(
-            "    company_id INTEGER REFERENCES companies(id));".to_string(),
-            Semantic::Code,
-        )]),
-        Block::Line(vec![Span::styled(
-            "  INSERT INTO companies (name, country) VALUES ('Acme', 'France') RETURNING *;"
-                .to_string(),
-            Semantic::Code,
-        )]),
-        Block::empty(),
-        Block::Line(vec![Span::new("Tips:".to_string()).bold()]),
-        Block::text(
-            "  - INTEGER PRIMARY KEY = auto-increment (don't use AUTOINCREMENT)".to_string(),
-        ),
-        Block::text(
-            "  - FOREIGN KEY constraints model relationships".to_string(),
-        ),
-        Block::text(
-            "  - SQLite types: TEXT, INTEGER, REAL, BLOB (VARCHAR(N) length is ignored)"
-                .to_string(),
-        ),
-        Block::text(
-            "  - Use RETURNING * on INSERT/UPDATE to see results immediately".to_string(),
-        ),
-        Block::text(
-            "  - For graph patterns: edges(source_id, target_id, rel_type)".to_string(),
-        ),
-    ]
+    // Apply any pending migrations beyond what the dump contained
+    if let Err(e) = migrations::apply_pending(&conn, migrations_dir) {
+        log::warn!("Failed to apply pending migrations: {e}");
+    }
 }

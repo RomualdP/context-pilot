@@ -14,7 +14,7 @@ use cp_base::state::runtime::State;
 /// [`EntitiesState::get_mut`] for typed access.
 #[derive(Debug)]
 pub struct EntitiesState {
-    /// Path to the SQLite database file (`.context-pilot/entities.db`).
+    /// Path to the `SQLite` database file (`.context-pilot/entities.db`).
     pub db_path: PathBuf,
     /// Path to the full schema + data dump (`.context-pilot/shared/entities/schema.sql`).
     pub dump_path: PathBuf,
@@ -29,14 +29,8 @@ pub struct EntitiesState {
 impl EntitiesState {
     /// Create a new `EntitiesState` with the given database path.
     #[must_use]
-    pub fn new(db_path: PathBuf, dump_path: PathBuf, migrations_dir: PathBuf) -> Self {
-        Self {
-            db_path,
-            dump_path,
-            migrations_dir,
-            schema_cache: None,
-            entities_index_uid: String::new(),
-        }
+    pub const fn new(db_path: PathBuf, dump_path: PathBuf, migrations_dir: PathBuf) -> Self {
+        Self { db_path, dump_path, migrations_dir, schema_cache: None, entities_index_uid: String::new() }
     }
 
     /// Borrow the `EntitiesState` from the global `State`.
@@ -62,9 +56,7 @@ impl EntitiesState {
     /// Total row count across all tables (from cache).
     #[must_use]
     pub fn total_rows(&self) -> u64 {
-        self.schema_cache
-            .as_ref()
-            .map_or(0, |sc| sc.tables.iter().map(|t| t.row_count).sum())
+        self.schema_cache.as_ref().map_or(0, |sc| sc.tables.iter().map(|t| t.row_count).sum())
     }
 
     /// Total table count (from cache).
@@ -78,7 +70,7 @@ impl EntitiesState {
 // SchemaCache — introspection snapshot
 // =============================================================================
 
-/// Cached snapshot of the SQLite schema, refreshed after DDL and on init.
+/// Cached snapshot of the `SQLite` schema, refreshed after DDL and on init.
 #[derive(Debug, Clone)]
 pub struct SchemaCache {
     /// All user tables (excludes `sqlite_%` and `_meta`).
