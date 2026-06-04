@@ -1,6 +1,6 @@
 # cp-mod-entities — Design Document
 
-> **Status:** Draft v4  
+> **Status:** Draft v6
 > **Date:** 2026-06-04  
 > **Crate:** `crates/cp-mod-entities/`  
 > **Depends on:** cp-base, cp-render, cp-mod-search, rusqlite
@@ -21,7 +21,9 @@ The AI currently has three storage mechanisms:
 
 None support relational queries. *"Which engineers at French companies work on active projects?"* has no answer path today.
 
-**cp-mod-entities** fills this gap: embedded SQLite, one `entity_sql` tool for arbitrary SQL, automatic Meilisearch sync for fuzzy discovery, and a fixed panel with live schema. The AI owns the schema — nothing is hard-coded.
+**cp-mod-entities** fills this gap: embedded SQLite, one `entity_sql` tool for arbitrary SQL, automatic Meilisearch sync for fuzzy discovery, and a fixed panel with live schema + sample data. The AI owns the schema — nothing is hard-coded.
+
+Not every project needs entities. They shine when the AI accumulates structured knowledge that requires **cross-entity queries** — people, companies, systems, dependencies. For isolated facts, memories are simpler and sufficient.
 
 ### Why Now
 
@@ -39,7 +41,6 @@ None support relational queries. *"Which engineers at French companies work on a
 3. **Meilisearch for discovery** — auto-indexed for fuzzy search via existing infrastructure.
 4. **Single-file persistence** — SQLite at `.context-pilot/entities.db`.
 5. **Zero external services** — SQLite compiles into the binary.
-6. **Follow existing patterns** — mirrors cp-mod-memory (state/tools/panel) and cp-mod-search (Meilisearch sync).
 
 ---
 
@@ -48,18 +49,12 @@ None support relational queries. *"Which engineers at French companies work on a
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Storage engine | **SQLite (rusqlite, bundled)** | ACID, full SQL, in-process, 24+ years maturity. Meilisearch explicitly unsuitable as primary store (no ACID, async indexing). |
-| Connection model | **Per-call, no persistent Connection** | `Connection` is `!Send`. Open → PRAGMAs → operate → drop. Same pattern as MeiliClient in cp-mod-search. |
-| Concurrency | **Shared file, WAL mode** | Unlimited concurrent readers. Writes serialized by SQLite (5s busy timeout). Write contention unlikely at entity-scale frequency. |
-| Transactions | **Implicit per-call** | Each tool call = one atomic transaction. Multi-statement within one call rolls back on error. No cross-call state. |
+| Schema management | **No ORM** | The AI IS the schema manager. It reads the panel, writes SQL. An ORM adds a translation layer that reduces flexibility. If the AI wants schema docs, it creates a `_notes` table. |
 | Meilisearch sync | **Fire-and-forget, full re-index** | Re-index all user tables after any write. Same pattern as `sync_logs_to_meilisearch`. Meilisearch down → skip silently. |
-| MeiliClient access | **Re-export from cp-mod-search** | Add `pub fn meili_client(state) -> Option<MeiliClient>`. Minimal change, clean boundary. |
-| Search integration | **`scope="all"` + `scope="entities"`** | Entities in `scope="all"` results; focused queries via `scope="entities"`. |
-| Schema guidance | **Suggested, not enforced** | Tool description includes conventions (PK patterns, FK constraints, edge tables). AI decides. |
-| Inline result cap | **50 rows** | ≤50 inline in tool result. >50 → dynamic panel with pagination. |
-| Git tracking | **Gitignore** | Binary files don't belong in git. AI can recreate schema. Export tool is a future extension. |
-| Schema management | **No ORM** | The AI IS the schema manager. It reads the panel, writes SQL. An ORM adds a translation layer that reduces flexibility and violates Principle 1. If the AI wants schema documentation, it creates a `_notes` table. |
+| Schema guidance | **Suggested, not enforced** | Tool description includes conventions. AI decides. |
 | Sample data in panel | **Yes, capped** | First 3 rows per table in panel context. Prevents wasted "exploration SELECTs." Capped: skip tables >10 columns, truncate values at 50 chars. |
-| Error enrichment | **Fuzzy suggestions** | On "table/column not found" errors, suggest closest match from schema. Include current schema in error responses for self-correction. |
+| Error enrichment | **Fuzzy suggestions** | On "table/column not found" errors, suggest closest match from schema. Include schema in all error responses. |
+| Git tracking | **Gitignore** | Binary files don't belong in git. AI can recreate schema. |
 
 **Open:** Embedder for entities index — keyword search may suffice for short entity text. Decide during Phase 3.
 
@@ -108,24 +103,13 @@ None support relational queries. *"Which engineers at French companies work on a
 
 ```
 crates/cp-mod-entities/src/
-├── lib.rs      ~200 lines   Module trait impl
+├── lib.rs      ~200 lines   Module trait impl (mirrors cp-mod-memory/src/lib.rs)
 ├── db.rs       ~250 lines   Connection factory, bootstrap, introspection
 ├── tools.rs    ~350 lines   SQL execution, classification, formatting
 ├── panel.rs    ~200 lines   Fixed Entities panel
-├── sync.rs     ~200 lines   Meilisearch sync
+├── sync.rs     ~200 lines   Meilisearch sync (mirrors sync_logs_to_meilisearch)
 └── types.rs    ~100 lines   State types
 ```
-
-### Component responsibilities
-
-| Component | Responsibility | Reference |
-|-----------|---------------|-----------|
-| `lib.rs` | Module trait impl — init, save/load, tool defs, panel creation | cp-mod-memory/src/lib.rs |
-| `db.rs` | Connection factory, PRAGMAs, bootstrap, schema introspection | New |
-| `tools.rs` | SQL execution, classification, result formatting | cp-mod-memory/src/tools.rs |
-| `panel.rs` | Fixed Entities panel — blocks, context, refresh | cp-mod-memory/src/panel.rs |
-| `sync.rs` | SQLite → Meilisearch row synchronization | cp-mod-search/src/lib.rs |
-| `types.rs` | EntitiesState, SchemaCache, TableInfo, ColumnInfo | cp-mod-memory/src/types.rs |
 
 ---
 
@@ -133,49 +117,17 @@ crates/cp-mod-entities/src/
 
 ### 5.1 SQLite
 
-**PRAGMAs** (set on every connection open):
+**Connection model:** Per-call (Connection is `!Send`). Open → PRAGMAs → operate → drop.
 
-```sql
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
-PRAGMA journal_size_limit = 67108864;
-```
+**PRAGMAs:** `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `journal_size_limit=64MB`.
 
-**Bootstrap** (on first use):
+**Bootstrap:** `_meta` table with `schema_version` and `created_at`. Everything else is AI-created.
 
-```sql
-CREATE TABLE IF NOT EXISTS _meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '1');
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('created_at', datetime('now'));
-```
+**Introspection:** `sqlite_master` for table names, `PRAGMA table_info` for columns, `PRAGMA foreign_key_list` for FKs, `COUNT(*)` for row counts. Excludes `sqlite_%` and `_meta`.
 
-Everything else is created by the AI. No hard-coded entity tables.
+**Integrity:** `PRAGMA integrity_check` on load. If corrupt → log warning, re-create. Self-healing, never panic.
 
-**Schema introspection** (for panel + context):
-
-```sql
--- User tables (excluding system)
-SELECT name FROM sqlite_master
-WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_meta'
-ORDER BY name;
-
--- Columns per table
-PRAGMA table_info({table});
-
--- Foreign keys per table
-PRAGMA foreign_key_list({table});
-
--- Row count per table
-SELECT COUNT(*) FROM {table};
-```
-
-**Integrity check** on module load: `PRAGMA integrity_check`. If corrupt, log warning, re-create from scratch. Self-healing, never panic.
-
-**Checkpoint** on save: `PRAGMA wal_checkpoint(PASSIVE)` flushes WAL to main file. Module returns `serde_json::Value::Null` — SQLite persists itself.
+**Checkpoint:** `PRAGMA wal_checkpoint(PASSIVE)` on save. Module returns `Value::Null` — SQLite persists itself.
 
 ### 5.2 State
 
@@ -260,30 +212,16 @@ Primary key: `{table}__{rowid}`. `_all_text` is a space-joined concatenation of 
 entity_sql:
   description: >
     Execute SQL against the project's entity database (SQLite). The database
-    is empty on first use — create your own schema as needed.
+    is empty on first use — create your own schema. See the Entities panel
+    for current schema, sample data, and getting-started tips.
 
-    WHEN TO USE (vs other storage):
-    - Entities: structured data with relationships, needs querying/updating
-    - Memories: isolated facts, preferences, context (flat key-value)
-    - Logs: events, decisions, actions (append-only record)
+    Use entities for structured data with relationships that need querying.
+    Use memories for isolated facts. Use logs for events and decisions.
 
-    Supports full SQLite: JOINs, CTEs, window functions, json_extract(),
-    foreign keys, triggers, views. Multi-statement (semicolons) executes
-    atomically. Read queries return tables. Writes return affected row count.
-
-    TIPS:
-    - Use RETURNING * on INSERT/UPDATE to see the result without a separate SELECT
-    - Use INTEGER PRIMARY KEY for auto-increment IDs (NOT AUTOINCREMENT — it's slower and unnecessary)
-    - Use CREATE TABLE IF NOT EXISTS for idempotent schema setup
-    - Use FOREIGN KEY constraints to model relationships
-    - SQLite types are flexible: TEXT, INTEGER, REAL, BLOB. No VARCHAR(N) — length is ignored.
-    - For graph patterns: edges(source_type, source_id, target_type, target_id, rel_type)
-
-    EXAMPLE — creating and querying a simple schema:
-      CREATE TABLE companies (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT);
-      CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT, company_id INTEGER REFERENCES companies(id));
-      INSERT INTO companies (name, country) VALUES ('Acme', 'France') RETURNING *;
-      SELECT p.name, c.name FROM people p JOIN companies c ON p.company_id = c.id;
+    Supports full SQLite: JOINs, CTEs, window functions, foreign keys,
+    triggers, views. Multi-statement (semicolons) executes atomically.
+    Use RETURNING * on INSERT/UPDATE to see results without a separate SELECT.
+    Use CREATE TABLE IF NOT EXISTS for idempotent schema setup.
   params:
     sql:
       type: string
@@ -305,14 +243,7 @@ entity_sql:
 
 ### Error enrichment
 
-Raw SQLite errors are wrapped with context to help the AI self-correct:
-
-- **Unknown table** → `"Table 'peple' not found. Did you mean 'people'?"` (Levenshtein against `sqlite_master`)
-- **Unknown column** → `"Column 'compay_id' not found in 'people'. Columns: id, name, company_id, role"` (list actual columns)
-- **Any error** → append current schema summary so the AI can see what exists without a separate query
-- **Constraint violation** → include the constraint definition (FK target, UNIQUE columns)
-
-Implementation: wrap `rusqlite::Error` in a `fn enrich_error(err, conn) -> String` that queries the schema for fuzzy matches. Use simple Levenshtein (≤2 edits) — no external dep needed, ~30 lines.
+Raw SQLite errors are wrapped with context for self-correction: fuzzy-match suggestions on unknown table/column names (Levenshtein ≤2), constraint details on violations, and the current schema summary appended to every error.
 
 ### Multi-statement handling
 
@@ -346,9 +277,9 @@ Instrumented with `flame!("entity_sql")`.
 
 Fixed panel. `Kind::ENTITIES`, `fixed_order = Some(5)` (after Memories), `needs_cache = false`.
 
-**Content:** Every user table (excluding `_meta`, `sqlite_%`) with name, row count, column definitions (name, type, PK), foreign keys (`FK→table(col)`). Footer: totals, DB size, WAL/FK status.
+### Populated state
 
-**Empty state:** `"No entity tables. Use entity_sql to create your schema."`
+Every user table (excluding `_meta`, `sqlite_%`) with name, row count, columns (name, type, PK), foreign keys. Footer: totals, DB size.
 
 **LLM context** — schema + sample data for quick orientation:
 
@@ -371,7 +302,30 @@ projects (21 rows):
   Sample: (1, 'Phoenix', 'active', 1, 1), (2, 'Atlas', 'planning', 2, 2)
 ```
 
-**Sample data rules:** First 3 rows per table via `SELECT * FROM {table} LIMIT 3`. Truncate individual values at 50 chars. Skip sample rows for tables with >10 columns (schema-only for wide tables). Empty tables show `(empty)` instead of sample rows.
+Sample data: first 3 rows per table, values truncated at 50 chars, skip for tables >10 columns, `(empty)` for empty tables.
+
+### Empty state (smart — carries the usage guidance)
+
+When the database has no user tables, the panel becomes the AI's onboarding guide. This keeps the tool description lean (~14 lines) while providing rich guidance exactly when needed:
+
+```
+Entity Database (empty)
+
+No entity tables yet. Use entity_sql to create your schema.
+
+Quick start:
+  CREATE TABLE companies (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT);
+  CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT, role TEXT,
+    company_id INTEGER REFERENCES companies(id));
+  INSERT INTO companies (name, country) VALUES ('Acme', 'France') RETURNING *;
+
+Tips:
+  - INTEGER PRIMARY KEY = auto-increment (don't use AUTOINCREMENT)
+  - FOREIGN KEY constraints model relationships
+  - SQLite types: TEXT, INTEGER, REAL, BLOB (VARCHAR(N) length is ignored)
+  - Use RETURNING * on INSERT/UPDATE to see results immediately
+  - For graph patterns: edges(source_id, target_id, rel_type)
+```
 
 **IR blocks:** `Block::KeyValue` for table headers, `Block::Line` for columns. Table names → `Accent`, types → `Code`, FKs → `Muted`.
 
@@ -382,11 +336,6 @@ projects (21 rows):
 ### Cargo.toml
 
 ```toml
-[package]
-name = "cp-mod-entities"
-version = "0.1.0"
-edition.workspace = true
-
 [dependencies]
 cp-base = { path = "../cp-base" }
 cp-render = { path = "../cp-render" }
@@ -397,28 +346,17 @@ crossterm = { workspace = true }
 log = { workspace = true }
 ```
 
-`bundled` compiles SQLite from C source via `cc`. `column_decltype` enables type introspection for the panel. `rusqlite` declared as workspace dependency in root `Cargo.toml`.
+`rusqlite` declared as workspace dep in root Cargo.toml. `bundled` compiles SQLite via `cc`. `column_decltype` for type introspection.
 
 ### Registration
 
-| What | Where | Change |
-|------|-------|--------|
-| Workspace member | `Cargo.toml` | Add to members list |
-| Module registry | `src/modules/mod.rs` | Add `EntitiesModule` after `SearchModule` in `all_modules()` |
-| Kind constant | `cp-base/src/state/context.rs` | `pub const ENTITIES: &str = "entities";` |
-| YAML tool def | `yamls/tools/entities.yaml` | New file |
-| YAML validation | `cp-base/src/lib.rs` | 19 → 20 tool files |
-
-Module metadata: `id="entities"`, `name="Entities"`, `is_global=true`, `is_core=false`, `dependencies=["search"]`.  
-Panel type: `context_type="entities"`, `is_fixed=true`, `needs_cache=false`, `fixed_order=Some(5)`.  
-Tool category: `("Entity", "Persistent relational entity database")`.  
-Overview: `"Entities: N tables, M rows\n"` or `None` if empty.
+Follow cp-mod-memory pattern. Key specifics: `Kind::ENTITIES`, `fixed_order=5`, `id="entities"`, `dependencies=["search"]`, `is_global=true`, `is_core=false`. Tool category: `("Entity", "Persistent relational entity database")`. Overview: `"Entities: N tables, M rows\n"` or `None`. YAML validation count 19→20.
 
 ### Cross-Module Concerns
 
-**MeiliClient:** Currently `pub(crate)`. Add `pub fn meili_client(state: &State) -> Option<MeiliClient>` to `cp-mod-search/src/lib.rs`.
+**MeiliClient:** Add `pub fn meili_client(state: &State) -> Option<MeiliClient>` to cp-mod-search. Currently `pub(crate)`.
 
-**Search scope:** `cp-mod-entities` exposes `pub fn entities_index_uid(state: &State) -> Option<String>`. Search module calls this when scope includes entities. `None` → silently skipped.
+**Search scope:** cp-mod-entities exposes `pub fn entities_index_uid(state: &State) -> Option<String>`. Search module calls this when scope includes entities. `None` → silently skipped. Adds `scope="entities"` to search tool.
 
 **Visualizer:** Table headers → `Accent`, row counts → `Success`, NULLs → `Muted + dimmed`, schema → `Code`.
 
@@ -429,8 +367,7 @@ Overview: `"Entities: N tables, M rows\n"` or `None` if empty.
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | SQLite C compilation fails on cross-compilation | High | `cc` already cross-compiles OpenSSL in CI. SQLite amalgamation is simpler. Test early in Phase 1. |
-| rusqlite exceeds dep budget (>8 new crates) | Medium | Audit `cargo tree -p rusqlite --depth 1` before merging. Trim features if needed. |
-| Full re-index bottleneck on large tables (>10K rows) | Medium | v1 re-indexes all tables on every write. Optimize to affected-only tables if profiling warrants. |
+| rusqlite exceeds dep budget (>8 new crates) | Medium | Audit `cargo tree -p rusqlite --depth 1` before merging. |
 
 ---
 
@@ -452,22 +389,13 @@ Overview: `"Entities: N tables, M rows\n"` or `None` if empty.
 - [ ] Register in mod.rs, add Kind::ENTITIES, update YAML validation count
 - [ ] All 6 callbacks green ✓
 
-### Phase 3: Meilisearch integration
+### Phase 3: Meilisearch + search scope + polish
 - [ ] `sync.rs` — table → documents, upsert, delete-by-filter
 - [ ] Expose `pub fn meili_client()` from cp-mod-search
-- [ ] Create entities index on module init
+- [ ] Create entities index on module init, full re-index
 - [ ] Wire sync into tool execution (after writes)
-- [ ] Full re-index on init
-
-### Phase 4: Search scope integration
-- [ ] Expose `pub fn entities_index_uid()` from cp-mod-entities
-- [ ] Add `"entities"` scope to search tool
-- [ ] Entity results tagged with `entity_table` in output
-- [ ] Update search YAML description
-
-### Phase 5: Polish
-- [ ] Tool visualizer (table headers, row counts, NULLs, schema)
-- [ ] Overview context section
+- [ ] Expose `pub fn entities_index_uid()`, add `"entities"` scope to search tool
+- [ ] Tool visualizer, overview context section
 - [ ] Documentation
 
 ---
@@ -477,8 +405,6 @@ Overview: `"Entities: N tables, M rows\n"` or `None` if empty.
 | Extension | When |
 |-----------|------|
 | Graph visualization in panel (ASCII/IR) | User demand |
-| Schema migration tracking | Long-lived schemas |
-| Cross-project global DB | Multi-project workflows |
 | Export/import (SQL dump, CSV, JSON) | Data portability needs |
 | Spine notifications on entity changes | Automation use cases |
 | FTS5 full-text search columns | Large text fields |
