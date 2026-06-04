@@ -1114,6 +1114,10 @@
   path: src/app/run/streaming.rs
   description: Stream event processing with flame!("stream") + flame!("finalize_stream"). Chunk→typewriter, ToolUse→pending, Done→finalize. Error retry up to MAX_API_RETRIES. finalize_stream() resets spine counters, updates cache engine.
   last_edited_ms: 0
+7f680d3a66891317:
+  path: crates/cp-mod-search/src/meili/client.rs
+  description: 'Meilisearch HTTP API client. MeiliClient: create_index, update_settings, add_documents, delete_documents_by_filter, search, multi_search, facet_distribution, global_stats, index_stats, version, recent_tasks. SearchParams for queries. 30s timeout. Bearer auth.'
+  last_edited_ms: 1780577580862
 7f96c638d0d94837:
   path: src/ui/ir/conversation.rs
   description: 'Conversation + overlay IR builder. Messages, history sections, streaming tools, input area. Overlays: QuestionForm, Autocomplete, PerfOverlay (build_perf_overlay with frame budgets, CPU/Meili stats, FD count, op table). Perf builder calls PERF.snapshot() and cp_mod_search::overlay_info().'
@@ -2134,6 +2138,10 @@ f957bf9c5e2d5a99:
   path: src/infra/api.rs
   description: Thin re-export of llms::{StreamEvent, StreamParams, start_streaming}. Backward-compat shim.
   last_edited_ms: 0
+fa07059c45a476ab:
+  path: crates/cp-mod-memory/src/panel.rs
+  description: Memory panel. Sorts by importance (critical→low). format_memories_for_context() YAML output for LLM. blocks() renders KeyValue with importance-colored labels. refresh() updates context entry. context() returns ContextItem. needs_cache=false.
+  last_edited_ms: 1780577580891
 fa180307e20d6957:
   path: crates/cp-mod-callback/src/panel.rs
   description: Callback panel. Table view of all definitions (name/pattern/blocking/timeout/active/scope/success_msg/cwd). Editor sub-view shows script content for one callback.
