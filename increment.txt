@@ -33,3 +33,5 @@
 11:28:16.368126754 fmt src/infra/tools.rs
 11:28:22.886200709 fmt crates/cp-base/src/tools/mod.rs
 11:28:22.921963223 fmt src/infra/tools.rs
+11:32:06.288482108 fmt dummy_test.rs
+11:32:10.501875120 fmt dummy_test.rs
