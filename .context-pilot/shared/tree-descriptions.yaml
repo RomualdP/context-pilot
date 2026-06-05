@@ -34,6 +34,10 @@
   path: crates/cp-base/src/config/global.rs
   description: 'Global config at ~/.config/context-pilot/config.json. API key resolution cascade: env var → config file. KEY_ENV_MAP for canonical names. store_api_key/resolve_api_key/env_var_for_key.'
   last_edited_ms: 0
+03bead4827acfc2a:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
 03c4965ec94c5416:
   path: yamls/tools/entities.yaml
   description: 'Entity SQL tool YAML. Single tool: entity_sql with sql param. Full SQLite support description (JOINs, CTEs, RETURNING, CREATE TABLE IF NOT EXISTS).'
@@ -121,6 +125,10 @@
 094971202a4be7cb:
   path: src/llms/claude_code_api_key/streaming.rs
   description: 'parse_sse_stream(): SSE event loop with verbose error diagnostics, log_sse_error() to .context-pilot/errors/'
+  last_edited_ms: 0
+0979aeb287e6bdc9:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
   last_edited_ms: 0
 09bc3296ceb89b76:
   path: src/ui/ir/mod.rs
@@ -585,6 +593,10 @@
 2bbde535b57f6e44:
   path: crates/cp-base/src/state/actions.rs
   description: 'Action enum: InputChar/Submit/Backspace/Delete, CursorLeft/Right/WordLeft/WordRight/Home/End (+ Select variants for Shift), SelectAll. Streaming, Scroll, Config overlay, NewContext, UI actions. ActionResult enum.'
+  last_edited_ms: 0
+2bf5098fb04b790a:
+  path: increment.txt
+  description: Throwaway test file for queue/preflight testing
   last_edited_ms: 0
 2bf7e77f5cbca504:
   path: src/llms/claude_code/debug.rs
@@ -1378,6 +1390,10 @@
   path: crates/cp-base/src/ui/question_form.rs
   description: 'PendingForm state machine: Question/QuestionOption/QuestionAnswer, cursor nav, single/multi-select, submit/dismiss'
   last_edited_ms: 0
+6ba7c45a67b4d4f7:
+  path: src/main.rs
+  description: Entry point. Phased boot screen (6 steps), FileLogger, raise_fd_limit() via rlimit, flame::init()/flush(), panic hook. use openssl as _ for vendored cross-compilation. Creates App + event channels, runs main loop.
+  last_edited_ms: 0
 6baed006a97719a4:
   path: crates/cp-base/src/state/context.rs
   description: 'Kind registry + Entry type. TypeMeta, init_context_type_registry, fixed_panel_order. Kind string-backed context type with well-known constants (ENTITIES, ENTITY_RESULT, etc). Entry struct: id/uid/context_type/name/token_count/metadata + cache/freeze fields. estimate_tokens, make_default_entry.'
@@ -1573,6 +1589,10 @@
 79d027b0ce254972:
   path: crates/cp-base/src/state/mod.rs
   description: 'Sub-module hub: actions, autocomplete, context, data, flags, runtime (State struct), watchers. Inline reverie module with Session struct (kind, agent, messages, tool_call_count).'
+  last_edited_ms: 0
+79e7b42ddd57a46c:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
   last_edited_ms: 0
 7b8f6edeaef20990:
   path: src/app/actions/streaming.rs
@@ -2154,6 +2174,10 @@ aaf816cbdc5723aa:
   path: src/llms/cache/density.rs
   description: 'Divergence density distributions. Production: ConversationTailDensity (zeros out assistant blocks, quadratic on user-side panels + last user turn). Test-only: Uniform, Quadratic, PowerLaw, Empirical.'
   last_edited_ms: 0
+aafa696d07240bc1:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
 ac4a7fbbfcf664e7:
   path: crates/cp-mod-brave/Cargo.toml
   description: 'Brave module deps: cp-base, cp-render, crossterm, serde, serde_json, serde_yaml, reqwest.'
@@ -2530,6 +2554,10 @@ c80cf4a36c945d80:
   path: crates/cp-mod-spine/src/lib.rs
   description: Spine module. Auto-continuation, notifications (10 processed kept), guard rails, coucou timers. Manages WatcherRegistry. on_user_message resets counters. on_stream_stop prevents re-launch.
   last_edited_ms: 0
+c83e02c82f575734:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
 c86f42eaf477c5e2:
   path: yamls/reverie.yaml
   description: 'Reverie sub-agent prompts: kickoff, tool restrictions, report instructions, nudge, error messages'
@@ -2674,6 +2702,10 @@ d2ad0203ee1c00b8:
   path: crates/cp-mod-queue/src/tools.rs
   description: Tool handlers for Queue_pause and Queue_undo with flame!("queue_pause") and flame!("queue_undo"). Queue_execute handled in pipeline.rs.
   last_edited_ms: 0
+d2d0808774f88ec3:
+  path: run.sh
+  description: Development run script
+  last_edited_ms: 0
 d2eda9a634d5c36d:
   path: src/app/events.rs
   description: 'Maps terminal events → Action. Global Ctrl shortcuts (Q/L/N/H/I/V/O/P). Config view: provider selection (1-7), model selection (a-d), theme cycling. Index overlay: Esc dismiss, Ctrl+C copy. Delegates to panel.handle_key() for panel-specific keys.'
@@ -2701,6 +2733,10 @@ d3c7b08de985c75a:
 d486285ed7025782:
   path: src/app/actions/helpers.rs
   description: Utility functions + switch_to_panel (scroll-preserving panel switch). clean_llm_id_prefix, parse_context_pattern, find_context_by_id, eject_cursor_from_sentinel.
+  last_edited_ms: 0
+d4bbdd0fa2570002:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
   last_edited_ms: 0
 d4f0917617a195e1:
   path: docs/design-logs-panel.md

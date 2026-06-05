@@ -382,9 +382,10 @@ fn main() -> ExitCode {
 
     // Self-restart on reload — lets `cpilot` work without the run.sh supervisor loop.
     // exec() replaces this process with a fresh instance (same binary, same env).
+    // Skipped when run.sh supervises (CP_RUN_SH=1) — the supervisor rebuilds via cargo run.
     // If exec fails, fall through to normal exit (run.sh catches it as before).
     #[cfg(unix)]
-    if app.state.flags.lifecycle.reload_pending {
+    if app.state.flags.lifecycle.reload_pending && std::env::var_os("CP_RUN_SH").is_none() {
         if let Ok(exe_path) = std::env::current_exe() {
             use std::os::unix::process::CommandExt as _;
             let mut args: Vec<String> = std::env::args().skip(1).collect();

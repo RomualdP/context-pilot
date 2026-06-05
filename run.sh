@@ -33,6 +33,8 @@ fi
 cargo build --release -p cp-console-server
 cargo build --release
 
+export CP_RUN_SH=1
+
 while true; do
     # Run the TUI (CP_FLAMEGRAPH persists across reloads via env)
     cargo run --release -- "${ARGS[@]}"
