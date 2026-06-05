@@ -1,5 +1,6 @@
+pub(crate) use cp_base::tools::api_schema::build_api;
 pub(crate) use cp_base::tools::pre_flight::Verdict;
-pub(crate) use cp_base::tools::{ParamType, ToolDefinition, ToolParam, ToolResult, ToolTexts, ToolUse, build_api};
+pub(crate) use cp_base::tools::{ParamType, ToolDefinition, ToolParam, ToolResult, ToolTexts, ToolUse};
 
 use crate::state::State;
 

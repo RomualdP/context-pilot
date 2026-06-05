@@ -254,6 +254,10 @@
   path: src/modules/conversation/panel.rs
   description: 'Conversation panel. Multi-level cache (full → per-message → input). Input hash includes selection anchor. Keybindings: Shift+Arrow selection, Ctrl/Alt+Arrow word jump, Ctrl+A select all, Ctrl+Backspace delete word. Enter send-on-empty-line logic.'
   last_edited_ms: 0
+133b6adde645d270:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
 1347cda87d213463:
   path: crates/cp-mod-search/src/meili/overlay.rs
   description: Ctrl+I overlay data provider. Fetches live Meilisearch stats + process stats (CPU%/RAM via /proc or ps). read_process_stats(pid) platform-specific. CPU% from tick deltas cached in MeiliLiveStats. 2s refresh cache. Builds SearchOverlayInfo.
@@ -1542,10 +1546,14 @@
   path: crates/cp-mod-files/src/tools/edit_file.rs
   description: 'execute_edit: replace old_string with new_string. flame!("file_edit"). Normalized matching for trailing whitespace. Unified diff display. Panel reference in LLM result. Closest-match error hints.'
   last_edited_ms: 1780648757744
+75b59f8061f1ae4e:
+  path: src/modules/pre_flight.rs
+  description: 'Pre-flight validation: Phase 0 trap block, Phase 0.5 duplicate Close_conversation_history queue check (panels[].panel_id extraction, skipped during trap), Phase 1 schema validation, Phase 2 module semantic checks.'
+  last_edited_ms: 0
 75eb33edbee482d1:
   path: src/app/run/tools/mod.rs
-  description: 'Sub-module declarations: checks, cleanup, pipeline, queue_flush.'
-  last_edited_ms: 0
+  description: 'Sub-module declarations: checks, cleanup, metadata, pipeline, queue_flush.'
+  last_edited_ms: 1780651199826
 76162aa68245be51:
   path: crates/cp-base/src/config/mod.rs
   description: 'YAML config loader. 6 LazyLock statics (Prompts/Library/Injections/Reverie/Ui/Themes) from include_str!. Theme system: 6 themes × 16 RGB colors + icons. invariant_panic() for compile-time violations. Sub-modules: constants, global, llm_types, yaml_sync, behavioral, accessors.'
@@ -1589,6 +1597,10 @@
 78cfc068e4c9b991:
   path: deploy_local.sh
   description: 'Local deploy script. 4 steps: build release, install to /usr/local/bin/cpilot, setup global gitignore, export API keys from .env to ~/.bashrc. Guards against running as root.'
+  last_edited_ms: 0
+78ec4d70f66e85f0:
+  path: crates/cp-base/src/tools/mod.rs
+  description: 'Tool system. ToolUse/ToolResult (display, tldr, preserves_tempo). ToolDefinition + ToolDefBuilder (schema in Rust, descriptions from YAML). ParamType recursive JSON Schema. build_api() generates LLM tool array. Sub-modules: pre_flight, async_exec.'
   last_edited_ms: 0
 790faab0bb82bf85:
   path: src/ui/help/commands.rs
@@ -2358,6 +2370,10 @@ b6162eed9f57263f:
   path: crates/cp-mod-files/src/tools/mod.rs
   description: 'Tool submodule routing: diff, edit_file, file, write'
   last_edited_ms: 1780648757766
+b689ff54e81da946:
+  path: src/infra/tools.rs
+  description: Re-exports cp_base::tools types. execute_tool() dispatches via module system. execute_reload_tui() sets reload flag + writes config.json.
+  last_edited_ms: 0
 b6be0d9dc7f74661:
   path: crates/cp-mod-tree/Cargo.toml
   description: 'Tree module deps: cp-base, cp-render, crossterm, serde, serde_json, ignore, cp-mod-utilities.'
@@ -2614,6 +2630,10 @@ ca1fb9a37e39702d:
   path: logs/bridge.log
   description: Bridge activity log
   last_edited_ms: 0
+ca3fb28c65d5c4e6:
+  path: src/app/run/tools/metadata.rs
+  description: Global tool metadata middleware — validates `intent`/`verb` on every tool call. Returns warning string for missing/invalid metadata.
+  last_edited_ms: 1780651199814
 cb25f09fa3660254:
   path: crates/cp-mod-files/src/tools/write.rs
   description: file_write tool. flame!("file_write"). Creates parent dirs, writes content, updates/creates context Entry. Diff-style preview in result (first 20 lines).
@@ -2833,6 +2853,10 @@ dc25adefd5b31fad:
 dc669315644ebb28:
   path: crates/cp-mod-git/src/types.rs
   description: GitChangeType, GitFileChange, GitState (branch/changes/diff_base) with ext/ext_mut, GitResultRequest
+  last_edited_ms: 0
+ddb10c875236eedb:
+  path: increment.txt
+  description: Throwaway test file for queue/preflight testing
   last_edited_ms: 0
 def0ccd673154b9d:
   path: crates/cp-mod-todo/Cargo.toml

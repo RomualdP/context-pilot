@@ -10,6 +10,9 @@ pub mod pre_flight;
 /// Async tool execution — spawn blocking I/O on worker threads.
 pub mod async_exec;
 
+/// LLM API schema builder — injects global `intent`/`verb` into every tool.
+pub mod api_schema;
+
 // =============================================================================
 // YAML Tool Text — deserialized from yamls/tools/*.yaml
 // =============================================================================
@@ -460,21 +463,3 @@ impl ToolDefBuilder<'_> {
 /// Parameter names reserved by the global tool metadata middleware.
 /// No tool definition may declare a parameter with these names.
 const RESERVED_PARAM_NAMES: &[&str] = &["intent", "verb"];
-
-/// Build the JSON array of enabled tool schemas for the LLM API.
-#[must_use]
-pub fn build_api(tools: &[ToolDefinition]) -> Value {
-    let enabled: Vec<Value> = tools
-        .iter()
-        .filter(|t| t.enabled)
-        .map(|t| {
-            json!({
-                "name": t.id,
-                "description": t.description,
-                "input_schema": t.to_json_schema()
-            })
-        })
-        .collect();
-
-    Value::Array(enabled)
-}
