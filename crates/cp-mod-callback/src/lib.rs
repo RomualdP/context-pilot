@@ -93,22 +93,14 @@ impl Module for CallbackModule {
 
     fn save_worker_data(&self, state: &State) -> serde_json::Value {
         let cs = CallbackState::get(state);
-        let active: Vec<&String> = cs.active_set.iter().collect();
-        json!({ "active_set": active, "editor_open": cs.editor_open })
+        json!({ "editor_open": cs.editor_open })
     }
 
     fn load_worker_data(&self, data: &serde_json::Value, state: &mut State) {
-        if let Some(arr) = data.get("active_set")
-            && let Ok(v) = serde_json::from_value::<Vec<String>>(arr.clone())
-        {
-            CallbackState::get_mut(state).active_set = v.into_iter().collect();
-        }
         if let Some(v) = data.get("editor_open") {
             CallbackState::get_mut(state).editor_open = v.as_str().map(ToString::to_string);
         }
         // Populate missing callbacks from YAML backing store.
-        // This runs AFTER active_set is loaded so newly-created callbacks
-        // get inserted into active_set without being overwritten.
         storage::populate_from_yaml(CallbackState::get_mut(state));
         // Assign deterministic IDs (CB1, CB2, ...) based on alphabetical name order.
         // This makes IDs reproducible across machines/workers.
@@ -172,12 +164,6 @@ impl Module for CallbackModule {
                 .short_desc("Close callback script editor")
                 .category("Callback")
                 .build(),
-            ToolDefinition::from_yaml("Callback_toggle", t)
-                .short_desc("Activate/deactivate a callback for this worker")
-                .category("Callback")
-                .param("id", ParamType::String, true)
-                .param("active", ParamType::Boolean, true)
-                .build(),
         ]
     }
 
@@ -214,16 +200,6 @@ impl Module for CallbackModule {
                 }
                 Some(pf)
             }
-            "Callback_toggle" => {
-                let mut pf = Verdict::new();
-                if let Some(id) = tool.input.get("id").and_then(|v| v.as_str()) {
-                    let cs = CallbackState::get(state);
-                    if cs.find_by_name_or_id(id).is_none() {
-                        pf.errors.push(format!("Callback '{id}' not found"));
-                    }
-                }
-                Some(pf)
-            }
             _ => None,
         }
     }
@@ -231,7 +207,6 @@ impl Module for CallbackModule {
     fn execute_tool(&self, tool: &ToolUse, state: &mut State) -> Option<ToolResult> {
         match tool.name.as_str() {
             "Callback_upsert" => Some(tools::execute_upsert(tool, state)),
-            "Callback_toggle" => Some(tools::execute_toggle(tool, state)),
             "Callback_open_editor" => Some(tools::execute_open_editor(tool, state)),
             "Callback_close_editor" => Some(tools::execute_close_editor(tool, state)),
             _ => None,

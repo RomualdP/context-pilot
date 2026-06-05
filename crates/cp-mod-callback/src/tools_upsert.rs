@@ -124,10 +124,9 @@ pub(crate) fn execute_create(tool: &ToolUse, state: &mut State) -> ToolResult {
         built_in_command: None,
     };
 
-    // Add to state and mark active (by name — names are the stable identifier)
+    // Add to state
     let cs_store = CallbackState::get_mut(state);
     cs_store.definitions.push(definition);
-    let _ = cs_store.active_set.insert(vessel_name.clone());
     // Reassign deterministic IDs after adding a new definition
     cs_store.assign_deterministic_ids();
 
@@ -349,7 +348,6 @@ pub(crate) fn execute_delete(tool: &ToolUse, state: &mut State) -> ToolResult {
     // Remove definition and get the name for script cleanup
     let cs_mut = CallbackState::get_mut(state);
     let sunken_def = cs_mut.definitions.remove(def_idx);
-    let _ = cs_mut.active_set.remove(&sunken_def.name);
 
     // If editor was open for this callback, close it
     if cs_mut.editor_open.as_deref() == Some(sunken_def.name.as_str()) {

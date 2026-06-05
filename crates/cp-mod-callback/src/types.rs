@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use cp_base::state::runtime::State;
 use serde::{Deserialize, Serialize};
 
@@ -47,9 +45,6 @@ pub struct CallbackDefinition {
 pub struct CallbackState {
     /// All callback definitions (loaded from YAML backing store).
     pub definitions: Vec<CallbackDefinition>,
-    /// Per-worker: which callback **names** are active.
-    /// Names are the stable identifier across machines/workers (not ephemeral CB IDs).
-    pub active_set: HashSet<String>,
     /// Which callback **name** is currently open in the editor (if any).
     pub editor_open: Option<String>,
 }
@@ -63,8 +58,8 @@ impl Default for CallbackState {
 impl CallbackState {
     /// Create an empty callback state.
     #[must_use]
-    pub fn new() -> Self {
-        Self { definitions: Vec::new(), active_set: HashSet::new(), editor_open: None }
+    pub const fn new() -> Self {
+        Self { definitions: Vec::new(), editor_open: None }
     }
 
     /// Assign deterministic IDs (CB1, CB2, ...) based on alphabetical order of names.

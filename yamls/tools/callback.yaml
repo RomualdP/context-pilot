@@ -27,9 +27,4 @@ tools:
     description: |
       Closes the callback script editor in the Callbacks panel, restoring the normal table view.
 
-  Callback_toggle:
-    description: |
-      Activates or deactivates a callback for the current worker. Does NOT modify the callback definition — only this worker's activation state.
-    parameters:
-      id: "Callback ID (e.g., 'CB1')"
-      active: "true to activate, false to deactivate"
+

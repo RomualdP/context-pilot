@@ -248,8 +248,6 @@ pub(crate) fn populate_from_yaml(state: &mut CallbackState) {
         };
 
         state.definitions.push(def);
-        // Activate by name — names are the stable cross-machine identifier
-        let _inserted = state.active_set.insert(entry.name.clone());
     }
 }
 

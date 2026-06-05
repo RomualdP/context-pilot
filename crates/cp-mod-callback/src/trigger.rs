@@ -100,11 +100,6 @@ pub fn match_callbacks(state: &State, changed_files: &[ChangedFile]) -> (Vec<Mat
     validate_skip_names(cs, &all_skip_names, &mut warnings);
 
     for def in &cs.definitions {
-        // Only fire active callbacks (active_set stores names, not IDs)
-        if !cs.active_set.contains(&def.name) {
-            continue;
-        }
-
         // Compile the glob pattern
         let compass = match Glob::new(&def.pattern) {
             Ok(g) => g.compile_matcher(),

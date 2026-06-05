@@ -353,7 +353,7 @@
 1b4b773580481e9c:
   path: crates/cp-mod-files/src/lib.rs
   description: 'Files module. Core/global. 3 tools: Open, Edit, Write. Pre-flight: queue auto-activate, old_string match against both disk and virtual (post-queue) content via build_virtual_content(). 4-way matrix: disk✓/virtual✓→OK, disk✓/virtual✗→ERROR, disk✗/virtual✓→OK, disk✗/virtual✗→ERROR.'
-  last_edited_ms: 0
+  last_edited_ms: 1780648757756
 1b4cade6bfe272d3:
   path: src/modules/conversation/refresh.rs
   description: estimate_message_tokens() (content+tools), refresh_conversation_context() updates Conversation context element
@@ -566,6 +566,10 @@
   path: src/app/run/tools/checks.rs
   description: 'Post-tool non-blocking polls: panel readiness (5s timeout), deferred sleep timer, question form resolution. Each resumes streaming pipeline when condition met.'
   last_edited_ms: 0
+2b5786cd3f4046ad:
+  path: crates/cp-mod-callback/src/lib.rs
+  description: 'Callback module. 4 tools: upsert/toggle/open/close editor. Depends on console. CallbackState: definitions (shared) + active_set/editor_open (per-worker). Glob-matched auto-fire on file edits.'
+  last_edited_ms: 0
 2b6d0c6194c214c1:
   path: crates/cp-mod-typst/src/tools_execute.rs
   description: Typst tool. flame!("typst_exec"). Unified gateway for compile/init/fonts/query/update/watch/unwatch/watchlist. Entry type creation for font/query results.
@@ -669,6 +673,10 @@
 33c60367852cda1f:
   path: rust_lints_compared_list.md
   description: Rustc lint comparison results
+  last_edited_ms: 0
+33de1c508379ae28:
+  path: crates/cp-mod-callback/src/tools.rs
+  description: Callback tool dispatch with flame!("cb_dispatch"). Routes upsert/toggle/open_editor/close_editor. Delegates upsert to tools_upsert.rs.
   last_edited_ms: 0
 341bf99f4a188e88:
   path: crates/cp-mod-entities/src/lib.rs
@@ -985,6 +993,10 @@
 4c7ba801294b7e93:
   path: src/modules/conversation/panel.rs
   description: 'Conversation panel. Multi-level cache (full → per-message → input). Input hash includes selection anchor. Keybindings: Shift+Arrow selection, Ctrl/Alt+Arrow word jump, Ctrl+A select all, Ctrl+Backspace delete word. Enter send-on-empty-line logic.'
+  last_edited_ms: 0
+4cc9e8806b7817f1:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
   last_edited_ms: 0
 4d457b7ceca9acae:
   path: yamls/tools/search.yaml
@@ -1406,6 +1418,10 @@
   path: crates/cp-mod-search/src/radar.rs
   description: Context Radar with flame!("radar_refresh") and flame!("radar_push_signal"). Adaptive log-count-based decay scoring, Meilisearch log queries via background thread. format_timestamp_ms via cp_mod_utilities::time. Recent logs (10) deterministic + semantic top 40.
   last_edited_ms: 0
+6e8612aca76b3e84:
+  path: crates/cp-mod-callback/src/panel.rs
+  description: Callback panel. Table view of all definitions (name/pattern/blocking/timeout/active/scope/success_msg/cwd). Editor sub-view shows script content for one callback.
+  last_edited_ms: 0
 6e8f5da7b1bf2ca5:
   path: src/modules/conversation/render_json.rs
   description: 'extract_json_fields(): serde-first + hand-parser fallback for incomplete streaming JSON key-value extraction'
@@ -1433,6 +1449,10 @@
 71e2df32cfa54e06:
   path: crates/cp-mod-memory/src/tools.rs
   description: Memory tools with flame!("memory_create") and flame!("memory_update"). tl_dr validation (80 token cap). Importance/labels. Batch create/update/delete.
+  last_edited_ms: 0
+724b961e89a4a1d9:
+  path: crates/cp-mod-callback/src/types.rs
+  description: Callback types. CallbackDefinition (name, pattern, script, blocking, timeout, success_message, cwd, is_global). CallbackState (definitions, active_set, editor_open).
   last_edited_ms: 0
 7254878aafcb4ad2:
   path: crates/cp-mod-typst/Cargo.toml
@@ -1481,7 +1501,7 @@
 75403f53fa0dec78:
   path: crates/cp-mod-files/src/tools/edit_file.rs
   description: 'execute_edit: replace old_string with new_string. flame!("file_edit"). Normalized matching for trailing whitespace. Unified diff display. Panel reference in LLM result. Closest-match error hints.'
-  last_edited_ms: 0
+  last_edited_ms: 1780648757744
 76162aa68245be51:
   path: crates/cp-base/src/config/mod.rs
   description: 'YAML config loader. 6 LazyLock statics (Prompts/Library/Injections/Reverie/Ui/Themes) from include_str!. Theme system: 6 themes × 16 RGB colors + icons. invariant_panic() for compile-time violations. Sub-modules: constants, global, llm_types, yaml_sync, behavioral, accessors.'
@@ -1577,6 +1597,10 @@
 7dacd6443c44c4ff:
   path: src/app/run/streaming.rs
   description: Stream event processing with flame!("stream") + flame!("finalize_stream"). Chunk→typewriter, ToolUse→pending, Done→finalize. Error retry up to MAX_API_RETRIES. finalize_stream() resets spine counters, updates cache engine.
+  last_edited_ms: 0
+7f3ef5ae7601d1ab:
+  path: crates/cp-mod-callback/src/storage.rs
+  description: YAML-backed persistent storage for callback definitions. Keyed by name (BTreeMap alphabetical). upsert/remove/populate/migrate functions. Script file read/write helpers (strip_script_header, write_script_file). cleanup_old_hash_keys migration.
   last_edited_ms: 0
 7f96c638d0d94837:
   path: src/ui/ir/conversation.rs
@@ -2265,7 +2289,7 @@ b5f00ac6a4ae8a14:
 b6162eed9f57263f:
   path: crates/cp-mod-files/src/tools/mod.rs
   description: 'Tool submodule routing: diff, edit_file, file, write'
-  last_edited_ms: 0
+  last_edited_ms: 1780648757766
 b6be0d9dc7f74661:
   path: crates/cp-mod-tree/Cargo.toml
   description: 'Tree module deps: cp-base, cp-render, crossterm, serde, serde_json, ignore, cp-mod-utilities.'
@@ -2357,6 +2381,10 @@ bddf74016a26a659:
 be5cb31393a75d26:
   path: crates/cp-base/src/panels.rs
   description: Panel trait + caching infra. hash_content uses FNV-1a via cp-mod-utilities. Freeze system. time_arith. paginate_content.
+  last_edited_ms: 0
+becb5cb633a92422:
+  path: crates/cp-mod-callback/src/trigger.rs
+  description: Callback trigger engine. collect_changed_files() extracts paths from Edit/Write tools. match_callbacks() with flame!("cb_match") matches files against glob patterns. validate_skip_names() warns on non-existent callbacks. partition_callbacks() splits blocking/async.
   last_edited_ms: 0
 bee55356d546a72a:
   path: test_file_to_describe.txt
@@ -2790,6 +2818,10 @@ e764dee9fb758b38:
   path: crates/cp-mod-entities/src/types.rs
   description: EntitiesState (db_path, dump_path, migrations_dir, schema_cache), SchemaCache, TableInfo, ColumnInfo, ForeignKeyInfo. get/get_mut helpers for State TypeMap access.
   last_edited_ms: 1780585450727
+e82421db0781e690:
+  path: yamls/tools/files.yaml
+  description: 'File tools YAML. 3 tools: Open (path string/array), Edit (file_path, old_string, new_string), Write (file_path, contents, skip_callbacks).'
+  last_edited_ms: 1780648767307
 e8740d926f5b34f9:
   path: src/state/cache.rs
   description: 'CachePool: 6-worker thread pool for non-blocking panel cache refresh, LazyLock global, process_cache_request() API'
@@ -3009,6 +3041,10 @@ fa180307e20d6957:
 fa7b20ea0106471a:
   path: website/index.html
   description: Website landing page
+  last_edited_ms: 0
+fa80f56f6a550a79:
+  path: crates/cp-mod-callback/src/tools_upsert.rs
+  description: Callback upsert tool. Create/update/delete callback definitions. Script file management. Diff-based script editing (old_string/new_string). YAML sync on every mutation.
   last_edited_ms: 0
 facee2199f39362a:
   path: Cargo.toml

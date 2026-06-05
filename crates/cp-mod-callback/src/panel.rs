@@ -24,16 +24,15 @@ impl CallbackPanel {
 
         let mut lines = Vec::new();
         lines.push(
-            "| ID | Name | Pattern | Description | Blocking | Timeout | Active | Scope | Success Msg | CWD |"
+            "| ID | Name | Pattern | Description | Blocking | Timeout | Scope | Success Msg | CWD |"
                 .to_string(),
         );
         lines.push(
-            "|------|------|---------|-------------|----------|---------|--------|-------|-------------|-----|"
+            "|------|------|---------|-------------|----------|---------|-------|-------------|-----|"
                 .to_string(),
         );
 
         for def in &cs.definitions {
-            let active = if cs.active_set.contains(&def.name) { "✓" } else { "✗" };
             let blocking = if def.blocking { "yes" } else { "no" };
             let timeout = def.timeout_secs.map_or_else(|| "—".to_string(), |t| format!("{t}s"));
             let success = def.success_message.as_deref().unwrap_or("—");
@@ -41,8 +40,8 @@ impl CallbackPanel {
             let scope = if def.is_global { "global" } else { "local" };
 
             lines.push(format!(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
-                def.id, def.name, def.pattern, def.description, blocking, timeout, active, scope, success, cwd
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                def.id, def.name, def.pattern, def.description, blocking, timeout, scope, success, cwd
             ));
         }
 
@@ -137,7 +136,6 @@ impl Panel for CallbackPanel {
         // Build table of callback definitions
         let mut rows = Vec::new();
         for def in &cs.definitions {
-            let active = if cs.active_set.contains(&def.name) { "✓" } else { "✗" };
             let blocking = if def.blocking { "yes" } else { "no" };
             let timeout = def.timeout_secs.map_or_else(|| "—".to_string(), |t| format!("{t}s"));
             let scope = if def.is_global { "global" } else { "local" };
@@ -151,7 +149,6 @@ impl Panel for CallbackPanel {
                 IrCell::styled(def.description.clone(), Semantic::Muted),
                 IrCell::text(blocking.into()),
                 IrCell::text(timeout),
-                IrCell::text(active.into()),
                 IrCell::styled(scope.into(), Semantic::Muted),
                 IrCell::styled(success.into(), Semantic::Muted),
                 IrCell::styled(cwd.into(), Semantic::Muted),
@@ -165,7 +162,6 @@ impl Panel for CallbackPanel {
                 ("Description", Align::Left),
                 ("Blocking", Align::Left),
                 ("Timeout", Align::Left),
-                ("Active", Align::Left),
                 ("Scope", Align::Left),
                 ("Success Msg", Align::Left),
                 ("CWD", Align::Left),
