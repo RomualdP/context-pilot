@@ -46,6 +46,10 @@
   path: src/llms/oai_providers/openai_compat.rs
   description: Shared OpenAI-compat message builder for Grok/Groq/DeepSeek. OaiMessage/OaiToolCall types. build_messages() with pre-assembled or raw paths. Tool pairing. Panel injection as fake tool calls.
   last_edited_ms: 0
+03fe0d1d840caf1d:
+  path: src/main.rs
+  description: Entry point. Phased boot screen (6 steps), FileLogger, raise_fd_limit() via rlimit, flame::init()/flush(), panic hook. use openssl as _ for vendored cross-compilation. Creates App + event channels, runs main loop.
+  last_edited_ms: 0
 04c08e799b8e944d:
   path: crates/cp-base/src/config/accessors.rs
   description: Theme state (AtomicU8 index), color/icon/char accessors, library + prompt template getters
@@ -568,8 +572,8 @@
   last_edited_ms: 0
 2b5786cd3f4046ad:
   path: crates/cp-mod-callback/src/lib.rs
-  description: 'Callback module. 4 tools: upsert/toggle/open/close editor. Depends on console. CallbackState: definitions (shared) + active_set/editor_open (per-worker). Glob-matched auto-fire on file edits.'
-  last_edited_ms: 0
+  description: 'Callback module. 3 tools: upsert/open/close editor. Depends on console. CallbackState: definitions (shared) + editor_open (per-worker). Glob-matched auto-fire on file edits. Callbacks always active.'
+  last_edited_ms: 1780649207672
 2b6d0c6194c214c1:
   path: crates/cp-mod-typst/src/tools_execute.rs
   description: Typst tool. flame!("typst_exec"). Unified gateway for compile/init/fonts/query/update/watch/unwatch/watchlist. Entry type creation for font/query results.
@@ -613,6 +617,10 @@
 2e908756fdf5dd30:
   path: src/main.rs
   description: Entry point. Phased boot screen (6 steps), FileLogger, raise_fd_limit() via rlimit, flame::init()/flush(), panic hook, CLI subcommands (typst-compile/recompile-watched). use openssl as _ for vendored cross-compilation. Creates App + event channels, runs main loop.
+  last_edited_ms: 0
+2eaa159c1b88cf0b:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
   last_edited_ms: 0
 2ecf7e57d940dc9e:
   path: docs/design-meilisearch.md
@@ -676,8 +684,8 @@
   last_edited_ms: 0
 33de1c508379ae28:
   path: crates/cp-mod-callback/src/tools.rs
-  description: Callback tool dispatch with flame!("cb_dispatch"). Routes upsert/toggle/open_editor/close_editor. Delegates upsert to tools_upsert.rs.
-  last_edited_ms: 0
+  description: Callback tool dispatch. Routes upsert/open_editor/close_editor. Delegates upsert to tools_upsert.rs.
+  last_edited_ms: 1780649207696
 341bf99f4a188e88:
   path: crates/cp-mod-entities/src/lib.rs
   description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search.
@@ -1420,8 +1428,8 @@
   last_edited_ms: 0
 6e8612aca76b3e84:
   path: crates/cp-mod-callback/src/panel.rs
-  description: Callback panel. Table view of all definitions (name/pattern/blocking/timeout/active/scope/success_msg/cwd). Editor sub-view shows script content for one callback.
-  last_edited_ms: 0
+  description: Callback panel. Table view of all definitions (ID/name/pattern/blocking/timeout/scope/success_msg/cwd). Editor sub-view shows script content for one callback. No Active column.
+  last_edited_ms: 1780649207706
 6e8f5da7b1bf2ca5:
   path: src/modules/conversation/render_json.rs
   description: 'extract_json_fields(): serde-first + hand-parser fallback for incomplete streaming JSON key-value extraction'
@@ -1452,8 +1460,8 @@
   last_edited_ms: 0
 724b961e89a4a1d9:
   path: crates/cp-mod-callback/src/types.rs
-  description: Callback types. CallbackDefinition (name, pattern, script, blocking, timeout, success_message, cwd, is_global). CallbackState (definitions, active_set, editor_open).
-  last_edited_ms: 0
+  description: Callback types. CallbackDefinition (name, pattern, script, blocking, timeout, success_message, cwd, is_global). CallbackState (definitions, editor_open). No active_set — all callbacks always active.
+  last_edited_ms: 1780649207684
 7254878aafcb4ad2:
   path: crates/cp-mod-typst/Cargo.toml
   description: 'Typst module deps: cp-base, cp-render, cp-mod-callback, serde, serde_json, chrono, typst, typst-pdf, reqwest, flate2, tar.'
@@ -1601,7 +1609,7 @@
 7f3ef5ae7601d1ab:
   path: crates/cp-mod-callback/src/storage.rs
   description: YAML-backed persistent storage for callback definitions. Keyed by name (BTreeMap alphabetical). upsert/remove/populate/migrate functions. Script file read/write helpers (strip_script_header, write_script_file). cleanup_old_hash_keys migration.
-  last_edited_ms: 0
+  last_edited_ms: 1780649207740
 7f96c638d0d94837:
   path: src/ui/ir/conversation.rs
   description: 'Conversation + overlay IR builder. Messages, history sections, streaming tools, input area. Overlays: QuestionForm, Autocomplete, PerfOverlay (build_perf_overlay with frame budgets, CPU/Meili stats, FD count, op table). Perf builder calls PERF.snapshot() and cp_mod_search::overlay_info().'
@@ -1970,6 +1978,10 @@
   path: crates/cp-base/src/lib.rs
   description: 'Foundation crate entry. Inline flame graph telemetry module (Guard RAII, folded-stack output, CP_FLAMEGRAPH=1 toggle). 7 modules: cast, config, flame, modules, panels, state, tools, ui. Tests: compile-time YAML validation (19 tool + 6 config YAML files) with #[expect(clippy::panic)].'
   last_edited_ms: 1780568982750
+9e2ebd598ceb45b4:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
 9e7b5def696af37a:
   path: crates/cp-mod-prompt/src/tools.rs
   description: Prompt tool dispatch with flame!("prompt_dispatch"). behaviour_create (agent/skill/command .md file creation), agent_load (switch active agent), skill_load (create skill Entry panel).
@@ -2186,6 +2198,10 @@ aeee549fd5ab07f2:
   path: crates/cp-mod-firecrawl/src/types.rs
   description: Firecrawl response types. ScrapeResponse/Data/Metadata, SearchResponse/SearchResult (polymorphic data field), MapResponse/MapLink, CrawlStartResponse/CrawlStatusResponse/CrawlPageData. All Serialize+Deserialize.
   last_edited_ms: 0
+af14c600c0042c99:
+  path: .context-pilot/config.json
+  description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
 af638eaf96a0207c:
   path: crates/cp-mod-git/src/classify.rs
   description: ReadOnly/Mutating classification, shell arg parsing with quote handling, operator blocking, subcommand-aware classify_git()
@@ -2217,6 +2233,10 @@ b15c976b1b6f7804:
 b1da47a447e425b1:
   path: src/ui/mod.rs
   description: Top-level render() with flame!("render"). IR frame build → sidebar + content panel + status bar + overlays (perf from IR, autocomplete from IR, config from IR, search index from IR). All overlays consume IR data.
+  last_edited_ms: 0
+b1ecf5b9a4c798df:
+  path: increment.txt
+  description: Throwaway test file for queue/preflight testing
   last_edited_ms: 0
 b1f377ed4ee6032b:
   path: crates/cp-render/src/overlay_ir.rs
@@ -2366,6 +2386,10 @@ bccd6076aebcf1e7:
   path: crates/cp-mod-memory/src/tools.rs
   description: Memory tools with flame!("memory_create") and flame!("memory_update"). tl_dr validation (80 token cap). Importance/labels. Batch create/update/delete.
   last_edited_ms: 0
+bd2f1faa83138934:
+  path: crates/cp-mod-callback/src/panel.rs
+  description: Callback panel. Table view of all definitions (ID/name/pattern/blocking/timeout/scope/success_msg/cwd). Editor sub-view shows script content for one callback. No Active column.
+  last_edited_ms: 0
 bd662097808facee:
   path: src/infra/constants.rs
   description: API/layout/loop/persistence constants + theme color accessors (from YAML themes) + card design tokens (card_text, card_agent_bg, card_reverie_bg, card_queue_bg, card_think_bg) + icons + prompts.
@@ -2384,8 +2408,8 @@ be5cb31393a75d26:
   last_edited_ms: 0
 becb5cb633a92422:
   path: crates/cp-mod-callback/src/trigger.rs
-  description: Callback trigger engine. collect_changed_files() extracts paths from Edit/Write tools. match_callbacks() with flame!("cb_match") matches files against glob patterns. validate_skip_names() warns on non-existent callbacks. partition_callbacks() splits blocking/async.
-  last_edited_ms: 0
+  description: Callback trigger engine. collect_changed_files() extracts paths from Edit/Write tools. match_callbacks() matches files against glob patterns — all callbacks always active. validate_skip_names() warns on non-existent callbacks. partition_callbacks() splits blocking/async.
+  last_edited_ms: 1780649207718
 bee55356d546a72a:
   path: test_file_to_describe.txt
   description: Version A of the test file
@@ -3045,7 +3069,7 @@ fa7b20ea0106471a:
 fa80f56f6a550a79:
   path: crates/cp-mod-callback/src/tools_upsert.rs
   description: Callback upsert tool. Create/update/delete callback definitions. Script file management. Diff-based script editing (old_string/new_string). YAML sync on every mutation.
-  last_edited_ms: 0
+  last_edited_ms: 1780649207729
 facee2199f39362a:
   path: Cargo.toml
   description: Workspace root. 22 crate members. Binary 'tui'. Edition 2024. Strict lint config (hundreds of forbid-level clippy/rust lints). openssl vendored for cross-compilation.
@@ -3074,6 +3098,10 @@ fbf8fe9fb44a116e:
   path: crates/cp-mod-entities/src/lib.rs
   description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search.
   last_edited_ms: 0
+fc3dcea69df2a495:
+  path: yamls/tools/callback.yaml
+  description: 'Callback tools YAML. 3 tools: Callback_upsert (create/update/delete), Callback_open_editor, Callback_close_editor.'
+  last_edited_ms: 1780649207659
 fc4be9dd868a81ef:
   path: src/llms/oai_providers/grok.rs
   description: xAI Grok client. OpenAI-compatible API. Shared openai_compat message building. XAI_API_KEY auth.

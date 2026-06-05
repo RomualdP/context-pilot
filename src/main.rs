@@ -380,6 +380,22 @@ fn main() -> ExitCode {
     let _r_leave = io::stdout().execute(LeaveAlternateScreen);
     infra::flame::flush();
 
+    // Self-restart on reload — lets `cpilot` work without the run.sh supervisor loop.
+    // exec() replaces this process with a fresh instance (same binary, same env).
+    // If exec fails, fall through to normal exit (run.sh catches it as before).
+    #[cfg(unix)]
+    if app.state.flags.lifecycle.reload_pending {
+        if let Ok(exe_path) = std::env::current_exe() {
+            use std::os::unix::process::CommandExt as _;
+            let mut args: Vec<String> = std::env::args().skip(1).collect();
+            if !args.iter().any(|a| a == "--resume-stream") {
+                args.push("--resume-stream".to_string());
+            }
+            // Replaces the current process — never returns on success
+            let _err = std::process::Command::new(exe_path).args(&args).exec();
+        }
+    }
+
     if let Err(e) = run_result {
         drop(writeln!(io::stderr(), "Fatal: {e}"));
         return ExitCode::FAILURE;

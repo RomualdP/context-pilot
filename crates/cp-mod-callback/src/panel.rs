@@ -23,13 +23,10 @@ impl CallbackPanel {
         }
 
         let mut lines = Vec::new();
+        lines
+            .push("| ID | Name | Pattern | Description | Blocking | Timeout | Scope | Success Msg | CWD |".to_string());
         lines.push(
-            "| ID | Name | Pattern | Description | Blocking | Timeout | Scope | Success Msg | CWD |"
-                .to_string(),
-        );
-        lines.push(
-            "|------|------|---------|-------------|----------|---------|-------|-------------|-----|"
-                .to_string(),
+            "|------|------|---------|-------------|----------|---------|-------|-------------|-----|".to_string(),
         );
 
         for def in &cs.definitions {
