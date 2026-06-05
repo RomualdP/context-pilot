@@ -1922,6 +1922,10 @@
   path: crates/cp-mod-queue/src/tools.rs
   description: Tool handlers for Queue_pause and Queue_undo with flame!("queue_pause") and flame!("queue_undo"). Queue_execute handled in pipeline.rs.
   last_edited_ms: 0
+923d2e0df1ce1d13:
+  path: .context-pilot/shared/entities/schema.sql
+  description: 'Auto-generated SQLite dump: CREATE + INSERT for all entity tables. Recovery source for DB corruption/deletion.'
+  last_edited_ms: 0
 926b621e0ccce87d:
   path: crates/cp-mod-tree/Cargo.toml
   description: 'Tree module deps: cp-base, cp-render, crossterm, serde, serde_json, ignore, cp-mod-utilities.'
@@ -2029,6 +2033,10 @@
 9d5d447760f0d688:
   path: crates/cp-mod-memory/src/lib.rs
   description: 'Memory module. 2 tools: memory_create/update. Fixed MEMORY panel. Global, not core. 80-token tl_dr cap. Module data: memories + next_id + open_ids. Importance-gradient visualizer (critical→low).'
+  last_edited_ms: 0
+9dcfc8d8a49f3b58:
+  path: increment.txt
+  description: Throwaway test file for queue/preflight testing
   last_edited_ms: 0
 9e202c919322b366:
   path: crates/cp-mod-brave/src/panel.rs

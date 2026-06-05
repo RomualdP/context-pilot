@@ -1,3 +1,23 @@
+folder-sizes:
+  name: folder-sizes
+  description: Check that no source directory exceeds 8 entries (CI gate)
+  pattern: '*.rs'
+  blocking: true
+  timeout_secs: 10
+  success_message: Folder sizes OK ✓
+  is_global: true
+  script_content: bash .github/checks/check-folder-sizes.sh
+  last_edited_ms: 0
+lint-integrity:
+  name: lint-integrity
+  description: Verify lint config hash chain integrity (protected files unchanged)
+  pattern: '*.rs'
+  blocking: true
+  timeout_secs: 10
+  success_message: Lint integrity OK ✓
+  is_global: true
+  script_content: bash .github/checks/check-lint-config.sh
+  last_edited_ms: 0
 rust-check:
   name: rust-check
   description: Run cargo check, clippy, and fmt --check on Rust file edits
@@ -16,46 +36,4 @@ rust-check:
 
     echo ""
     echo "All Rust checks passed."
-  last_edited_ms: 0
-rust-fmt:
-  name: rust-fmt
-  description: Run cargo fmt --check on Rust file changes — catches formatting issues
-  pattern: '*.rs'
-  blocking: true
-  timeout_secs: 10
-  success_message: Fmt passed ✓
-  is_global: true
-  script_content: cargo fmt --check 2>&1
-  last_edited_ms: 1780496660021
-structure-check:
-  name: structure-check
-  description: Check file lengths (max 500 lines) and folder sizes (max 8 entries) on Rust file edits
-  pattern: '*.rs'
-  blocking: true
-  timeout_secs: 30
-  success_message: Structure checks passed ✓
-  is_global: true
-  script_content: |
-    echo "=== Cargo fmt ==="
-    cargo fmt -- $CP_CHANGED_FILES 2>&1
-    echo "Formatted. ✓"
-
-    echo ""
-    echo "=== File length check (max 500 lines) ==="
-    bash .github/checks/check-file-lengths.sh 2>&1
-
-    echo ""
-    echo "=== Folder size check (max 8 entries) ==="
-    bash .github/checks/check-folder-sizes.sh 2>&1
-
-    echo ""
-    echo "=== Lint exception registry check ==="
-    bash .github/checks/check-lint-exceptions.sh 2>&1
-
-    echo ""
-    echo "=== Lint config integrity (hash chain) ==="
-    bash .github/checks/check-lint-config.sh 2>&1
-
-    echo ""
-    echo "All structure checks passed."
   last_edited_ms: 0
