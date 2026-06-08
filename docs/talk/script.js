@@ -18,7 +18,9 @@ const SECTIONS = [
   // Section 1 — The HOWs
   [
     { path: 'slides/2-0.html', label: 'The HOWs', dark: true },
-    { path: 'slides/2-1.html', label: 'Feature Explorer' },
+    { path: 'slides/2-2.html', label: 'Architecture' },
+    { path: 'slides/2-4.html', label: 'Feedbacks & Constraints' },
+    { path: 'slides/2-1.html', label: 'Learnings: Pot-Pourri' },
   ],
   // Section 2 — The WOWs
   [
