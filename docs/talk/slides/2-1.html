@@ -1,4 +1,319 @@
 <div class="section-label">II — The HOWs</div>
-<h1>The HOWs</h1>
-<div class="accent-line"></div>
-<p class="subtitle">Coming soon</p>
+<div class="slide-title-fe">The Context Pilot</div>
+
+<div class="feature-explorer">
+  <!-- Left: Context window (same style as animated slide) -->
+  <div class="fe-panel-col">
+    <div class="fe-window">
+      <div class="fe-blocks" id="fe-blocks"></div>
+    </div>
+  </div>
+
+  <!-- Vertical separator -->
+  <div class="fe-separator"></div>
+
+  <!-- Right: Statement area (no block, just text) -->
+  <div class="fe-detail-col">
+    <div class="fe-detail" id="fe-detail">
+      <div class="fe-placeholder">
+        <span class="fe-placeholder-arrow">←</span>
+        <span>Click a panel to explore</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .slide-title-fe {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--dark);
+    letter-spacing: -0.02em;
+    margin-bottom: 2rem;
+  }
+
+  .feature-explorer {
+    display: flex;
+    gap: 0;
+    width: 100%;
+    max-width: 64rem;
+    align-items: stretch;
+    min-height: 520px;
+  }
+
+  .fe-panel-col {
+    flex: 0 0 280px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Exact same container as the animated slide */
+  .fe-window {
+    width: 100%;
+    flex: 1;
+    border: 1.5px solid var(--light);
+    border-radius: 20px;
+    background: transparent;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .fe-blocks {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    right: 5px;
+    bottom: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* Exact same block style as animated slide */
+  .fe-block {
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    padding: 0 0.7rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: rgba(255,255,255,0.9);
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+    transition: box-shadow 0.25s ease, opacity 0.2s ease, margin 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  .fe-block:hover {
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.3), 0 2px 10px rgba(0,0,0,0.1);
+  }
+
+  .fe-block.selected {
+    box-shadow: 0 0 0 2.5px rgba(125,90,80,0.4), 0 0 16px rgba(125,90,80,0.2);
+    margin-top: 4px;
+    margin-bottom: 4px;
+    transform: scale(1.04);
+  }
+
+  /* Distinct colors per panel type */
+  .fe-block.t-brave    { background: #D48B4A; }
+  .fe-block.t-file     { background: #5E9B9B; }
+  .fe-block.t-memories { background: #C49060; }
+  .fe-block.t-radar    { background: #5B7EAE; }
+  .fe-block.t-overview { background: #8B9E7C; }
+  .fe-block.t-search   { background: #8E7B6B; }
+  .fe-block.t-spine    { background: #AE5B6E; }
+  .fe-block.t-tree     { background: #6B8E6B; }
+  .fe-block.t-history  { background: #A0896E; opacity: 0.75; }
+  .fe-block.t-todo     { background: #7B8B5E; }
+  .fe-block.t-chat     { background: #B4846C; }
+
+  /* ===== Vertical separator ===== */
+  .fe-separator {
+    width: 1px;
+    background: linear-gradient(
+      to bottom,
+      transparent 5%,
+      var(--light) 25%,
+      var(--mid) 50%,
+      var(--light) 75%,
+      transparent 95%
+    );
+    margin: 0 2.5rem;
+    flex-shrink: 0;
+    opacity: 0.5;
+  }
+
+  /* ===== Right: clean statement area ===== */
+  .fe-detail-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .fe-detail {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    position: relative;
+  }
+
+  /* Placeholder */
+  .fe-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    color: var(--mid);
+    font-size: 1.1rem;
+    font-style: italic;
+    opacity: 0.35;
+  }
+
+  .fe-placeholder-arrow {
+    font-size: 2rem;
+    animation: arrowPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes arrowPulse {
+    0%, 100% { transform: translateX(0); opacity: 0.5; }
+    50% { transform: translateX(-8px); opacity: 1; }
+  }
+
+  /* Statement content */
+  .fe-statement {
+    font-size: 1.9rem;
+    color: var(--text);
+    line-height: 1.5;
+    max-width: 28rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  .fe-statement .hl {
+    color: #B85C3A;
+  }
+
+  .fe-statement .strike {
+    text-decoration: line-through;
+    opacity: 0.45;
+    color: var(--mid);
+  }
+
+  /* Panel name tag */
+  .fe-panel-tag {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--mid);
+    opacity: 0.5;
+    margin-bottom: 1rem;
+  }
+
+  /* Subtitle */
+  .fe-subtitle {
+    font-size: 0.85rem;
+    color: var(--mid);
+    font-style: italic;
+    margin-top: 1rem;
+    line-height: 1.5;
+    opacity: 0.6;
+    max-width: 26rem;
+  }
+
+  .fe-statement-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+
+
+</style>
+
+<script>
+if (window._feCleanup) window._feCleanup();
+
+(function() {
+  const panels = [
+    { id: 'tree', type: 'tree', h: 75, label: '🌳 Tree',
+      tag: 'Directory Tree',
+      html: 'Enforcing a <span class="hl">clear</span> and <span class="hl">simple</span> map of files and folders beats any <span class="strike">CLAUDE.md</span>',
+      sub: 'Brutally forcing the LLM to maintain it.' },
+    { id: 'overview', type: 'overview', h: 30, label: '📊 Overview',
+      tag: 'Overview',
+      html: '<span class="hl">Cost Optimization</span> #27',
+      sub: 'A complete view of open panels, token counts, costs, git status, etc.' },
+    { id: 'mem', type: 'memories', h: 50, label: '💾 Memories',
+      tag: 'Memories',
+      html: 'Project-wide, <span class="hl">git-committed</span>, always-loaded memories' },
+    { id: 'radar', type: 'radar', h: 35, label: '📡 Context Radar',
+      tag: 'Context Radar',
+      html: 'Continuity and long-term memory is f****** <span class="hl">HARD</span> to engineer',
+      sub: 'A smart combination of indexing, hybrid search, tool parametrization and LLM behaviour enforcement.' },
+    { id: 'file', type: 'file', h: 45, label: '📄 main.rs',
+      tag: 'File Panels',
+      html: '<span class="hl">Refreshed</span>. No Doublons. <span class="hl">Simple</span>.' },
+    { id: 'hist', type: 'history', h: 25, label: '📜 History (detached)',
+      tag: 'Conversation History',
+      html: '<span class="hl">Cost Optimization</span> #42' },
+    { id: 'brave', type: 'brave', h: 28, label: '🌐 Brave Search',
+      tag: 'Web Search & APIs',
+      html: 'Others do it <span class="hl">better</span> and <span class="hl">cheaper</span> than you — don\'t re-invent the wheel, ever.',
+      sub: 'Surya Datalab for OCR, Firecrawl for scraping, Voyage for Embeddings, Brave for Web Search.' },
+    { id: 'search', type: 'search', h: 35, label: '🔍 Search',
+      tag: 'Hybrid Search',
+      html: 'Helping the LLM live in a <span class="hl">perfect world</span> for him',
+      sub: 'Adding features is easy. Picking the right ones is tremendously hard.' },
+    { id: 'spine', type: 'spine', h: 25, label: '🧠 Spine',
+      tag: 'Spine',
+      html: 'LLMs are <span class="hl">lazy</span>. Whip them.' },
+    { id: 'todo', type: 'todo', h: 25, label: '📋 Todo',
+      tag: 'Todo List',
+      html: '<span class="hl">More</span> than a stupid todo.' },
+    { id: 'chat', type: 'chat', h: 55, label: '💬 Conversation',
+      tag: 'Conversation',
+      html: 'The working brain needs to be <span class="hl">unstained</span>, <span class="hl">compact</span> information about WIP',
+      sub: 'Very little tokens wasted here.' },
+  ];
+
+  const blocksContainer = document.getElementById('fe-blocks');
+  const detailPane = document.getElementById('fe-detail');
+  let selectedId = null;
+
+  // Build blocks
+  panels.forEach(p => {
+    const el = document.createElement('div');
+    el.className = `fe-block t-${p.type}`;
+    el.style.height = p.h + 'px';
+    el.textContent = p.label;
+    el.dataset.pid = p.id;
+    el.addEventListener('click', () => selectPanel(p));
+    blocksContainer.appendChild(el);
+  });
+
+  function selectPanel(p) {
+    if (selectedId === p.id) return;
+
+    // Highlight block
+    blocksContainer.querySelectorAll('.fe-block').forEach(el => el.classList.remove('selected'));
+    const el = blocksContainer.querySelector(`[data-pid="${p.id}"]`);
+    if (el) el.classList.add('selected');
+    selectedId = p.id;
+
+    // Fade out current content to the left
+    detailPane.style.opacity = '0';
+    detailPane.style.transform = 'translateX(-20px)';
+    detailPane.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+
+    setTimeout(() => {
+      // Build new content
+      let content = `<div class="fe-statement-wrap">`;
+      content += `<div class="fe-panel-tag">${p.tag}</div>`;
+      content += `<div class="fe-statement">${p.html}</div>`;
+      if (p.sub) {
+        content += `<div class="fe-subtitle">${p.sub}</div>`;
+      }
+      content += `</div>`;
+      detailPane.innerHTML = content;
+
+      // Position off-screen right
+      detailPane.style.transition = 'none';
+      detailPane.style.opacity = '0';
+      detailPane.style.transform = 'translateX(40px)';
+
+      // Force reflow
+      void detailPane.offsetWidth;
+
+      // Slide in from right
+      detailPane.style.transition = 'opacity 0.4s cubic-bezier(0.22,0.61,0.36,1), transform 0.4s cubic-bezier(0.22,0.61,0.36,1)';
+      detailPane.style.opacity = '1';
+      detailPane.style.transform = 'translateX(0)';
+    }, 160);
+  }
+
+  window._feCleanup = function() { selectedId = null; };
+})();
+</script>

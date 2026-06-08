@@ -11,14 +11,14 @@ const SECTIONS = [
   // Section 0 — The WHYs
   [
     { path: 'slides/1-0.html', label: 'The WHYs', dark: true },
-    { path: 'slides/1-1.html', label: 'Crafting Context' },
-    { path: 'slides/1-2.html', label: 'Unleashing LLMs' },
-    { path: 'slides/1-3.html', label: 'Opinionating' },
+    { path: 'slides/1-2.html', label: "What's failing" },
+    { path: 'slides/1-3.html', label: "What I'd Add" },
+    { path: 'slides/1-1.html', label: 'Token Jewelry' },
   ],
   // Section 1 — The HOWs
   [
     { path: 'slides/2-0.html', label: 'The HOWs', dark: true },
-    { path: 'slides/2-1.html', label: 'HOWs' },
+    { path: 'slides/2-1.html', label: 'Feature Explorer' },
   ],
   // Section 2 — The WOWs
   [
@@ -35,11 +35,21 @@ const cache = {};
 const currentEl  = document.getElementById('slide-current');
 const incomingEl = document.getElementById('slide-incoming');
 
+/* ---------- Activate <script> tags injected via innerHTML ---------- */
+function activateScripts(el) {
+  el.querySelectorAll('script').forEach(old => {
+    const s = document.createElement('script');
+    s.textContent = old.textContent;
+    old.parentNode.replaceChild(s, old);
+  });
+}
+
 /* ---------- Bootstrap ---------- */
 async function init() {
   const first = SECTIONS[0][0];
   const html = await fetchSlide(first.path);
   currentEl.innerHTML = html;
+  activateScripts(currentEl);
   currentEl.className = 'slide center' + (first.dark ? ' slide-dark' : '');
   updateUI();
 }
@@ -116,6 +126,7 @@ function navigate(newSection, newSlide) {
       currentEl.innerHTML = incomingEl.innerHTML;
       currentEl.className = 'slide center' + (isDark ? ' slide-dark' : '');
       currentEl.style.opacity = '1';
+      activateScripts(currentEl);
       void currentEl.offsetWidth;          // force reflow before re-enabling
       currentEl.style.transition = '';
 
@@ -158,6 +169,7 @@ function buildSidebar() {
   // Current section's slides only
   const slides = SECTIONS[sectionIdx];
   slides.forEach((slide, sli) => {
+    if (slide.dark) return; // skip TOC slides
     const item = document.createElement('div');
     item.className = 'sidebar-item' + (sli === slideIdx ? ' active' : '');
 
