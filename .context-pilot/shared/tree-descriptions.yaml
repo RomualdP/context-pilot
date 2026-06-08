@@ -846,6 +846,10 @@
   path: src/state/persistence/message.rs
   description: 'Message persistence: save/load/delete individual conversation messages as YAML files. record_prompt_history() appends to prompt-history.jsonl (append-only, cross-conversation).'
   last_edited_ms: 0
+3e3cd8c1f42844db:
+  path: .context-pilot/shared/entities/schema.sql
+  description: 'Auto-generated SQLite dump: CREATE + INSERT for all entity tables. Recovery source for DB corruption/deletion.'
+  last_edited_ms: 0
 3e684ead94cd0fcf:
   path: crates/cp-mod-prompt/src/lib.rs
   description: 'Prompt library module. 3 tools: Behaviour_create, agent_load, skill_load. 2 panels: Library (fixed) + Skill (dynamic). Core, global. Edit pre-flight validates YAML frontmatter on prompt .md files. is_prompt_file() with canonicalize() for abs/rel path matching.'
@@ -977,6 +981,10 @@
 480d0b99c9c60078:
   path: .context-pilot/config.json
   description: 'Global config: active model, API keys, feature flags'
+  last_edited_ms: 0
+486df436aa0dfe78:
+  path: src/ui/helpers.rs
+  description: 'Shared UI helpers: truncate_string, format_number, format_time_ago, wrap_text, count_wrapped_lines. Braille spinner (wall-clock-time-based, 10fps). IR-aware syntax highlighting (syntect, LRU cache, do_highlight_ir). TypewriterBuffer for streaming animation.'
   last_edited_ms: 0
 48f679baafd75d4d:
   path: crates/cp-mod-scratchpad/src/panel.rs
@@ -1318,6 +1326,10 @@
   path: src/modules/overview/tools/close_context.rs
   description: 'Close_panel execution. Partial close: valid panels close, undescribed/stale-description file panels are skipped (not blocked). Module on_close_context hooks. Output: closed/skipped/not_found/errors sections.'
   last_edited_ms: 0
+627f069be19818e7:
+  path: src/ui/ir/render_sidebar_stats.rs
+  description: Sidebar cache stats renderer — token table (hit/miss/out per row), format_cost closure ($K tier for ≥1000), total cost line, uncached count. Consumes CacheStats IR data.
+  last_edited_ms: 1780907685228
 62ca35371b6fa7c3:
   path: crates/cp-mod-entities/src/db.rs
   description: SQLite connection factory, bootstrap, introspection, dump/restore. open() with PRAGMAs (WAL, FK, busy_timeout, journal_size_limit). introspect() for SchemaCache. dump_to_file/restore_from_file with 1MB cap. sample_rows for panel. has_user_tables. checkpoint.
