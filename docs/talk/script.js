@@ -5,27 +5,32 @@
  * Up/Down    : change slide within current section.
  */
 
-const SECTION_NAMES = ['The WHYs', 'The HOWs', 'The WOWs'];
+const SECTION_NAMES = ['Overview', 'The WHYs', 'The HOWs', 'The WOWs'];
 
 const SECTIONS = [
-  // Section 0 — The WHYs
+  // Section 0 — Main TOC
+  [
+    { path: 'slides/0-0.html', label: 'Overview', dark: true },
+  ],
+  // Section 1 — The WHYs
   [
     { path: 'slides/1-0.html', label: 'The WHYs', dark: true },
     { path: 'slides/1-2.html', label: "What's failing" },
     { path: 'slides/1-3.html', label: "What I'd Add" },
     { path: 'slides/1-1.html', label: 'Token Jewelry' },
   ],
-  // Section 1 — The HOWs
+  // Section 2 — The HOWs
   [
     { path: 'slides/2-0.html', label: 'The HOWs', dark: true },
     { path: 'slides/2-2.html', label: 'Architecture' },
     { path: 'slides/2-4.html', label: 'Feedbacks & Constraints' },
     { path: 'slides/2-1.html', label: 'Learnings: Pot-Pourri' },
   ],
-  // Section 2 — The WOWs
+  // Section 3 — The WOWs
   [
     { path: 'slides/3-0.html', label: 'The WOWs', dark: true },
-    { path: 'slides/3-1.html', label: 'WOWs' },
+    { path: 'slides/3-1.html', label: 'Showcase' },
+    { path: 'slides/3-2.html', label: 'Self-Improving Loop' },
   ],
 ];
 
@@ -191,10 +196,18 @@ function buildSidebar() {
 
 /* ---------- Wire TOC clicks ---------- */
 function wireTocClicks() {
+  // Within-section navigation (data-slide)
   document.querySelectorAll('.toc-item[data-slide]').forEach(el => {
     el.addEventListener('click', () => {
       const target = parseInt(el.dataset.slide, 10);
       navigate(sectionIdx, target);
+    });
+  });
+  // Cross-section navigation (data-section) — matches both .toc-item and .toc-col
+  document.querySelectorAll('[data-section]').forEach(el => {
+    el.addEventListener('click', () => {
+      const target = parseInt(el.dataset.section, 10);
+      navigate(target, 0);
     });
   });
 }
