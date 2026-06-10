@@ -26,12 +26,8 @@ pub trait ModelPricing {
     fn cache_miss_price_per_mtok(&self) -> f32;
     /// Output price per million tokens.
     fn output_price_per_mtok(&self) -> f32;
-    /// Cleaning target as absolute proportion (threshold × target ratio).
-    fn cleaning_target(&self) -> f32;
     /// Cleaning threshold in tokens.
     fn cleaning_threshold_tokens(&self) -> usize;
-    /// Cleaning target in tokens.
-    fn cleaning_target_tokens(&self) -> usize;
 }
 
 impl ModelPricing for State {
@@ -130,16 +126,8 @@ impl ModelPricing for State {
         }
     }
 
-    fn cleaning_target(&self) -> f32 {
-        self.cleaning_threshold * self.cleaning_target_proportion
-    }
-
     fn cleaning_threshold_tokens(&self) -> usize {
         (self.effective_context_budget().to_f32() * self.cleaning_threshold).to_usize()
-    }
-
-    fn cleaning_target_tokens(&self) -> usize {
-        (self.effective_context_budget().to_f32() * self.cleaning_target()).to_usize()
     }
 }
 

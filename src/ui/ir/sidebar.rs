@@ -4,7 +4,6 @@
 //! into pure functions returning IR types. No ratatui, no Frame.
 
 use cp_base::state::data::model_helpers::ModelPricing as _;
-use cp_base::state::data::model_helpers::token_cost;
 use cp_render::frame::{HelpHint, PrCard, Sidebar, SidebarEntry, SidebarMode, TokenBar, TokenRow, TokenStats};
 use cp_render::{ProgressSegment, Semantic};
 
@@ -208,8 +207,7 @@ fn build_token_bar(state: &State) -> TokenBar {
 /// Build the token statistics breakdown (cache hit / miss / output + costs).
 fn build_token_stats(state: &State) -> Option<TokenStats> {
     /// Returns `Some(cost)` when ≥ $0.001, else `None`.
-    fn token_cost_opt(tokens: usize, price: f32) -> Option<f64> {
-        let c = token_cost(tokens, price);
+    fn cost_opt(c: f64) -> Option<f64> {
         (c >= 0.001).then_some(c)
     }
 
@@ -217,21 +215,17 @@ fn build_token_stats(state: &State) -> Option<TokenStats> {
         return None;
     }
 
-    let hit_price = state.cache_hit_price_per_mtok();
-    let miss_price = state.cache_miss_price_per_mtok();
-    let out_price = state.output_price_per_mtok();
-
     let mut rows = Vec::new();
 
-    // tot row
+    // tot row — costs are frozen at consumption-time pricing (not recomputed here).
     rows.push(TokenRow {
         label: "tot".into(),
         hit: state.cache_hit_tokens.to_u32(),
         miss: state.cache_miss_tokens.to_u32(),
         output: state.total_output_tokens.to_u32(),
-        hit_cost: token_cost_opt(state.cache_hit_tokens, hit_price),
-        miss_cost: token_cost_opt(state.cache_miss_tokens, miss_price),
-        output_cost: token_cost_opt(state.total_output_tokens, out_price),
+        hit_cost: cost_opt(state.cost_hit_usd),
+        miss_cost: cost_opt(state.cost_miss_usd),
+        output_cost: cost_opt(state.cost_output_usd),
     });
 
     // strm row
@@ -241,9 +235,9 @@ fn build_token_stats(state: &State) -> Option<TokenStats> {
             hit: state.stream_cache_hit_tokens.to_u32(),
             miss: state.stream_cache_miss_tokens.to_u32(),
             output: state.stream_output_tokens.to_u32(),
-            hit_cost: token_cost_opt(state.stream_cache_hit_tokens, hit_price),
-            miss_cost: token_cost_opt(state.stream_cache_miss_tokens, miss_price),
-            output_cost: token_cost_opt(state.stream_output_tokens, out_price),
+            hit_cost: cost_opt(state.stream_cost_hit_usd),
+            miss_cost: cost_opt(state.stream_cost_miss_usd),
+            output_cost: cost_opt(state.stream_cost_output_usd),
         });
     }
 
@@ -254,16 +248,14 @@ fn build_token_stats(state: &State) -> Option<TokenStats> {
             hit: state.tick_cache_hit_tokens.to_u32(),
             miss: state.tick_cache_miss_tokens.to_u32(),
             output: state.tick_output_tokens.to_u32(),
-            hit_cost: token_cost_opt(state.tick_cache_hit_tokens, hit_price),
-            miss_cost: token_cost_opt(state.tick_cache_miss_tokens, miss_price),
-            output_cost: token_cost_opt(state.tick_output_tokens, out_price),
+            hit_cost: cost_opt(state.tick_cost_hit_usd),
+            miss_cost: cost_opt(state.tick_cost_miss_usd),
+            output_cost: cost_opt(state.tick_cost_output_usd),
         });
     }
 
-    // Total cost
-    let total_cost = token_cost(state.cache_hit_tokens, hit_price)
-        + token_cost(state.cache_miss_tokens, miss_price)
-        + token_cost(state.total_output_tokens, out_price);
+    // Total cost (sum of frozen legs)
+    let total_cost = state.cost_hit_usd + state.cost_miss_usd + state.cost_output_usd;
     let total_cost_opt = (total_cost >= 0.001).then_some(total_cost);
 
     Some(TokenStats {

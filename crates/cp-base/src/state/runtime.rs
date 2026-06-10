@@ -121,10 +121,32 @@ pub struct State {
     pub tick_uncached_input_tokens: usize,
     /// Cleaning threshold (0.0 - 1.0), triggers auto-cleaning when exceeded
     pub cleaning_threshold: f32,
-    /// Cleaning target as proportion of threshold (0.0 - 1.0)
-    pub cleaning_target_proportion: f32,
     /// Context budget in tokens (None = use model's full context window)
     pub context_budget: Option<usize>,
+
+    /// Accumulated cost in USD, frozen at consumption-time pricing.
+    ///
+    /// Unlike token counts (which are model-agnostic), cost is computed once per
+    /// stream using the price active at that moment, then accumulated. Switching
+    /// model afterwards does NOT retroactively rewrite these — past spend stays put.
+    /// Cache-hit / cache-miss / output legs are tracked separately for the sidebar.
+    pub cost_hit_usd: f64,
+    /// Accumulated cache-miss cost in USD (frozen at consumption-time pricing).
+    pub cost_miss_usd: f64,
+    /// Accumulated output cost in USD (frozen at consumption-time pricing).
+    pub cost_output_usd: f64,
+    /// Current-stream cache-hit cost in USD (reset per user input).
+    pub stream_cost_hit_usd: f64,
+    /// Current-stream cache-miss cost in USD (reset per user input).
+    pub stream_cost_miss_usd: f64,
+    /// Current-stream output cost in USD (reset per user input).
+    pub stream_cost_output_usd: f64,
+    /// Last-tick cache-hit cost in USD (set per `StreamDone`).
+    pub tick_cost_hit_usd: f64,
+    /// Last-tick cache-miss cost in USD (set per `StreamDone`).
+    pub tick_cost_miss_usd: f64,
+    /// Last-tick output cost in USD (set per `StreamDone`).
+    pub tick_cost_output_usd: f64,
 
     /// Result of the last API check
     pub api_check_result: Option<crate::config::llm_types::ApiCheckResult>,
@@ -237,8 +259,16 @@ impl Default for State {
             tick_output_tokens: 0,
             tick_uncached_input_tokens: 0,
             cleaning_threshold: 0.70,
-            cleaning_target_proportion: 0.70,
             context_budget: None,
+            cost_hit_usd: 0.0,
+            cost_miss_usd: 0.0,
+            cost_output_usd: 0.0,
+            stream_cost_hit_usd: 0.0,
+            stream_cost_miss_usd: 0.0,
+            stream_cost_output_usd: 0.0,
+            tick_cost_hit_usd: 0.0,
+            tick_cost_miss_usd: 0.0,
+            tick_cost_output_usd: 0.0,
             api_check_result: None,
             api_retry_count: 0,
             guard_rail_blocked: None,

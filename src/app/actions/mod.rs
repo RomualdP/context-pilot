@@ -293,6 +293,15 @@ pub(crate) fn apply_action(state: &mut State, action: Action) -> ActionResult {
             state.cache_miss_tokens = 0;
             state.total_output_tokens = 0;
             state.uncached_input_tokens = 0;
+            state.cost_hit_usd = 0.0;
+            state.cost_miss_usd = 0.0;
+            state.cost_output_usd = 0.0;
+            state.stream_cost_hit_usd = 0.0;
+            state.stream_cost_miss_usd = 0.0;
+            state.stream_cost_output_usd = 0.0;
+            state.tick_cost_hit_usd = 0.0;
+            state.tick_cost_miss_usd = 0.0;
+            state.tick_cost_output_usd = 0.0;
             state.guard_rail_blocked = None;
             state.cache_engine_json = None;
             ActionResult::Save

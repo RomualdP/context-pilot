@@ -76,7 +76,6 @@ impl Module for OverviewModule {
             "secondary_deepseek_model": state.secondary_deepseek_model,
             "reverie_enabled": state.flags.config.reverie_enabled,
             "cleaning_threshold": state.cleaning_threshold,
-            "cleaning_target_proportion": state.cleaning_target_proportion,
             "context_budget": state.context_budget,
             "global_next_uid": state.global_next_uid,
             "cache_hit_tokens": state.cache_hit_tokens,
@@ -155,9 +154,6 @@ impl Module for OverviewModule {
         }
         if let Some(v) = data.get("cleaning_threshold").and_then(serde_json::Value::as_f64) {
             state.cleaning_threshold = v.to_f32();
-        }
-        if let Some(v) = data.get("cleaning_target_proportion").and_then(serde_json::Value::as_f64) {
-            state.cleaning_target_proportion = v.to_f32();
         }
         if let Some(v) = data.get("context_budget") {
             state.context_budget = v.as_u64().map(Safe::to_usize);

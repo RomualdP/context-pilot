@@ -1,5 +1,6 @@
 use crate::state::persistence::log_error;
 use crate::state::{Kind, State, StreamPhase, estimate_tokens};
+use cp_base::state::data::model_helpers::{ModelPricing as _, token_cost};
 
 use super::ActionResult;
 use super::helpers::clean_llm_id_prefix;
@@ -38,6 +39,16 @@ struct TokenUsage {
     uncached_input: usize,
 }
 
+/// Per-stream cost in USD, frozen at the producing model's pricing.
+struct StreamCost {
+    /// Cache-hit cost in USD for this stream.
+    hit: f64,
+    /// Cache-miss (incl. uncached input) cost in USD for this stream.
+    miss: f64,
+    /// Output cost in USD for this stream.
+    output: f64,
+}
+
 /// Aggregated fields from the LLM API response when a stream finishes.
 ///
 /// Each field maps 1:1 to an API response field, bundled to avoid
@@ -68,7 +79,16 @@ pub(crate) fn handle_stream_done(state: &mut State, event: &StreamDoneEvent<'_>)
         cache_miss: event.cache_miss.saturating_add(event.input_tokens),
         uncached_input: event.input_tokens,
     };
-    apply_token_usage(state, &usage);
+
+    // Cost is frozen here, at the price of the model that produced THIS response.
+    // Accumulating dollars (not recomputing tokens × current price later) keeps past
+    // spend stable when the user switches models afterwards.
+    let cost = StreamCost {
+        hit: token_cost(usage.cache_hit, state.cache_hit_price_per_mtok()),
+        miss: token_cost(usage.cache_miss, state.cache_miss_price_per_mtok()),
+        output: token_cost(usage.output, state.output_price_per_mtok()),
+    };
+    apply_token_usage(state, &usage, &cost);
 
     // Correct the estimated tokens with actual output tokens on Conversation context and update timestamp
     if let Some(ctx) = state.context.iter_mut().find(|c| c.context_type.as_str() == Kind::CONVERSATION) {
@@ -93,13 +113,16 @@ pub(crate) fn handle_stream_done(state: &mut State, event: &StreamDoneEvent<'_>)
     ActionResult::Save
 }
 
-/// Apply token usage to state counters.
-const fn apply_token_usage(app_state: &mut State, usage: &TokenUsage) {
+/// Apply token usage and frozen per-stream cost to state counters.
+fn apply_token_usage(app_state: &mut State, usage: &TokenUsage, cost: &StreamCost) {
     // Set tick usage (this tick only)
     app_state.tick_cache_hit_tokens = usage.cache_hit;
     app_state.tick_cache_miss_tokens = usage.cache_miss;
     app_state.tick_output_tokens = usage.output;
     app_state.tick_uncached_input_tokens = usage.uncached_input;
+    app_state.tick_cost_hit_usd = cost.hit;
+    app_state.tick_cost_miss_usd = cost.miss;
+    app_state.tick_cost_output_usd = cost.output;
 
     // Accumulate per-stream usage (reset at InputSubmit)
     app_state.stream_cache_hit_tokens = app_state.stream_cache_hit_tokens.saturating_add(usage.cache_hit);
@@ -107,12 +130,18 @@ const fn apply_token_usage(app_state: &mut State, usage: &TokenUsage) {
     app_state.stream_output_tokens = app_state.stream_output_tokens.saturating_add(usage.output);
     app_state.stream_uncached_input_tokens =
         app_state.stream_uncached_input_tokens.saturating_add(usage.uncached_input);
+    app_state.stream_cost_hit_usd += cost.hit;
+    app_state.stream_cost_miss_usd += cost.miss;
+    app_state.stream_cost_output_usd += cost.output;
 
     // Accumulate total usage
     app_state.cache_hit_tokens = app_state.cache_hit_tokens.saturating_add(usage.cache_hit);
     app_state.cache_miss_tokens = app_state.cache_miss_tokens.saturating_add(usage.cache_miss);
     app_state.total_output_tokens = app_state.total_output_tokens.saturating_add(usage.output);
     app_state.uncached_input_tokens = app_state.uncached_input_tokens.saturating_add(usage.uncached_input);
+    app_state.cost_hit_usd += cost.hit;
+    app_state.cost_miss_usd += cost.miss;
+    app_state.cost_output_usd += cost.output;
 }
 
 /// Handle `StreamError` action — clean up streaming state, log error.
