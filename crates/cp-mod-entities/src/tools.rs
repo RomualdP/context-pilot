@@ -6,6 +6,7 @@ use cp_base::tools::{ToolResult, ToolUse};
 
 use crate::errors::enrich_error;
 use crate::format::{self, extract_table_name, format_cell, format_markdown_table};
+use crate::parse::{SqlKind, classify, split_statements};
 use crate::result_panel::{self, LivePanelMeta};
 use crate::{db, migrations};
 
@@ -24,124 +25,6 @@ const PANEL_WARNING: &str = "\n\nIMPORTANT: Results live in this panel. Act on t
     (write files, answer questions, store in scratchpad, etc.), THEN close the panel. Closing it \
     IMMEDIATELY and IRREVERSIBLY erases all content from your context — you cannot recall it from \
     memory afterward. Never close-then-act; always act-then-close.";
-
-// =============================================================================
-// SQL classification
-// =============================================================================
-
-/// Broad category of a SQL statement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SqlKind {
-    /// `SELECT`, `EXPLAIN`, `PRAGMA` (read-only).
-    Select,
-    /// `INSERT`, `UPDATE`, `DELETE` (data manipulation).
-    Dml,
-    /// `CREATE`, `ALTER`, `DROP` (schema change).
-    Ddl,
-}
-
-/// Classify a SQL statement by its first keyword.
-///
-/// Leading SQL comments (`--` line and `/* */` block) are stripped before
-/// classification. CTEs (`WITH ... SELECT` vs `WITH ... INSERT`) are detected
-/// by scanning for DML/DDL keywords after the CTE. Default is [`SqlKind::Dml`]
-/// (conservative).
-pub(crate) fn classify(sql: &str) -> SqlKind {
-    let stripped = strip_leading_comments(sql);
-    let upper = stripped.trim().to_uppercase();
-    let first_word: String = upper.chars().take_while(char::is_ascii_alphabetic).collect();
-
-    match first_word.as_str() {
-        "SELECT" | "EXPLAIN" | "PRAGMA" => SqlKind::Select,
-        "CREATE" | "ALTER" | "DROP" => SqlKind::Ddl,
-        "WITH" => classify_cte(&upper),
-        _ => SqlKind::Dml, // conservative: INSERT/UPDATE/DELETE/REPLACE and unknown
-    }
-}
-
-/// Classify a CTE by scanning for DML/DDL keywords after `WITH`.
-fn classify_cte(upper: &str) -> SqlKind {
-    // Look for DDL keywords
-    if upper.contains("CREATE ") || upper.contains("ALTER ") || upper.contains("DROP ") {
-        return SqlKind::Ddl;
-    }
-    // Look for DML keywords
-    if upper.contains("INSERT ") || upper.contains("UPDATE ") || upper.contains("DELETE ") || upper.contains("REPLACE ")
-    {
-        return SqlKind::Dml;
-    }
-    SqlKind::Select
-}
-
-/// Strip leading SQL comments from a string.
-///
-/// Removes `--` line comments and `/* ... */` block comments that appear
-/// before the first actual SQL keyword. Handles multiple consecutive comments.
-fn strip_leading_comments(sql: &str) -> &str {
-    let mut s = sql.trim_start();
-    loop {
-        if s.starts_with("--") {
-            // Skip to end of line
-            s = s.find('\n').map_or("", |pos| s.get(pos.saturating_add(1)..).unwrap_or(""));
-            s = s.trim_start();
-        } else if s.starts_with("/*") {
-            // Skip to closing */
-            s = s.get(2..).unwrap_or("").find("*/").map_or("", |pos| s.get(pos.saturating_add(4)..).unwrap_or(""));
-            s = s.trim_start();
-        } else {
-            break;
-        }
-    }
-    s
-}
-
-// =============================================================================
-// Statement splitting
-// =============================================================================
-
-/// Split SQL on `;` while respecting single-quoted string literals.
-///
-/// Handles `''` escape sequences inside strings.
-pub(crate) fn split_statements(sql: &str) -> Vec<&str> {
-    let mut results = Vec::new();
-    let mut start = 0;
-    let mut in_string = false;
-    let chars: Vec<char> = sql.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        let ch = chars.get(i).copied().unwrap_or_default();
-
-        if in_string {
-            if ch == '\'' {
-                // Check for escaped quote ('')
-                if chars.get(i.saturating_add(1)).copied() == Some('\'') {
-                    i = i.saturating_add(2);
-                    continue;
-                }
-                in_string = false;
-            }
-        } else if ch == '\'' {
-            in_string = true;
-        } else if ch == ';' {
-            let stmt = sql.get(start..i).unwrap_or_default().trim();
-            if !stmt.is_empty() && !strip_leading_comments(stmt).is_empty() {
-                results.push(stmt);
-            }
-            start = i.saturating_add(1);
-        }
-
-        i = i.saturating_add(1);
-    }
-
-    // Last statement (no trailing semicolon)
-    let tail = sql.get(start..).unwrap_or_default().trim();
-    if !tail.is_empty() && !strip_leading_comments(tail).is_empty() {
-        results.push(tail);
-    }
-
-    results
-}
 
 // =============================================================================
 // Main execution entry point
