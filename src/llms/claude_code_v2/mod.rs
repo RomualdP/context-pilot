@@ -45,8 +45,13 @@ const BETA_HEADER: &str = "\
     token-efficient-tools-2025-02-19";
 
 /// Billing header for V2 traffic validation.
+///
+/// `cc_is_subagent=true;` is appended systematically — captured Claude Code
+/// subagent traffic carries this flag (main-agent traffic does not). Marking
+/// our requests as subagent may route them through a distinct billing/rate
+/// bucket.
 const BILLING_HEADER: &str =
-    "x-anthropic-billing-header: cc_version=2.1.170.6bc; cc_entrypoint=sdk-cli; cch=3d037;";
+    "x-anthropic-billing-header: cc_version=2.1.170.6bc; cc_entrypoint=sdk-cli; cch=3d037; cc_is_subagent=true;";
 
 /// Claude Code V2 OAuth client.
 pub(crate) struct ClaudeCodeV2Client {

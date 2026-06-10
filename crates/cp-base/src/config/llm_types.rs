@@ -491,8 +491,10 @@ impl ModelInfo for ClaudeCodeV2Model {
     fn context_window(&self) -> usize {
         match self {
             Self::ClaudeOpus48 => 200_000,
-            // Fable 5 and Sonnet 4.6 include the full 1M context window at standard pricing.
-            Self::ClaudeFable5 | Self::ClaudeSonnet46 => 1_000_000,
+            // Fable 5 capped at 400K (overrides the model's full 1M window).
+            Self::ClaudeFable5 => 400_000,
+            // Sonnet 4.6 includes the full 1M context window at standard pricing.
+            Self::ClaudeSonnet46 => 1_000_000,
         }
     }
 
