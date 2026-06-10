@@ -338,6 +338,10 @@
   path: crates/cp-mod-prompt/src/storage.rs
   description: 'Prompt file storage: YAML-frontmatter .md files for agents/skills/commands, load_all_prompts() merges built-ins, slugify()'
   last_edited_ms: 0
+16401e6535772605:
+  path: crates/cp-mod-entities/src/sql/errors.rs
+  description: 'SQL error enrichment: fuzzy suggestions (Levenshtein) + schema context for SQLite errors. enrich_error(). Moved from src/ into sql/ to keep folder ≤8 entries.'
+  last_edited_ms: 1781122618120
 16896bc4c096fb84:
   path: src/ui/markdown.rs
   description: Markdown table rendering — render_markdown_table() and parse_inline_markdown() return cp_render::Span (IR-native). No ratatui/theme imports. Border/accent/bold/code semantic styling.
@@ -1370,6 +1374,10 @@
   path: crates/cp-mod-entities/src/migrations.rs
   description: Auto-capture DDL as numbered migration files + sequential replay. write_migration() saves to _meta + disk. apply_pending() replays unapplied. list_files() sorted glob. migration_count().
   last_edited_ms: 1780585450704
+5fba33b58476a478:
+  path: crates/cp-mod-entities/src/sql/parse.rs
+  description: 'SQL statement parsing: SqlKind classify (SELECT/DML/DDL/CTE), strip_leading_comments, split_statements. Byte-offset-correct via str::char_indices() (fixes issue #113 multi-byte truncation). 6 inline regression tests.'
+  last_edited_ms: 1781122618108
 5ff21e152d80133b:
   path: src/modules/overview/mod.rs
   description: 'Overview module. Core/global. Close_panel pre-flight: warns (not errors) for stale [!] or missing tree descriptions. pub(crate) has_pending_tree_describe() helper. tool_manage, panel_goto_page pre-flights. save/load module+worker data.'
@@ -1990,6 +1998,10 @@
   path: src/app/actions/input.rs
   description: InputSubmit handler (context switching, message creation, notifications, clears selection) + ClearConversation (clears selection). Paste sentinel expansion. /command replacement.
   last_edited_ms: 0
+8bb63d4b6f54d036:
+  path: crates/cp-mod-entities/src/tools.rs
+  description: SQL execution engine. execute() dispatches to execute_select/dml/ddl. dry_run via SAVEPOINT+ROLLBACK. Parsing helpers now imported from crate::parse (moved to sql/parse.rs). request_path reads .sql files. live/output_path routing. ≤150 lines AND ≤8000 bytes inline+tempo, bigger→entity_result panel. 200-row cap. RETURNING support.
+  last_edited_ms: 1781122618143
 8be8066eb5d159fe:
   path: src/app/events.rs
   description: 'Maps terminal events → Action. Global Ctrl shortcuts (Q/L/N/H/I/V/O/P). Config view: provider selection (1-7), model selection (a-d), theme cycling. Index overlay: Esc dismiss, Ctrl+C copy. Delegates to panel.handle_key() for panel-specific keys.'
@@ -2090,6 +2102,10 @@
   path: src/app/run/lifecycle.rs
   description: 'Main event loop with flame!("loop"). Input-first design (non-blocking poll). Background: stream events, tools, cache, watchers, spine, reverie. Ownership checks. Render at ~28fps. Adaptive poll: 8ms streaming, 50ms idle. Time-based spinner dirty tick (100ms).'
   last_edited_ms: 0
+94068c195165fda1:
+  path: crates/cp-mod-entities/src/sql/mod.rs
+  description: 'Declares sql submodules: errors + parse.'
+  last_edited_ms: 1781122618129
 94391f323268729b:
   path: src/state/persistence/message.rs
   description: 'Message persistence: save/load/delete individual conversation messages as YAML files. record_prompt_history() appends to prompt-history.jsonl (append-only, cross-conversation).'
@@ -2338,6 +2354,10 @@ a5e9c30f4b25aabc:
   path: crates/cp-render/src/markdown.rs
   description: Shared markdown→IR parser. to_blocks() (fenced code blocks, headers, bullets, inline). parse_line() (single line). parse_inline() (bold, code, links). Used by skill panels + conversation renderer.
   last_edited_ms: 0
+a6c691fbfe4d7d3b:
+  path: crates/cp-mod-entities/src/lib.rs
+  description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. Declares sql/ + panels/ submodules with re-exports. Depends on search.
+  last_edited_ms: 1781122618152
 a6e931ee84d698fc:
   path: .context-pilot/shared/entities/schema.sql
   description: 'Auto-generated SQLite dump: CREATE + INSERT for all entity tables. Recovery source for DB corruption/deletion.'
