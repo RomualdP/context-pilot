@@ -97,10 +97,25 @@ pub(crate) fn format_markdown_table(cols: &[String], rows: &[Vec<String>]) -> St
 }
 
 /// Try to extract the main table name from a `SELECT` query.
+///
+/// Scans the **original** string for a case-insensitive `FROM ` keyword so the
+/// returned byte offsets always align with `sql`. (Computing the offset against
+/// `sql.to_uppercase()` would be wrong: uppercasing can change byte length —
+/// e.g. `ß` → `SS` — shifting every subsequent offset.)
 pub(crate) fn extract_table_name(sql: &str) -> Option<String> {
-    let upper = sql.to_uppercase();
-    let from_pos = upper.find("FROM ")?;
-    let after_from = sql.get(from_pos.saturating_add(5)..)?;
+    // Find a case-insensitive "from " followed by whitespace, on byte boundaries
+    // of the original string.
+    let bytes = sql.as_bytes();
+    let needle = b"from ";
+    let mut from_end: Option<usize> = None;
+    for i in 0..bytes.len().saturating_sub(needle.len().saturating_sub(1)) {
+        let window = bytes.get(i..i.saturating_add(needle.len()))?;
+        if window.iter().zip(needle).all(|(b, n)| b.to_ascii_lowercase() == *n) {
+            from_end = Some(i.saturating_add(needle.len()));
+            break;
+        }
+    }
+    let after_from = sql.get(from_end?..)?;
     let name: String = after_from.trim().chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
     if name.is_empty() { None } else { Some(name) }
 }

@@ -79,43 +79,64 @@ pub(crate) fn strip_leading_comments(sql: &str) -> &str {
 // Statement splitting
 // =============================================================================
 
-/// Split SQL on `;` while respecting single-quoted string literals.
+/// Split SQL on `;`, treating a semicolon as a statement delimiter **only**
+/// when it appears in ordinary code — never inside a string literal, a quoted
+/// identifier, or a comment.
 ///
-/// Handles `''` escape sequences inside strings.
+/// This is a small SQLite-aware tokenizer that skips over every region where a
+/// `;` is *data*, not a delimiter:
+///
+/// | Region | Opener | Closer | Escape |
+/// |--------|--------|--------|--------|
+/// | String literal | `'` | `'` | `''` |
+/// | Quoted identifier | `"` | `"` | `""` |
+/// | Backtick identifier | `` ` `` | `` ` `` | ` `` ` ` ` ``` |
+/// | Bracket identifier | `[` | `]` | — (no nesting/escape in SQLite) |
+/// | Line comment | `--` | newline | — |
+/// | Block comment | `/*` | `*/` | — (not nestable) |
+///
+/// A naive earlier version tracked only single-quoted strings, so a `;` inside
+/// a `--`/`/* */` comment or a `"quoted;identifier"` mis-split the batch into
+/// invalid fragments (same failure family as issue #113).
 ///
 /// # UTF-8 correctness
 ///
-/// Slicing is driven by the **byte offsets** yielded by [`str::char_indices`],
-/// never by character counts. A previous implementation collected
-/// `Vec<char>` and used the character index to slice the original `&str`,
-/// which truncated statements containing multi-byte characters in any
-/// non-final position (issue #113). Each accented Latin character contributes
-/// one extra byte, so the slice fell short by exactly that many bytes.
+/// All slicing is driven by the **byte offsets** from [`str::char_indices`],
+/// never by character counts — multi-byte characters anywhere in the input are
+/// preserved exactly (issue #113).
 pub(crate) fn split_statements(sql: &str) -> Vec<&str> {
     let mut results = Vec::new();
-    let mut start = 0; // BYTE offset of the current statement's first char
-    let mut in_string = false;
+    let mut start = 0; // BYTE offset where the current statement begins
     let mut chars = sql.char_indices().peekable();
 
     while let Some((idx, ch)) = chars.next() {
-        if in_string {
-            if ch == '\'' {
-                // Check for escaped quote ('') — consume the second quote and stay in-string
-                if chars.peek().map(|&(_, next)| next) == Some('\'') {
-                    let _consumed = chars.next();
-                    continue;
+        match ch {
+            // ── String literal: '...''...' ──
+            '\'' => skip_quoted(&mut chars, '\''),
+            // ── Double-quoted identifier: "...""..." ──
+            '"' => skip_quoted(&mut chars, '"'),
+            // ── Backtick identifier: `...``...` ──
+            '`' => skip_quoted(&mut chars, '`'),
+            // ── Bracket identifier: [...] (no escape in SQLite) ──
+            '[' => skip_until(&mut chars, ']'),
+            // ── Comments ──
+            '-' if chars.peek().map(|&(_, c)| c) == Some('-') => {
+                let _second = chars.next();
+                skip_line_comment(&mut chars);
+            }
+            '/' if chars.peek().map(|&(_, c)| c) == Some('*') => {
+                let _second = chars.next();
+                skip_block_comment(&mut chars);
+            }
+            // ── Statement delimiter ──
+            ';' => {
+                let stmt = sql.get(start..idx).unwrap_or_default().trim();
+                if !stmt.is_empty() && !strip_leading_comments(stmt).is_empty() {
+                    results.push(stmt);
                 }
-                in_string = false;
+                start = idx.saturating_add(ch.len_utf8());
             }
-        } else if ch == '\'' {
-            in_string = true;
-        } else if ch == ';' {
-            let stmt = sql.get(start..idx).unwrap_or_default().trim();
-            if !stmt.is_empty() && !strip_leading_comments(stmt).is_empty() {
-                results.push(stmt);
-            }
-            // `;` is ASCII (1 byte) but use len_utf8() for principled byte arithmetic.
-            start = idx.saturating_add(ch.len_utf8());
+            _ => {}
         }
     }
 
@@ -126,6 +147,56 @@ pub(crate) fn split_statements(sql: &str) -> Vec<&str> {
     }
 
     results
+}
+
+/// Type alias for the `char_indices` iterator the skip helpers consume.
+type CharCursor<'src> = std::iter::Peekable<std::str::CharIndices<'src>>;
+
+/// Skip a quoted span opened by `quote`, honouring the SQL doubling escape
+/// (`''`, `""`, ` `` `). Assumes the opening quote has already been consumed.
+fn skip_quoted(chars: &mut CharCursor<'_>, quote: char) {
+    while let Some((_, ch)) = chars.next() {
+        if ch == quote {
+            // Doubled quote → escaped literal quote, stay inside the span.
+            if chars.peek().map(|&(_, c)| c) == Some(quote) {
+                let _escaped = chars.next();
+                continue;
+            }
+            return; // closing quote
+        }
+    }
+    // Unterminated span: consume to EOF (no panic, no split).
+}
+
+/// Skip characters until `close` (inclusive). Used for bracket identifiers,
+/// which have no escape mechanism in `SQLite`. Assumes the opener was consumed.
+fn skip_until(chars: &mut CharCursor<'_>, close: char) {
+    for (_, ch) in chars.by_ref() {
+        if ch == close {
+            return;
+        }
+    }
+}
+
+/// Skip a `--` line comment up to and including the next newline. Assumes both
+/// dashes were consumed.
+fn skip_line_comment(chars: &mut CharCursor<'_>) {
+    for (_, ch) in chars.by_ref() {
+        if ch == '\n' {
+            return;
+        }
+    }
+}
+
+/// Skip a `/* */` block comment. `SQLite` block comments do not nest. Assumes the
+/// opening `/*` was consumed.
+fn skip_block_comment(chars: &mut CharCursor<'_>) {
+    while let Some((_, ch)) = chars.next() {
+        if ch == '*' && chars.peek().map(|&(_, c)| c) == Some('/') {
+            let _slash = chars.next();
+            return;
+        }
+    }
 }
 
 // =============================================================================
@@ -202,5 +273,97 @@ mod tests {
         assert_eq!(classify("CREATE TABLE t (a)"), SqlKind::Ddl);
         assert_eq!(classify("WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x"), SqlKind::Dml);
         assert_eq!(classify("WITH x AS (SELECT 1) SELECT * FROM x"), SqlKind::Select);
+    }
+
+    // ── Comment-aware splitting (stress-test regressions) ───────────────
+
+    /// A `;` inside a trailing `--` line comment must NOT split the batch.
+    /// Previously produced invalid fragments (`-- reset` / `clear...`).
+    #[test]
+    fn semicolon_in_line_comment_not_split() {
+        let sql = "DELETE FROM t; -- reset; clear everything\nINSERT INTO t VALUES ('p');";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 2, "got {stmts:?}");
+        assert_eq!(stmts.first().copied().unwrap_or_default(), "DELETE FROM t");
+        assert!(stmts.get(1).copied().unwrap_or_default().starts_with("-- reset; clear everything"));
+        assert!(stmts.get(1).copied().unwrap_or_default().contains("INSERT INTO t"));
+    }
+
+    /// A `;` inside a `/* block comment */` must NOT split the statement.
+    #[test]
+    fn semicolon_in_block_comment_not_split() {
+        let sql = "UPDATE t SET b='z' /* note; do not remove */ WHERE a='x';\nINSERT INTO t VALUES ('m');";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 2, "got {stmts:?}");
+        assert!(stmts.first().copied().unwrap_or_default().contains("/* note; do not remove */"));
+        assert!(stmts.get(1).copied().unwrap_or_default().contains("INSERT INTO t"));
+    }
+
+    /// A line comment containing `'` or `"` must not confuse quote tracking.
+    #[test]
+    fn quotes_inside_line_comment_ignored() {
+        let sql = "SELECT 1; -- it's a \"weird\" comment; really\nSELECT 2;";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 2, "got {stmts:?}");
+        assert_eq!(stmts.first().copied().unwrap_or_default(), "SELECT 1");
+    }
+
+    // ── Identifier-quoting-aware splitting ──────────────────────────────
+
+    /// A `;` inside a double-quoted identifier must NOT split.
+    #[test]
+    fn semicolon_in_double_quoted_identifier() {
+        let sql = "SELECT 'a;b' AS \"col;name\" FROM t;";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 1, "got {stmts:?}");
+        assert!(stmts.first().copied().unwrap_or_default().contains("\"col;name\""));
+    }
+
+    /// A `;` inside a backtick identifier must NOT split.
+    #[test]
+    fn semicolon_in_backtick_identifier() {
+        let sql = "SELECT 1 AS `weird;col` FROM t;";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 1, "got {stmts:?}");
+        assert!(stmts.first().copied().unwrap_or_default().contains("`weird;col`"));
+    }
+
+    /// A `;` inside a `[bracket]` identifier must NOT split.
+    #[test]
+    fn semicolon_in_bracket_identifier() {
+        let sql = "SELECT 1 AS [weird;col] FROM t;";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 1, "got {stmts:?}");
+        assert!(stmts.first().copied().unwrap_or_default().contains("[weird;col]"));
+    }
+
+    /// Doubled double-quotes (`""`) escape a literal quote inside an identifier.
+    #[test]
+    fn escaped_double_quote_in_identifier() {
+        let sql = "SELECT 1 AS \"a\"\"b;c\" FROM t; SELECT 2;";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 2, "got {stmts:?}");
+        assert!(stmts.first().copied().unwrap_or_default().contains("\"a\"\"b;c\""));
+    }
+
+    /// An unterminated string/identifier/comment must not panic — the tail is
+    /// simply consumed to EOF as a single (possibly malformed) statement.
+    #[test]
+    fn unterminated_spans_do_not_panic() {
+        for sql in ["SELECT 'abc", "SELECT \"abc", "SELECT 1 /* unterminated", "SELECT 1 -- trailing"] {
+            let _stmts = split_statements(sql); // must not panic
+        }
+    }
+
+    /// Combined adversarial input: comments, multiple quote styles, multi-byte,
+    /// and in-data semicolons — exactly one statement should result.
+    #[test]
+    fn combined_adversarial_single_statement() {
+        let sql = "INSERT INTO \"tbl;x\" (a,b) /* c; */ VALUES ('Réserve; légale','x') -- trailing; note";
+        let stmts = split_statements(sql);
+        assert_eq!(stmts.len(), 1, "got {stmts:?}");
+        let stmt = stmts.first().copied().unwrap_or_default();
+        assert!(stmt.contains("Réserve; légale"));
+        assert!(stmt.contains("\"tbl;x\""));
     }
 }

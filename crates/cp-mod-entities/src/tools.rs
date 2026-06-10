@@ -230,11 +230,7 @@ fn execute_dry_run(conn: &Connection, sql: &str, kind: SqlKind, state: &State) -
     let stmts = split_statements(sql);
     let result = match kind {
         SqlKind::Select => execute_select(conn, sql, state),
-        SqlKind::Dml => {
-            let upper = sql.to_uppercase();
-            let has_returning = upper.contains("RETURNING");
-            execute_dml_stmts(conn, &stmts, has_returning)
-        }
+        SqlKind::Dml => execute_dml_stmts(conn, &stmts),
         SqlKind::Ddl => {
             conn.execute_batch(sql).map_err(|e| format!("{e}")).map(|()| "Schema changes would be applied.".to_string())
         }
@@ -272,8 +268,6 @@ fn execute_select(conn: &Connection, sql: &str, state: &State) -> Result<String,
 /// transactions explicitly with `BEGIN`.
 fn execute_dml(conn: &Connection, sql: &str) -> Result<String, String> {
     let stmts = split_statements(sql);
-    let upper = sql.to_uppercase();
-    let has_returning = upper.contains("RETURNING");
 
     // Wrap multi-statement batches in an implicit transaction for atomicity,
     // unless the user already starts with BEGIN (explicit transaction control).
@@ -284,7 +278,7 @@ fn execute_dml(conn: &Connection, sql: &str) -> Result<String, String> {
         conn.execute_batch("BEGIN").map_err(|e| format!("{e}"))?;
     }
 
-    let result = execute_dml_stmts(conn, &stmts, has_returning);
+    let result = execute_dml_stmts(conn, &stmts);
 
     if needs_implicit_tx {
         match &result {
@@ -299,36 +293,57 @@ fn execute_dml(conn: &Connection, sql: &str) -> Result<String, String> {
 }
 
 /// Inner loop for DML execution — separated so the caller can wrap in a transaction.
-fn execute_dml_stmts(conn: &Connection, stmts: &[&str], has_returning: bool) -> Result<String, String> {
+///
+/// Each statement is dispatched by whether it **returns rows**, decided from the
+/// prepared statement's `column_count()` rather than a brittle batch-level
+/// `RETURNING` substring scan. This lets a DML batch end with (or contain) a
+/// plain `SELECT` — e.g. `DELETE …; INSERT …; SELECT * FROM t;` — without hitting
+/// rusqlite's "Execute returned results" error from calling `execute()` on a
+/// row-returning statement.
+fn execute_dml_stmts(conn: &Connection, stmts: &[&str]) -> Result<String, String> {
     let mut total_affected = 0usize;
     for (i, stmt) in stmts.iter().enumerate() {
         let is_last = i == stmts.len().saturating_sub(1);
 
-        if is_last && has_returning {
-            // Last statement with RETURNING — format as table
-            let mut prep = conn.prepare(stmt).map_err(|e| format!("{e}"))?;
-            let col_names: Vec<String> = prep.column_names().iter().map(|s| (*s).to_string()).collect();
-            let mut rows_data: Vec<Vec<String>> = Vec::new();
+        let mut prep = conn.prepare(stmt).map_err(|e| format!("{e}"))?;
+        let returns_rows = prep.column_count() > 0;
 
-            let mut rows = prep.query([]).map_err(|e| format!("{e}"))?;
-            while let Some(row) = rows.next().map_err(|e| format!("{e}"))? {
-                let mut vals = Vec::with_capacity(col_names.len());
-                for idx in 0..col_names.len() {
-                    vals.push(format_cell(row, idx));
+        if returns_rows {
+            if is_last {
+                // Final row-returning statement (SELECT or RETURNING) — format as table.
+                let col_names: Vec<String> = prep.column_names().iter().map(|s| (*s).to_string()).collect();
+                let mut rows_data: Vec<Vec<String>> = Vec::new();
+
+                let mut rows = prep.query([]).map_err(|e| format!("{e}"))?;
+                while let Some(row) = rows.next().map_err(|e| format!("{e}"))? {
+                    let mut vals = Vec::with_capacity(col_names.len());
+                    for idx in 0..col_names.len() {
+                        vals.push(format_cell(row, idx));
+                    }
+                    rows_data.push(vals);
                 }
-                rows_data.push(vals);
+
+                let count = rows_data.len();
+                let capped = rows_data.get(..format::MAX_RESULT_ROWS).unwrap_or(&rows_data);
+                let table = format_markdown_table(&col_names, capped);
+                let suffix = if count > format::MAX_RESULT_ROWS {
+                    format!("({count} returned, showing first {})", format::MAX_RESULT_ROWS)
+                } else {
+                    format!("({count} returned)")
+                };
+                if total_affected > 0 {
+                    return Ok(format!("{total_affected} row(s) affected.\n\n{table}\n\n{suffix}"));
+                }
+                return Ok(format!("{table}\n\n{suffix}"));
             }
 
-            let count = rows_data.len();
-            let table = format_markdown_table(&col_names, &rows_data);
-            if total_affected > 0 {
-                return Ok(format!("{total_affected} row(s) affected.\n\n{table}\n\n({count} returned)"));
-            }
-            return Ok(format!("{table}\n\n({count} returned)"));
+            // Non-last row-returning statement: run it for its side effects, discard rows.
+            let mut rows = prep.query([]).map_err(|e| format!("{e}"))?;
+            while rows.next().map_err(|e| format!("{e}"))?.is_some() {}
+        } else {
+            let affected = prep.execute([]).map_err(|e| format!("{e}"))?;
+            total_affected = total_affected.saturating_add(affected);
         }
-
-        let affected = conn.execute(stmt, []).map_err(|e| format!("{e}"))?;
-        total_affected = total_affected.saturating_add(affected);
     }
 
     Ok(format!("{total_affected} row(s) affected."))
@@ -379,3 +394,62 @@ fn err(tool: &ToolUse, msg: &str) -> ToolResult {
 
 use rusqlite::Connection;
 use std::path::Path;
+
+#[cfg(test)]
+mod tests {
+    use super::{execute_dml, Connection};
+
+    fn conn() -> Connection {
+        let c = Connection::open_in_memory().expect("open in-memory db");
+        c.execute_batch("CREATE TABLE t (a TEXT, b TEXT);").expect("create table");
+        c
+    }
+
+    /// Regression: a DML batch ending in a plain `SELECT` (no `RETURNING`) must
+    /// format the trailing query as a table instead of erroring with rusqlite's
+    /// "Execute returned results — did you mean to call query?".
+    #[test]
+    fn dml_batch_with_trailing_select() {
+        let c = conn();
+        let out = execute_dml(
+            &c,
+            "INSERT INTO t(a,b) VALUES ('p','q'); INSERT INTO t(a,b) VALUES ('x','y'); SELECT a FROM t ORDER BY a;",
+        )
+        .expect("batch should succeed");
+        assert!(out.contains("2 row(s) affected"), "got: {out}");
+        assert!(out.contains("| p |") && out.contains("| x |"), "got: {out}");
+        assert!(out.contains("(2 returned)"), "got: {out}");
+    }
+
+    /// A trailing `SELECT` after a single DML statement (the verify-your-work
+    /// pattern) must also work.
+    #[test]
+    fn single_dml_then_select() {
+        let c = conn();
+        let out = execute_dml(&c, "INSERT INTO t(a,b) VALUES ('z','w'); SELECT b FROM t;")
+            .expect("should succeed");
+        assert!(out.contains("| w |"), "got: {out}");
+    }
+
+    /// `RETURNING` still formats as a table after dropping the `has_returning` flag.
+    #[test]
+    fn returning_still_formats_table() {
+        let c = conn();
+        let out = execute_dml(&c, "INSERT INTO t(a,b) VALUES ('r','s') RETURNING a, b;")
+            .expect("returning should succeed");
+        assert!(out.contains("| r | s |"), "got: {out}");
+    }
+
+    /// A `;` inside a trailing line comment must not break the batch, and the
+    /// final `SELECT` must still render (combines splitter + dispatch fixes).
+    #[test]
+    fn comment_semicolon_plus_trailing_select() {
+        let c = conn();
+        let out = execute_dml(
+            &c,
+            "INSERT INTO t(a,b) VALUES ('m','n'); -- note; with ; semicolons\nSELECT a FROM t;",
+        )
+        .expect("should succeed");
+        assert!(out.contains("| m |"), "got: {out}");
+    }
+}

@@ -134,6 +134,10 @@
   path: src/llms/claude_code_api_key/streaming.rs
   description: 'parse_sse_stream(): SSE event loop with verbose error diagnostics, log_sse_error() to .context-pilot/errors/'
   last_edited_ms: 0
+095cb2628a4c1c86:
+  path: .context-pilot/shared/entities/schema.sql
+  description: 'Auto-generated SQLite dump: CREATE + INSERT for all entity tables. Recovery source for DB corruption/deletion.'
+  last_edited_ms: 0
 0979aeb287e6bdc9:
   path: .context-pilot/config.json
   description: 'Global config: active model, API keys, feature flags'
@@ -558,6 +562,10 @@
   path: crates/cp-mod-ocr/src/tools.rs
   description: OCR tool dispatch. flame!("ocr_exec"). Validates params, spawns background thread for Datalab API, registers OcrWatcher (non-blocking). Returns immediately with spine notification on completion.
   last_edited_ms: 0
+25698a54abb15919:
+  path: crates/cp-mod-entities/src/sql/parse.rs
+  description: 'SQL statement parsing: SqlKind classify (SELECT/DML/DDL/CTE), strip_leading_comments, split_statements. split_statements is a SQLite-aware mini-tokenizer (skips ''/"/`/[] quoted spans + --/* */ comments) so ; inside them never mis-splits. Byte-offset-correct via str::char_indices() (fixes #113 multi-byte truncation). 15 regression tests.'
+  last_edited_ms: 1781123413469
 2610b21d60e96425:
   path: src/ui/help/config_overlay/builder.rs
   description: Config overlay IR builder — assembles ConfigOverlay from State. ModelEntryFn type alias. Providers, models (per-provider match arms), budget bars (context/clean/target/cost), toggles (auto-continue/reverie/think).
@@ -1374,6 +1382,10 @@
   path: crates/cp-mod-entities/src/migrations.rs
   description: Auto-capture DDL as numbered migration files + sequential replay. write_migration() saves to _meta + disk. apply_pending() replays unapplied. list_files() sorted glob. migration_count().
   last_edited_ms: 1780585450704
+5f515c37519dc9cd:
+  path: crates/cp-mod-entities/src/tools.rs
+  description: 'SQL execution engine. execute() dispatches to execute_select/dml/ddl. execute_dml_stmts is row-aware: dispatches per-statement on prep.column_count()>0 so a DML batch can end in a plain SELECT (not just RETURNING) without rusqlite ''Execute returned results'' error. dry_run via SAVEPOINT+ROLLBACK. Parsing from crate::parse. request_path reads .sql. live/output_path routing. ≤150 lines AND ≤8000 bytes inline, bigger→entity_result panel. 200-row cap. 4 DML-dispatch regression tests.'
+  last_edited_ms: 1781123413461
 5fba33b58476a478:
   path: crates/cp-mod-entities/src/sql/parse.rs
   description: 'SQL statement parsing: SqlKind classify (SELECT/DML/DDL/CTE), strip_leading_comments, split_statements. Byte-offset-correct via str::char_indices() (fixes issue #113 multi-byte truncation). 6 inline regression tests.'
@@ -2313,6 +2325,10 @@ a33a3e5da4a1393e:
 a3468e6c6b211dc2:
   path: docs/streaming-errors.md
   description: Streaming error handling strategies
+  last_edited_ms: 0
+a34caa386a8e5450:
+  path: crates/cp-mod-entities/src/tools.rs
+  description: SQL execution engine. execute() dispatches to execute_select/dml/ddl. dry_run via SAVEPOINT+ROLLBACK. Parsing helpers now imported from crate::parse (moved to sql/parse.rs). request_path reads .sql files. live/output_path routing. ≤150 lines AND ≤8000 bytes inline+tempo, bigger→entity_result panel. 200-row cap. RETURNING support.
   last_edited_ms: 0
 a37d1b3869ea7b71:
   path: crates/cp-base/src/tools/async_exec.rs

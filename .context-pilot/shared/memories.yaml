@@ -348,22 +348,24 @@
   importance: high
   last_edited_ms: 0
 83e84589e8deaf29:
-  tl_dr: 'Issue #113 FIXED (f8a674b, master): entity_sql UTF-8 truncation in split_statements resolved + SQL parsing extracted into sql/ module.'
+  tl_dr: 'entity_sql SQL bugs fixed (issue #113 + stress-test follow-ups): UTF-8 truncation, comment/identifier mis-splitting, and DML-batch-with-SELECT all resolved.'
   contents: |-
-    Root cause: split_statements collected Vec<char> and iterated by char-index, then sliced original &str with that index as a BYTE offset (sql.get(start..i)). ASCII char==byte so it worked; multi-byte UTF-8 in non-final position made byte offset exceed char index, truncating by the extra bytes → spurious 'unrecognized token'.
+    ISSUE #113 (f8a674b): split_statements collected Vec<char>, iterated by char-index, sliced original &str with that index as a BYTE offset → multi-byte UTF-8 in non-final position truncated statements. Fix: drive slicing from str::char_indices() byte offsets.
 
-    Fix: rewrote split_statements to drive slicing from str::char_indices() byte offsets.
+    STRESS-TEST FOLLOW-UPS (3 more splitter bugs, same family): split_statements only tracked single-quote ' strings — blind to (1) -- line comments, (2) /* block comments */, (3) double-quote/backtick/bracket quoted identifiers, so a ; inside any of those mis-split the batch. Fix: rewrote split_statements as a SQLite-aware mini-tokenizer (skip_quoted for '/"/`, skip_until for [], skip_line_comment, skip_block_comment). Honors doubling escapes ('' "" ``). Unterminated spans consume to EOF (no panic).
 
-    Structure: SqlKind/classify/strip_leading_comments/split_statements + error enrichment moved into new sql/ module — crates/cp-mod-entities/src/sql/{mod,parse,errors}.rs. lib.rs declares `mod sql;` + `pub(crate) use sql::{errors, parse};` so crate::parse and crate::errors still resolve. tools.rs imports SqlKind/classify/split_statements from crate::parse. Kept src/ at 8 entries, tools.rs at 381 lines (<500).
+    4th BUG (pre-existing, EXPOSED by splitter fix): a DML-classified batch containing a row-returning statement (plain trailing SELECT, not RETURNING) failed with rusqlite 'Execute returned results - did you mean to call query?'. execute_dml_stmts called conn.execute() on row-returning stmts. Fix: dispatch per-statement on prep.column_count()>0 (returns_rows). Last row-returning → formatted table (capped MAX_RESULT_ROWS); non-last row-returning → drain side effects; else execute(). Dropped has_returning param.
 
-    6 regression tests in sql/parse.rs (multibyte non-final rows, multiple statements, escaped quotes, in-string semicolon, ASCII multi-statement, classify). The old ASCII-sanitization workaround for entity_sql is no longer needed.
+    Also fixed format.rs extract_table_name: was computing byte offset via upper.find("FROM ") then slicing original sql — wrong when to_uppercase() changes byte length (ß→SS). Now case-insensitive scan on original bytes.
+
+    Structure: SqlKind/classify/strip_leading_comments/split_statements in crates/cp-mod-entities/src/sql/parse.rs (15 tests); error enrichment in sql/errors.rs. lib.rs: `mod sql;` + `pub(crate) use sql::{errors, parse};`. tools.rs imports from crate::parse, has 4 DML-dispatch regression tests. The old ASCII-sanitization workaround for entity_sql is no longer needed.
   importance: high
   labels:
   - entities
   - bugfix
   - utf8
   - issue-113
-  last_edited_ms: 1781122629406
+  last_edited_ms: 1781123381858
 8e07129a2a85fdb2:
   tl_dr: 'DOCUMENTATION STYLE: Keep docs SYNTHETIC. No useless verbosity, no trivial obvious statements. Every word must earn its place. Bad: ''/// Returns the result of the operation''. Good: ''/// Saturating cast — clamps to target range on overflow''.'
   importance: critical
