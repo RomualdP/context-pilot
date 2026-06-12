@@ -94,21 +94,26 @@ fi
 git config --global core.excludesFile "$GITIGNORE_GLOBAL"
 
 # 4. Export API keys from .env
-echo "[4/4] Checking API keys in ~/.bashrc..."
+SHELL_RC="$HOME/.bashrc"
+if [ -f "$HOME/.zshrc" ] || [[ "$SHELL" == */zsh ]]; then
+    SHELL_RC="$HOME/.zshrc"
+fi
+
+echo "[4/4] Checking API keys in $SHELL_RC..."
 if [ -f "$SCRIPT_DIR/.env" ]; then
     KEYS_ADDED=0
     while IFS= read -r line; do
         # Skip comments and empty lines
         [[ -z "$line" || "$line" == \#* ]] && continue
         KEY_NAME="${line%%=*}"
-        if ! grep -q "export $KEY_NAME=" "$HOME/.bashrc" 2>/dev/null; then
-            echo "export $line" >> "$HOME/.bashrc"
-            echo "      Added $KEY_NAME to ~/.bashrc"
+        if ! grep -q "export $KEY_NAME=" "$SHELL_RC" 2>/dev/null; then
+            echo "export $line" >> "$SHELL_RC"
+            echo "      Added $KEY_NAME to $SHELL_RC"
             KEYS_ADDED=$((KEYS_ADDED + 1))
         fi
     done < "$SCRIPT_DIR/.env"
     if [ "$KEYS_ADDED" -eq 0 ]; then
-        echo "      All API keys already in ~/.bashrc — skipping."
+        echo "      All API keys already in $SHELL_RC — skipping."
     fi
 else
     echo "      No .env file found — skipping API key export."
