@@ -324,9 +324,10 @@
   - branch-stashed
   last_edited_ms: 0
 7c6035d323faf713:
-  tl_dr: 'Cryptographic hash chain protects 12 critical files (Cargo.toml lint sections, clippy.toml, rustfmt.toml, CI scripts, lint exceptions YAML, deploy scripts). Password: Totordu1789. Updates via chain.sh --update.'
+  tl_dr: Hash chain protects 12 files. Password is USER-ONLY (never store in AI memory). Updates via chain.sh --update.
+  contents: Cryptographic hash chain protects 12 critical files (Cargo.toml lint sections, clippy.toml, rustfmt.toml, CI scripts, lint exceptions YAML, deploy scripts). Password is managed exclusively by the user — the AI must NEVER know or store it. This asymmetry is the core security property. Updates via chain.sh --update. Chain was reinitialized by new owner.
   importance: critical
-  last_edited_ms: 0
+  last_edited_ms: 1781265627829
 803fa2aac4f0489a:
   tl_dr: NEVER commit or push .context-pilot/shared/entities/ files (entities.db, schema.sql, migrations/). These are local-only. Added to .gitignore.
   importance: critical
