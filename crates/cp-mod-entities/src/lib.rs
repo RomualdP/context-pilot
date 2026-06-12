@@ -6,12 +6,8 @@
 
 /// SQLite connection factory, bootstrap, introspection, dump, and restore.
 mod db;
-/// SQL error enrichment: fuzzy suggestions and schema context.
-mod errors;
 /// SQL result formatting utilities (shared by tools and panels).
 mod format;
-/// Auto-capture DDL as numbered migration files + sequential replay for recovery.
-mod migrations;
 /// Fixed Entities panel — live schema, sample data, and empty-state guide.
 mod panel;
 /// Dynamic entity result panel — large query results, static + live refresh.
@@ -371,7 +367,7 @@ fn recover_database(db_path: &std::path::Path, dump_path: &std::path::Path, migr
             {
                 log::warn!("Failed to restore dump during open-failure recovery: {re}");
             }
-            let _apply = migrations::apply_pending(&fresh, migrations_dir);
+            let _apply = db::migrations::apply_pending(&fresh, migrations_dir);
             return;
         }
     };
@@ -389,7 +385,7 @@ fn recover_database(db_path: &std::path::Path, dump_path: &std::path::Path, migr
         {
             log::warn!("Failed to restore dump: {e}");
         }
-        let _apply = migrations::apply_pending(&fresh, migrations_dir);
+        let _apply = db::migrations::apply_pending(&fresh, migrations_dir);
         return;
     }
 
@@ -422,7 +418,7 @@ fn recover_database(db_path: &std::path::Path, dump_path: &std::path::Path, migr
     }
 
     // Apply any pending migrations beyond what the dump contained
-    if let Err(e) = migrations::apply_pending(&conn, migrations_dir) {
+    if let Err(e) = db::migrations::apply_pending(&conn, migrations_dir) {
         log::warn!("Failed to apply pending migrations: {e}");
     }
 }

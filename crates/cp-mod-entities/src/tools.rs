@@ -4,10 +4,10 @@ use cp_base::state::context::Kind;
 use cp_base::state::runtime::State;
 use cp_base::tools::{ToolResult, ToolUse};
 
-use crate::errors::enrich_error;
+use crate::db::errors::enrich_error;
 use crate::format::{self, extract_table_name, format_cell, format_markdown_table};
 use crate::result_panel::{self, LivePanelMeta};
-use crate::{db, migrations};
+use crate::db;
 
 // =============================================================================
 // Constants
@@ -456,7 +456,7 @@ fn execute_ddl(conn: &Connection, sql: &str, dump_path: &Path, migrations_dir: &
     conn.execute_batch(sql).map_err(|e| format!("{e}"))?;
 
     // Write migration file
-    let filename = migrations::write_migration(conn, migrations_dir, sql)?;
+    let filename = db::migrations::write_migration(conn, migrations_dir, sql)?;
 
     // Regenerate full dump
     if let Err(e) = db::dump_to_file(conn, dump_path) {

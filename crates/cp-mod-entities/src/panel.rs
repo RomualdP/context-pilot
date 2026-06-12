@@ -8,7 +8,7 @@ use cp_render::{Block, Semantic, Span};
 use std::fmt::Write as _;
 
 use crate::types::EntitiesState;
-use crate::{db, migrations};
+use crate::db;
 
 /// Fixed panel showing entity schema + sample data.
 #[derive(Debug)]
@@ -198,7 +198,7 @@ fn populated_blocks(es: &EntitiesState) -> Vec<Block> {
 
     // Get migration count
     if let Ok(conn) = db::open(&es.db_path) {
-        let mig_count = migrations::migration_count(&conn);
+        let mig_count = db::migrations::migration_count(&conn);
         if mig_count > 0 {
             blocks.push(Block::Line(vec![Span::styled(format!("{mig_count} migration(s) tracked"), Semantic::Muted)]));
             blocks.push(Block::empty());

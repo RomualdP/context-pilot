@@ -2,6 +2,11 @@
 //!
 //! Connections are `!Send` — opened per-call, never stored in state.
 
+/// SQL error enrichment: fuzzy suggestions and schema context.
+pub(crate) mod errors;
+/// Auto-capture DDL as numbered migration files + sequential replay for recovery.
+pub(crate) mod migrations;
+
 use std::path::Path;
 
 use rusqlite::Connection;
