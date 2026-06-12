@@ -262,6 +262,20 @@ const fn handle_config_event(key: &KeyEvent, state: &State) -> Action {
                 dispatch_primary_model(state, 3)
             }
         }
+        KeyCode::Char('e') => {
+            if secondary {
+                dispatch_secondary_model(state, 4)
+            } else {
+                dispatch_primary_model(state, 4)
+            }
+        }
+        KeyCode::Char('f') => {
+            if secondary {
+                dispatch_secondary_model(state, 5)
+            } else {
+                dispatch_primary_model(state, 5)
+            }
+        }
         // Theme selection - t/T to cycle through themes
         KeyCode::Char('t') => Action::ConfigNextTheme,
         KeyCode::Char('T') => Action::ConfigPrevTheme,
@@ -308,9 +322,12 @@ const fn handle_config_event(key: &KeyEvent, state: &State) -> Action {
 const fn dispatch_primary_model(state: &State, idx: usize) -> Action {
     match state.llm_provider {
         LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => match idx {
-            0 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeOpus45),
-            1 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeSonnet45),
-            2 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeHaiku45),
+            0 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeFable5),
+            1 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeOpus48),
+            2 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeOpus45),
+            3 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeSonnet46),
+            4 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeSonnet45),
+            5 => Action::ConfigSelectAnthropicModel(AnthropicModel::ClaudeHaiku45),
             _ => Action::None,
         },
         LlmProvider::Grok => match idx {
@@ -342,9 +359,12 @@ const fn dispatch_primary_model(state: &State, idx: usize) -> Action {
 const fn dispatch_secondary_model(state: &State, idx: usize) -> Action {
     match state.secondary_provider {
         LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => match idx {
-            0 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeOpus45),
-            1 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeSonnet45),
-            2 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeHaiku45),
+            0 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeFable5),
+            1 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeOpus48),
+            2 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeOpus45),
+            3 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeSonnet46),
+            4 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeSonnet45),
+            5 => Action::ConfigSelectSecondaryAnthropicModel(AnthropicModel::ClaudeHaiku45),
             _ => Action::None,
         },
         LlmProvider::Grok => match idx {

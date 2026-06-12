@@ -80,18 +80,33 @@ fn build_models(state: &State, model_entry: &ModelEntryFn) -> (String, Vec<Confi
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 vec![
                     model_entry(
-                        state.secondary_anthropic_model == AnthropicModel::ClaudeOpus45,
+                        state.secondary_anthropic_model == AnthropicModel::ClaudeFable5,
                         "a",
+                        &AnthropicModel::ClaudeFable5,
+                    ),
+                    model_entry(
+                        state.secondary_anthropic_model == AnthropicModel::ClaudeOpus48,
+                        "b",
+                        &AnthropicModel::ClaudeOpus48,
+                    ),
+                    model_entry(
+                        state.secondary_anthropic_model == AnthropicModel::ClaudeOpus45,
+                        "c",
                         &AnthropicModel::ClaudeOpus45,
                     ),
                     model_entry(
+                        state.secondary_anthropic_model == AnthropicModel::ClaudeSonnet46,
+                        "d",
+                        &AnthropicModel::ClaudeSonnet46,
+                    ),
+                    model_entry(
                         state.secondary_anthropic_model == AnthropicModel::ClaudeSonnet45,
-                        "b",
+                        "e",
                         &AnthropicModel::ClaudeSonnet45,
                     ),
                     model_entry(
                         state.secondary_anthropic_model == AnthropicModel::ClaudeHaiku45,
-                        "c",
+                        "f",
                         &AnthropicModel::ClaudeHaiku45,
                     ),
                 ]
@@ -126,18 +141,33 @@ fn build_models(state: &State, model_entry: &ModelEntryFn) -> (String, Vec<Confi
             LlmProvider::Anthropic | LlmProvider::ClaudeCode | LlmProvider::ClaudeCodeApiKey => {
                 vec![
                     model_entry(
-                        state.anthropic_model == AnthropicModel::ClaudeOpus45,
+                        state.anthropic_model == AnthropicModel::ClaudeFable5,
                         "a",
+                        &AnthropicModel::ClaudeFable5,
+                    ),
+                    model_entry(
+                        state.anthropic_model == AnthropicModel::ClaudeOpus48,
+                        "b",
+                        &AnthropicModel::ClaudeOpus48,
+                    ),
+                    model_entry(
+                        state.anthropic_model == AnthropicModel::ClaudeOpus45,
+                        "c",
                         &AnthropicModel::ClaudeOpus45,
                     ),
                     model_entry(
+                        state.anthropic_model == AnthropicModel::ClaudeSonnet46,
+                        "d",
+                        &AnthropicModel::ClaudeSonnet46,
+                    ),
+                    model_entry(
                         state.anthropic_model == AnthropicModel::ClaudeSonnet45,
-                        "b",
+                        "e",
                         &AnthropicModel::ClaudeSonnet45,
                     ),
                     model_entry(
                         state.anthropic_model == AnthropicModel::ClaudeHaiku45,
-                        "c",
+                        "f",
                         &AnthropicModel::ClaudeHaiku45,
                     ),
                 ]

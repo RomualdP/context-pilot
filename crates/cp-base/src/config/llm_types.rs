@@ -121,10 +121,16 @@ pub enum LlmProvider {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AnthropicModel {
-    /// Claude Opus 4.5 — highest capability, largest output window.
+    /// Claude Fable 5 — frontier model, highest capability and cost.
+    ClaudeFable5,
+    /// Claude Opus 4.8 — high capability, large output window.
+    ClaudeOpus48,
+    /// Claude Opus 4.5 — previous generation Opus.
     #[default]
     ClaudeOpus45,
-    /// Claude Sonnet 4.5 — balanced cost / capability.
+    /// Claude Sonnet 4.6 — latest balanced cost / capability.
+    ClaudeSonnet46,
+    /// Claude Sonnet 4.5 — previous generation Sonnet.
     ClaudeSonnet45,
     /// Claude Haiku 4.5 — fast and cheap.
     ClaudeHaiku45,
@@ -133,7 +139,10 @@ pub enum AnthropicModel {
 impl ModelInfo for AnthropicModel {
     fn api_name(&self) -> &'static str {
         match self {
+            Self::ClaudeFable5 => "claude-fable-5",
+            Self::ClaudeOpus48 => "claude-opus-4-8",
             Self::ClaudeOpus45 => "claude-opus-4-6",
+            Self::ClaudeSonnet46 => "claude-sonnet-4-6",
             Self::ClaudeSonnet45 => "claude-sonnet-4-5-20250929",
             Self::ClaudeHaiku45 => "claude-haiku-4-5-20251001",
         }
@@ -141,7 +150,10 @@ impl ModelInfo for AnthropicModel {
 
     fn display_name(&self) -> &'static str {
         match self {
+            Self::ClaudeFable5 => "Fable 5",
+            Self::ClaudeOpus48 => "Opus 4.8",
             Self::ClaudeOpus45 => "Opus 4.6",
+            Self::ClaudeSonnet46 => "Sonnet 4.6",
             Self::ClaudeSonnet45 => "Sonnet 4.5",
             Self::ClaudeHaiku45 => "Haiku 4.5",
         }
@@ -153,40 +165,44 @@ impl ModelInfo for AnthropicModel {
 
     fn input_price_per_mtok(&self) -> f32 {
         match self {
-            Self::ClaudeOpus45 => 5.0,
-            Self::ClaudeSonnet45 => 3.0,
+            Self::ClaudeFable5 => 10.0,
+            Self::ClaudeOpus48 | Self::ClaudeOpus45 => 5.0,
+            Self::ClaudeSonnet46 | Self::ClaudeSonnet45 => 3.0,
             Self::ClaudeHaiku45 => 1.0,
         }
     }
 
     fn output_price_per_mtok(&self) -> f32 {
         match self {
-            Self::ClaudeOpus45 => 25.0,
-            Self::ClaudeSonnet45 => 15.0,
+            Self::ClaudeFable5 => 50.0,
+            Self::ClaudeOpus48 | Self::ClaudeOpus45 => 25.0,
+            Self::ClaudeSonnet46 | Self::ClaudeSonnet45 => 15.0,
             Self::ClaudeHaiku45 => 5.0,
         }
     }
 
     fn cache_hit_price_per_mtok(&self) -> f32 {
         match self {
-            Self::ClaudeOpus45 => 0.50,
-            Self::ClaudeSonnet45 => 0.30,
+            Self::ClaudeFable5 => 1.00,
+            Self::ClaudeOpus48 | Self::ClaudeOpus45 => 0.50,
+            Self::ClaudeSonnet46 | Self::ClaudeSonnet45 => 0.30,
             Self::ClaudeHaiku45 => 0.10,
         }
     }
 
     fn cache_miss_price_per_mtok(&self) -> f32 {
         match self {
-            Self::ClaudeOpus45 => 6.25,
-            Self::ClaudeSonnet45 => 3.75,
+            Self::ClaudeFable5 => 12.50,
+            Self::ClaudeOpus48 | Self::ClaudeOpus45 => 6.25,
+            Self::ClaudeSonnet46 | Self::ClaudeSonnet45 => 3.75,
             Self::ClaudeHaiku45 => 1.25,
         }
     }
 
     fn max_output_tokens(&self) -> u32 {
         match self {
-            Self::ClaudeOpus45 => 128_000,
-            Self::ClaudeSonnet45 | Self::ClaudeHaiku45 => 64_000,
+            Self::ClaudeFable5 | Self::ClaudeOpus48 | Self::ClaudeOpus45 => 128_000,
+            Self::ClaudeSonnet46 | Self::ClaudeSonnet45 | Self::ClaudeHaiku45 => 64_000,
         }
     }
 }
