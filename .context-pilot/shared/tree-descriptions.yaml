@@ -518,10 +518,6 @@
   path: crates/cp-mod-github/src/lib.rs
   description: 'GitHub module. 1 tool: gh_execute. Dynamic github_result panels. Depends on git module. classify sub-module for read-only vs mutating. Tool visualizer for PR/issue status coloring.'
   last_edited_ms: 0
-2643250c527c05df:
-  path: crates/cp-mod-entities/src/db.rs
-  description: SQLite connection factory, bootstrap, introspection, dump/restore. open() with PRAGMAs (WAL, FK, busy_timeout, journal_size_limit). introspect() for SchemaCache. dump_to_file/restore_from_file with 1MB cap. sample_rows for panel. has_user_tables. checkpoint.
-  last_edited_ms: 0
 266650666b192075:
   path: src/app/reverie/trigger.rs
   description: check_threshold_trigger() (auto-fire cleaner on token breach), start_manual_reverie() (per-agent guards)
@@ -678,6 +674,10 @@
   path: src/app/actions/mod.rs
   description: 'Central action dispatch (Elm/Redux-style). Maps Action variants to state mutations. Delegates to sub-modules: input, streaming, config, cursor. Selection-aware InputChar/Delete/InsertText/PasteText. 9 cursor/selection action dispatches.'
   last_edited_ms: 0
+307f2b04af5cbe46:
+  path: crates/cp-mod-entities/src/db/mod.rs
+  description: 'SQLite connection factory, bootstrap, introspection, dump, and restore. Sub-modules: errors, migrations.'
+  last_edited_ms: 1781267864447
 30ccc9d6b72a4b76:
   path: crates/cp-mod-firecrawl/src/tools.rs
   description: Firecrawl tool dispatch with flame!("firecrawl_scrape"), flame!("firecrawl_search"), flame!("firecrawl_map"). All async via spawn_async_tool. DynPanel creation.
@@ -802,6 +802,10 @@
   path: src/ui/ir/conversation.rs
   description: 'Conversation + overlay IR builder. Messages, history sections, streaming tools, input area. Overlays: QuestionForm, Autocomplete, PerfOverlay (build_perf_overlay with frame budgets, CPU/Meili stats, FD count, op table). Perf builder calls PERF.snapshot() and cp_mod_search::overlay_info().'
   last_edited_ms: 0
+39c1be47e8081602:
+  path: crates/cp-mod-entities/src/tools.rs
+  description: SQL execution engine. classify() (SELECT/DML/DDL/CTE), split_statements() with string literal awareness. execute() dispatches to execute_select/dml/ddl. dry_run via SAVEPOINT+ROLLBACK. request_path reads .sql files. live/output_path routing. Error enrichment with Levenshtein fuzzy matching. ≤150 lines AND ≤8000 bytes inline+tempo, bigger entity_result panel+no tempo. 200-row cap. RETURNING support.
+  last_edited_ms: 1781267864487
 39e07c2dd8ae1401:
   path: crates/cp-mod-ocr/src/lib.rs
   description: 'OCR module. 1 tool: ocr. Datalab API integration. Non-blocking: returns immediately, fires spine notification on completion. Global, non-core.'
@@ -1258,10 +1262,6 @@
   path: src/app/run/streaming.rs
   description: Stream event processing with flame!("stream") + flame!("finalize_stream"). Chunk→typewriter, ToolUse→pending, Done→finalize. Error retry up to MAX_API_RETRIES. finalize_stream() resets spine counters, updates cache engine, checks chat rooms.
   last_edited_ms: 0
-5f3dba37ef57e18f:
-  path: crates/cp-mod-entities/src/migrations.rs
-  description: Auto-capture DDL as numbered migration files + sequential replay. write_migration() saves to _meta + disk. apply_pending() replays unapplied. list_files() sorted glob. migration_count().
-  last_edited_ms: 1780585450704
 5ff21e152d80133b:
   path: src/modules/overview/mod.rs
   description: 'Overview module. Core/global. Close_panel pre-flight: warns (not errors) for stale [!] or missing tree descriptions. pub(crate) has_pending_tree_describe() helper. tool_manage, panel_goto_page pre-flights. save/load module+worker data.'
@@ -1317,10 +1317,6 @@
 625cf1ad506f9875:
   path: src/modules/overview/tools/close_context.rs
   description: 'Close_panel execution. Partial close: valid panels close, undescribed/stale-description file panels are skipped (not blocked). Module on_close_context hooks. Output: closed/skipped/not_found/errors sections.'
-  last_edited_ms: 0
-62ca35371b6fa7c3:
-  path: crates/cp-mod-entities/src/db.rs
-  description: SQLite connection factory, bootstrap, introspection, dump/restore. open() with PRAGMAs (WAL, FK, busy_timeout, journal_size_limit). introspect() for SchemaCache. dump_to_file/restore_from_file with 1MB cap. sample_rows for panel. has_user_tables. checkpoint.
   last_edited_ms: 0
 6361792c7f8df4c1:
   path: src/app/run/tools/pipeline.rs
@@ -1558,10 +1554,6 @@
   path: crates/cp-base/src/config/mod.rs
   description: 'YAML config loader. 6 LazyLock statics (Prompts/Library/Injections/Reverie/Ui/Themes) from include_str!. Theme system: 6 themes × 16 RGB colors + icons. invariant_panic() for compile-time violations. Sub-modules: constants, global, llm_types, yaml_sync, behavioral, accessors.'
   last_edited_ms: 0
-76f92d62b3fa3c6b:
-  path: crates/cp-mod-entities/src/db.rs
-  description: SQLite connection factory, bootstrap, introspection, dump/restore. open() with PRAGMAs (WAL, FK, busy_timeout, journal_size_limit). introspect() for SchemaCache. dump_to_file/restore_from_file with 1MB cap. sample_rows for panel. has_user_tables. checkpoint.
-  last_edited_ms: 1780585450698
 776ceb45b6277d6d:
   path: .github/workflows/rust.yml
   description: 'CI: fmt + clippy + build + test on ubuntu-latest. Pins Rust 1.93.0. Triggers on push/PR to master.'
@@ -1774,10 +1766,6 @@
   path: docs/architecture.md
   description: High-level architecture overview
   last_edited_ms: 0
-87c9c3f805064c63:
-  path: crates/cp-mod-entities/src/errors.rs
-  description: 'SQL error enrichment: fuzzy suggestions (Levenshtein ≤2) for unknown table/column names + schema context appended to all errors.'
-  last_edited_ms: 1780592402516
 87f32c2c2d88ea49:
   path: crates/cp-mod-callback/src/storage.rs
   description: YAML-backed persistent storage for callback definitions. Keyed by name (BTreeMap alphabetical). upsert/remove/populate/migrate functions. Script file read/write helpers (strip_script_header, write_script_file). cleanup_old_hash_keys migration.
@@ -2590,6 +2578,10 @@ c6851a14a7a1ecb2:
   path: src/app/actions/helpers.rs
   description: Utility functions + switch_to_panel (scroll-preserving panel switch). clean_llm_id_prefix, parse_context_pattern, find_context_by_id, eject_cursor_from_sentinel.
   last_edited_ms: 0
+c6c30ffb7b754c75:
+  path: crates/cp-mod-entities/src/lib.rs
+  description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search. Dynamic entity_result panels.
+  last_edited_ms: 1781267864471
 c72db20f11261c9f:
   path: src/ui/help/config_overlay/budget_bars.rs
   description: Budget bars adapter for config overlay. Renders ConfigBudgetBar IR entries as filled/empty block bars with semantic colors. 24-cell bar width.
@@ -2818,6 +2810,10 @@ d794e0ca2d6b10ae:
   path: crates/cp-mod-entities/src/lib.rs
   description: Entities module trait impl. init_state with recovery priority (DB→dump→migrations→fresh). save_module_data with dump regeneration + WAL checkpoint. entity_sql tool dispatch. overview_context_section. Depends on search. Dynamic entity_result panels.
   last_edited_ms: 1780609410314
+d82a813b567a9a9a:
+  path: crates/cp-mod-entities/src/db/errors.rs
+  description: 'SQL error enrichment: fuzzy suggestions and schema context.'
+  last_edited_ms: 1781267864463
 d8359ab8b810ded8:
   path: crates/cp-mod-spine/src/panel.rs
   description: 'Spine panel UI. Notifications rendered as Block::Table (ID/Time/Type/Content columns) with 60-char content truncation. Sections: Unprocessed, Blocked, Recent Processed. Config as KeyValue. Active Watchers list. Context: text format for LLM.'
@@ -2966,6 +2962,10 @@ e92f540548fee6a0:
   path: src/app/run/tools/mod.rs
   description: 'Sub-module declarations: checks, cleanup, pipeline, queue_flush.'
   last_edited_ms: 0
+e9716ade77b2f77c:
+  path: crates/cp-mod-entities/src/db/migrations.rs
+  description: Auto-capture DDL as numbered migration files + sequential replay for recovery.
+  last_edited_ms: 1781267864455
 ea3a1361f364015c:
   path: src/ui/ir/render_conversation.rs
   description: 'IR-controlled chrome: border, title, scrollbar, auto-scroll. Delegates content to build_content_cached(). Question form + autocomplete overlay rendering via IR data.'
@@ -2993,6 +2993,10 @@ ebcb3608c38e0892:
 ebdf6e51ce9dc683:
   path: crates/cp-mod-git/src/tools.rs
   description: Git tool. Read-only → dynamic git_result panels. Mutating → async subprocess via spawn_async_tool. flame!("git_exec"). GIT_ASKPASS temp script for HTTPS auth. Cache invalidation via regex patterns.
+  last_edited_ms: 0
+ec0a5e79d3883b1a:
+  path: deploy_local.sh
+  description: 'Local deployment script: builds + installs binary'
   last_edited_ms: 0
 ec28737efa4930e9:
   path: .gitignore
@@ -3118,6 +3122,10 @@ f62063a3417a112a:
   path: crates/cp-base/src/config/behavioral.rs
   description: 'Extracted injection types: RedirectInjections (conversation_history_close redirect) + TrapInjections (history_cleanup_triggered, history_cleanup_blocked). Moved from config/mod.rs for line-count limit.'
   last_edited_ms: 0
+f67dd3c37fe50fbe:
+  path: crates/cp-mod-entities/src/panel.rs
+  description: Fixed Entities panel. Live schema + sample data context for LLM. Empty-state onboarding guide with quick-start SQL. IR blocks with Accent/Code/Muted styling. Migration count display. max_freezes=2.
+  last_edited_ms: 1781267864479
 f6930563c8606410:
   path: crates/cp-mod-todo/src/types.rs
   description: TodoStatus (Pending/InProgress/Done), TodoItem, TodoState with has_incomplete_todos() + incomplete_todos_summary()
