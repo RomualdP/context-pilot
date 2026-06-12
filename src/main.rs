@@ -390,12 +390,12 @@ fn main() -> ExitCode {
         && let Ok(exe_path) = std::env::current_exe()
     {
         use std::os::unix::process::CommandExt as _;
-        let mut exec_args: Vec<String> = std::env::args().skip(1).collect();
-        if !exec_args.iter().any(|a| a == "--resume-stream") {
-            exec_args.push("--resume-stream".to_string());
+        let mut restart_args: Vec<String> = std::env::args().skip(1).collect();
+        if !restart_args.iter().any(|a| a == "--resume-stream") {
+            restart_args.push("--resume-stream".to_string());
         }
         // Replaces the current process — never returns on success
-        let _err = std::process::Command::new(exe_path).args(&exec_args).exec();
+        let _err = std::process::Command::new(exe_path).args(&restart_args).exec();
     }
 
     if let Err(e) = run_result {
